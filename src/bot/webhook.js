@@ -2,10 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
-const chrono = require('chrono-node'); // Para interpretar datas naturais
 const { getGPTResponse } = require('../services/gptService');
 const Message = require('../models/Message');
 const Reminder = require('../models/Reminder');
+const FormData = require('form-data');
+const fs = require('fs');
 
 const router = express.Router();
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
@@ -56,12 +57,60 @@ router.post('/', async (req, res) => {
     if (!entry) return res.sendStatus(200);
 
     const from = entry.from;
-    const userMessage = entry.text?.body || "";
+    if (from !== MY_NUMBER) return res.sendStatus(200);
 
-    if (from !== MY_NUMBER) return res.sendStatus(200); // só responde você
-
+    let userMessage = entry.text?.body || "";
     console.log("📩 Mensagem recebida:", userMessage);
 
+    // ===== Processar áudio =====
+    if (entry.type === 'audio') {
+      const mediaId = entry.audio.id;
+      const mediaUrlRes = await axios.get(
+        `https://graph.facebook.com/v21.0/${mediaId}`,
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
+      const mediaUrl = mediaUrlRes.data.url;
+      const audioRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+      fs.writeFileSync('/tmp/audio.ogg', audioRes.data);
+
+      // Transcrever via Whisper
+      const form = new FormData();
+      form.append('file', fs.createReadStream('/tmp/audio.ogg'));
+      form.append('model', 'whisper-1');
+
+      const whisperRes = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
+      });
+
+      userMessage = whisperRes.data.text;
+      console.log("🎙️ Transcrição de áudio:", userMessage);
+    }
+
+    // ===== Processar imagem =====
+    if (entry.type === 'image') {
+      const mediaId = entry.image.id;
+      const mediaUrlRes = await axios.get(
+        `https://graph.facebook.com/v21.0/${mediaId}`,
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
+      const mediaUrl = mediaUrlRes.data.url;
+      const imageRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+      fs.writeFileSync('/tmp/image.jpg', imageRes.data);
+
+      // Extrair texto via OCR
+      const form = new FormData();
+      form.append('file', fs.createReadStream('/tmp/image.jpg'));
+      form.append('model', 'ocr');
+
+      const ocrRes = await axios.post('https://api.openai.com/v1/images/ocr', form, {
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
+      });
+
+      userMessage = ocrRes.data.text || "📷 Imagem recebida, sem texto detectável.";
+      console.log("🖼️ Texto da imagem:", userMessage);
+    }
+
+    // ===== Hora e data =====
     const now = new Date();
     const currentTime = now.toLocaleTimeString('pt-BR');
     const currentDate = now.toLocaleDateString('pt-BR');
@@ -70,46 +119,35 @@ router.post('/', async (req, res) => {
 
     // ===== Lembretes =====
     const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
-    const horaRegex = /\b(hora|que horas|horário|data|dia)\b/i;
-
     if (lembreteRegex.test(userMessage)) {
       const match = userMessage.match(lembreteRegex);
       const text = match[1];
       const dateStr = match[3];
-      const date = chrono.parseDate(dateStr); // interpretação natural da data
+      const date = new Date(dateStr);
 
-      if (!date) {
-        responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato claro, ex: 'Lembre-me de reunião amanhã às 15:00'";
+      if (isNaN(date)) {
+        responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
       } else {
         await Reminder.create({ from, text, date });
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
-
-    } else if (horaRegex.test(userMessage)) {
-      responseText = `⏰ Agora são ${currentTime} do dia ${currentDate}.`;
-
     } else {
-      // ===== Histórico de conversa =====
-      const history = await Message.find({ from }).sort({ createdAt: 1 });
-      const historyText = history.map(m => `Usuário: ${m.body}\nDonna: ${m.response}`).join("\n");
-
       const prompt = `
-Você é Donna Paulsen, assistente executiva extremamente perspicaz, elegante e humanizada.
+Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
-Histórico da conversa:
-${historyText}
-Mensagem nova do usuário: "${userMessage}"
-Responda de forma natural, personalizada, com toque de humor ou empatia.
-Se for sobre lembretes, indique claramente que você pode salvar e avisar no horário.
+Seu papel:
+- Ajudar em administração, legislação, RH e negócios.
+- Ser poliglota: responda no idioma da mensagem do usuário.
+- Dar dicas estratégicas e conselhos.
+- Ajudar com lembretes e compromissos.
+Mensagem do usuário: "${userMessage}"
       `;
-
       responseText = await getGPTResponse(prompt);
     }
 
-    // ===== Salvar no MongoDB =====
+    // Salvar no MongoDB
     await Message.create({ from, body: userMessage, response: responseText });
-
-    // ===== Enviar resposta pelo WhatsApp =====
+    // Enviar WhatsApp
     await sendWhatsApp(from, responseText);
 
     res.sendStatus(200);
