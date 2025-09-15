@@ -12,7 +12,7 @@ connectDB();
 app.use(bodyParser.json());
 
 // Rotas
-const webhookRoutes = require('./routes/webhook');
+const webhookRoutes = require('./bot/webhook');
 app.use('/webhook', webhookRoutes);
 
 app.get("/", (req, res) => {
