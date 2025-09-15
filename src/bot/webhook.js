@@ -73,7 +73,6 @@ router.post('/', async (req, res) => {
       const audioRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
       fs.writeFileSync('/tmp/audio.ogg', audioRes.data);
 
-      // Transcrever via Whisper
       const form = new FormData();
       form.append('file', fs.createReadStream('/tmp/audio.ogg'));
       form.append('model', 'whisper-1');
@@ -84,9 +83,11 @@ router.post('/', async (req, res) => {
 
       userMessage = whisperRes.data.text;
       console.log("🎙️ Transcrição de áudio:", userMessage);
+
+      fs.unlinkSync('/tmp/audio.ogg');
     }
 
-    // ===== Processar imagem =====
+    // ===== Processar imagem com GPT multimodal =====
     if (entry.type === 'image') {
       const mediaId = entry.image.id;
       const mediaUrlRes = await axios.get(
@@ -94,20 +95,30 @@ router.post('/', async (req, res) => {
         { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
       );
       const mediaUrl = mediaUrlRes.data.url;
-      const imageRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
-      fs.writeFileSync('/tmp/image.jpg', imageRes.data);
 
-      // Extrair texto via OCR
-      const form = new FormData();
-      form.append('file', fs.createReadStream('/tmp/image.jpg'));
-      form.append('model', 'ocr');
+      const gptRes = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "Você é Donna Paulsen, uma assistente executiva perspicaz e humanizada. Descreva a imagem ou extraia qualquer texto visível."
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Analise esta imagem e me diga o que contém:" },
+                { type: "image_url", image_url: { url: mediaUrl } }
+              ]
+            }
+          ]
+        },
+        { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
+      );
 
-      const ocrRes = await axios.post('https://api.openai.com/v1/images/ocr', form, {
-        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
-      });
-
-      userMessage = ocrRes.data.text || "📷 Imagem recebida, sem texto detectável.";
-      console.log("🖼️ Texto da imagem:", userMessage);
+      userMessage = "📷 Imagem recebida. Análise: " + gptRes.data.choices[0].message.content;
+      console.log("🖼️ Resposta da imagem:", userMessage);
     }
 
     // ===== Hora e data =====
@@ -147,7 +158,6 @@ Mensagem do usuário: "${userMessage}"
 
     // Salvar no MongoDB
     await Message.create({ from, body: userMessage, response: responseText });
-    // Enviar WhatsApp
     await sendWhatsApp(from, responseText);
 
     res.sendStatus(200);
@@ -170,4 +180,3 @@ cron.schedule('* * * * *', async () => {
 });
 
 module.exports = router;
-
