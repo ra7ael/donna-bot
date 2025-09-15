@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 
-const webhook = require('./src/bot/webhook');
+const webhook = require('./bot/webhook');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,5 +15,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(Servidor rodando na porta ${PORT});
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
