@@ -1,6 +1,7 @@
-const Conversation = require('../models/Conversation'); // modelo de histórico
-const axios = require("axios");
+const axios = require('axios');
+require('dotenv').config();
 
+const Conversation = require('../models/Conversation'); // modelo de histórico
 async function getGPTResponse(userMessage, imageUrl = null, userId) {
   try {
     // Buscar histórico do usuário
