@@ -10,7 +10,6 @@ Seu papel:
 - Ser conselheira e dar dicas estratégicas.
 - Ajudar com lembretes e compromissos quando solicitado.
 - Responder de forma natural, personalizada e com toque de humor ou empatia.
-Hoje é ${dataFormatada}, e agora são ${horaFormatada}.
 Mensagem do usuário: "${userMessage}"
 `;
 
@@ -41,3 +40,4 @@ Mensagem do usuário: "${userMessage}"
 }
 
 module.exports = { getGPTResponse };
+
