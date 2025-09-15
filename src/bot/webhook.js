@@ -21,6 +21,7 @@ router.post('/', async (req, res) => {
         { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
       );
       const mediaUrl = mediaUrlRes.data.url;
+
       const audioRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
       fs.writeFileSync('/tmp/audio.ogg', audioRes.data);
 
@@ -50,7 +51,6 @@ router.post('/', async (req, res) => {
     }
 
     // ===== Salvar mensagem do usuário no histórico =====
-    const Conversation = require('../models/Conversation');
     await Conversation.create({ from, role: 'user', content: userMessage });
 
     // ===== Hora e data =====
@@ -77,9 +77,9 @@ router.post('/', async (req, res) => {
     } else {
       // ===== Recuperar histórico para contexto =====
       const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-      let conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`).join("\n");
+      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`).join("\n");
 
-      const prompt = `
+      responseText = await getGPTResponse(`
 Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
 Seu papel:
@@ -90,8 +90,7 @@ Seu papel:
 Histórico de conversa:
 ${conversationContext}
 Mensagem do usuário: "${userMessage}"
-      `;
-      responseText = await getGPTResponse(prompt, imageUrl);
+      `, imageUrl);
     }
 
     // ===== Salvar resposta da Donna no histórico =====
@@ -108,4 +107,3 @@ Mensagem do usuário: "${userMessage}"
     res.sendStatus(500);
   }
 });
-
