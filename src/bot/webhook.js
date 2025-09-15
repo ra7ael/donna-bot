@@ -41,32 +41,5 @@ router.post('/', async (req, res) => {
         const userMessage = entry.text?.body || "";
 
         // Obter resposta humanizada do GPT
-        const aiResponse = await getGPTResponse(userMessage);
-
-        // Salvar no MongoDB
-        await Message.create({ from, body: userMessage, response: aiResponse });
-
-        // Responder no WhatsApp
-        await axios.post(
-          `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
-          {
-            messaging_product: "whatsapp",
-            to: from,
-            text: { body: aiResponse }
-          },
-          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-        );
-
-        console.log("🤖 Mensagem respondida:", aiResponse);
-      }
-    }
-
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("❌ Erro no webhook:", error.message);
-    res.sendStatus(500);
-  }
-});
-
-module.exports = router;
+        const aiResponse = await getGPTResponse(userMessag
 
