@@ -1,8 +1,11 @@
+// src/bot/webhook.js
 require('dotenv').config();
 const express = require('express');
-const axios = require('axios');          // ✅ necessário para chamadas HTTP
-const fs = require('fs');                // ✅ necessário para manipular arquivos
-const FormData = require('form-data');   // ✅ necessário para Whisper (áudio)
+const axios = require('axios');
+const fs = require('fs');
+const FormData = require('form-data');
+const cron = require('node-cron');
+
 const router = express.Router();
 
 const { getGPTResponse } = require('../services/gptService');
@@ -13,7 +16,42 @@ const Conversation = require('../models/Conversation');
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
-const MY_NUMBER = process.env.MY_NUMBER;// ===== POST webhook (receber mensagens) =====
+const MY_NUMBER = process.env.MY_NUMBER;
+
+// ===== GET webhook (verificação) =====
+router.get('/', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log('✅ Webhook verificado com sucesso!');
+      res.status(200).send(challenge);
+    } else {
+      console.log('❌ Token de verificação inválido');
+      res.sendStatus(403);
+    }
+  } else {
+    res.sendStatus(400);
+  }
+});
+
+// ===== Função para enviar WhatsApp =====
+async function sendWhatsApp(to, text) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
+      { messaging_product: "whatsapp", to, text: { body: text } },
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+    );
+    console.log("📤 Mensagem enviada:", text);
+  } catch (err) {
+    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err.message);
+  }
+}
+
+// ===== POST webhook (receber mensagens) =====
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
@@ -36,7 +74,6 @@ router.post('/', async (req, res) => {
         { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
       );
       const mediaUrl = mediaUrlRes.data.url;
-
       const audioRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
       fs.writeFileSync('/tmp/audio.ogg', audioRes.data);
 
@@ -122,3 +159,17 @@ Mensagem do usuário: "${userMessage}"
     res.sendStatus(500);
   }
 });
+
+// ===== Cron job para enviar lembretes =====
+cron.schedule('* * * * *', async () => {
+  const now = new Date();
+  const reminders = await Reminder.find({ date: { $lte: now } });
+
+  for (const r of reminders) {
+    await sendWhatsApp(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString('pt-BR')})`);
+    await Reminder.findByIdAndDelete(r._id);
+  }
+});
+
+module.exports = router;
+
