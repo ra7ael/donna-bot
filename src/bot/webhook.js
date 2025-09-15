@@ -1,52 +1,3 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const cron = require('node-cron');
-const { getGPTResponse } = require('../services/gptService');
-const Message = require('../models/Message');
-const Reminder = require('../models/Reminder');
-const FormData = require('form-data');
-const fs = require('fs');
-
-const router = express.Router();
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
-const MY_NUMBER = process.env.MY_NUMBER;
-
-// ===== GET webhook (verificação) =====
-router.get('/', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode && token) {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('✅ Webhook verificado com sucesso!');
-      res.status(200).send(challenge);
-    } else {
-      console.log('❌ Token de verificação inválido');
-      res.sendStatus(403);
-    }
-  } else {
-    res.sendStatus(400);
-  }
-});
-
-// ===== Função para enviar WhatsApp =====
-async function sendWhatsApp(to, text) {
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
-      { messaging_product: "whatsapp", to, text: { body: text } },
-      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-    );
-    console.log("📤 Mensagem enviada:", text);
-  } catch (err) {
-    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err.message);
-  }
-}
-
 // ===== POST webhook (receber mensagens) =====
 router.post('/', async (req, res) => {
   try {
@@ -83,43 +34,24 @@ router.post('/', async (req, res) => {
 
       userMessage = whisperRes.data.text;
       console.log("🎙️ Transcrição de áudio:", userMessage);
-
       fs.unlinkSync('/tmp/audio.ogg');
     }
 
     // ===== Processar imagem com GPT multimodal =====
+    let imageUrl = null;
     if (entry.type === 'image') {
       const mediaId = entry.image.id;
       const mediaUrlRes = await axios.get(
         `https://graph.facebook.com/v21.0/${mediaId}`,
         { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
       );
-      const mediaUrl = mediaUrlRes.data.url;
-
-      const gptRes = await axios.post(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: "Você é Donna Paulsen, uma assistente executiva perspicaz e humanizada. Descreva a imagem ou extraia qualquer texto visível."
-            },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Analise esta imagem e me diga o que contém:" },
-                { type: "image_url", image_url: { url: mediaUrl } }
-              ]
-            }
-          ]
-        },
-        { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
-      );
-
-      userMessage = "📷 Imagem recebida. Análise: " + gptRes.data.choices[0].message.content;
-      console.log("🖼️ Resposta da imagem:", userMessage);
+      imageUrl = mediaUrlRes.data.url;
+      userMessage = "📷 Imagem recebida. Analisando...";
     }
+
+    // ===== Salvar mensagem do usuário no histórico =====
+    const Conversation = require('../models/Conversation');
+    await Conversation.create({ from, role: 'user', content: userMessage });
 
     // ===== Hora e data =====
     const now = new Date();
@@ -143,6 +75,10 @@ router.post('/', async (req, res) => {
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
     } else {
+      // ===== Recuperar histórico para contexto =====
+      const history = await Conversation.find({ from }).sort({ createdAt: 1 });
+      let conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`).join("\n");
+
       const prompt = `
 Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
@@ -151,12 +87,17 @@ Seu papel:
 - Ser poliglota: responda no idioma da mensagem do usuário.
 - Dar dicas estratégicas e conselhos.
 - Ajudar com lembretes e compromissos.
+Histórico de conversa:
+${conversationContext}
 Mensagem do usuário: "${userMessage}"
       `;
-      responseText = await getGPTResponse(prompt);
+      responseText = await getGPTResponse(prompt, imageUrl);
     }
 
-    // Salvar no MongoDB
+    // ===== Salvar resposta da Donna no histórico =====
+    await Conversation.create({ from, role: 'assistant', content: responseText });
+
+    // ===== Salvar no MongoDB e enviar WhatsApp =====
     await Message.create({ from, body: userMessage, response: responseText });
     await sendWhatsApp(from, responseText);
 
@@ -168,15 +109,3 @@ Mensagem do usuário: "${userMessage}"
   }
 });
 
-// ===== Cron job para enviar lembretes =====
-cron.schedule('* * * * *', async () => {
-  const now = new Date();
-  const reminders = await Reminder.find({ date: { $lte: now } });
-
-  for (const r of reminders) {
-    await sendWhatsApp(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString('pt-BR')})`);
-    await Reminder.findByIdAndDelete(r._id);
-  }
-});
-
-module.exports = router;
