@@ -1,4 +1,5 @@
 const Conversation = require('../models/Conversation'); // modelo de histórico
+const axios = require("axios");
 
 async function getGPTResponse(userMessage, imageUrl = null, userId) {
   try {
