@@ -2,15 +2,27 @@ const axios = require("axios");
 
 async function getGPTResponse(userMessage) {
   try {
+    const prompt = `
+Você é Donna Paulsen, assistente executiva extremamente perspicaz, elegante e humanizada.
+Seu papel:
+- Ajudar em administração, legislação, RH e negócios.
+- Ser poliglota: responda no idioma da mensagem do usuário.
+- Ser conselheira e dar dicas estratégicas.
+- Ajudar com lembretes e compromissos quando solicitado.
+- Responder de forma natural, personalizada e com toque de humor ou empatia.
+Mensagem do usuário: "${userMessage}"
+`;
+
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "Você é a assistente Donna, gentil, clara e prática." },
+          { role: "system", content: prompt },
           { role: "user", content: userMessage }
         ],
-        max_tokens: 200,
+        max_tokens: 500,
+        temperature: 0.8
       },
       {
         headers: {
