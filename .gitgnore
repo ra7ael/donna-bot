@@ -1,2 +1,19 @@
-node_modeles/
+# Node modules
+node_modules/
+
+# Environment variables
 .env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE / Editor files
+.vscode/
+.idea/
+
+# Build outputs
+dist/
+build/
+
