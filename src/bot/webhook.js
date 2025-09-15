@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
+const chrono = require('chrono-node'); // Para interpretar datas naturais
 const { getGPTResponse } = require('../services/gptService');
 const Message = require('../models/Message');
 const Reminder = require('../models/Reminder');
@@ -61,7 +62,6 @@ router.post('/', async (req, res) => {
 
     console.log("📩 Mensagem recebida:", userMessage);
 
-    // ===== Obter hora e data corretas =====
     const now = new Date();
     const currentTime = now.toLocaleTimeString('pt-BR');
     const currentDate = now.toLocaleDateString('pt-BR');
@@ -76,10 +76,10 @@ router.post('/', async (req, res) => {
       const match = userMessage.match(lembreteRegex);
       const text = match[1];
       const dateStr = match[3];
-      const date = new Date(dateStr);
+      const date = chrono.parseDate(dateStr); // interpretação natural da data
 
-      if (isNaN(date)) {
-        responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
+      if (!date) {
+        responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato claro, ex: 'Lembre-me de reunião amanhã às 15:00'";
       } else {
         await Reminder.create({ from, text, date });
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
@@ -89,23 +89,27 @@ router.post('/', async (req, res) => {
       responseText = `⏰ Agora são ${currentTime} do dia ${currentDate}.`;
 
     } else {
-      // GPT humanizado com hora e data do servidor
+      // ===== Histórico de conversa =====
+      const history = await Message.find({ from }).sort({ createdAt: 1 });
+      const historyText = history.map(m => `Usuário: ${m.body}\nDonna: ${m.response}`).join("\n");
+
       const prompt = `
-Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
+Você é Donna Paulsen, assistente executiva extremamente perspicaz, elegante e humanizada.
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
-Seu papel:
-- Ajudar em administração, legislação, RH e negócios.
-- Ser poliglota: responda no idioma da mensagem do usuário.
-- Dar dicas estratégicas e conselhos.
-- Ajudar com lembretes e compromissos.
-Mensagem do usuário: "${userMessage}"
+Histórico da conversa:
+${historyText}
+Mensagem nova do usuário: "${userMessage}"
+Responda de forma natural, personalizada, com toque de humor ou empatia.
+Se for sobre lembretes, indique claramente que você pode salvar e avisar no horário.
       `;
+
       responseText = await getGPTResponse(prompt);
     }
 
-    // Salvar mensagem no MongoDB
+    // ===== Salvar no MongoDB =====
     await Message.create({ from, body: userMessage, response: responseText });
-    // Enviar resposta pelo WhatsApp
+
+    // ===== Enviar resposta pelo WhatsApp =====
     await sendWhatsApp(from, responseText);
 
     res.sendStatus(200);
