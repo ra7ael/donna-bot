@@ -1,53 +1,26 @@
-require("dotenv").config();
-const express = require("express");
-const axios = require("axios");
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');
+const { getGPTResponse } = require('../services/gptService');
+const Message = require('../models/Message');
 
 const router = express.Router();
-
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Função para enviar mensagem pelo WhatsApp
-async function sendMessage(to, message) {
-  try {
-    const url = `https://graph.facebook.com/v20.0/${PHONE_ID}/messages`;
-
-    await axios.post(
-      url,
-      {
-        messaging_product: "whatsapp",
-        to: to,
-        text: { body: message },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    console.log(`📤 Mensagem enviada para ${to}: ${message}`);
-  } catch (error) {
-    console.error("❌ Erro ao enviar mensagem:", error.response?.data || error);
-  }
-}
-
-// =======================
-// Verificação do webhook
-// =======================
-router.get("/", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+// Verificação do webhook (GET)
+router.get('/', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
   if (mode && token) {
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-      console.log("✅ Webhook verificado com sucesso!");
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log('✅ Webhook verificado com sucesso!');
       res.status(200).send(challenge);
     } else {
-      console.log("❌ Token de verificação inválido");
+      console.log('❌ Token de verificação inválido');
       res.sendStatus(403);
     }
   } else {
@@ -55,36 +28,45 @@ router.get("/", (req, res) => {
   }
 });
 
-// =======================
-// Receber mensagens
-// =======================
-router.post("/", (req, res) => {
-  const body = req.body;
+// Receber mensagens do WhatsApp (POST)
+router.post('/', async (req, res) => {
+  try {
+    const body = req.body;
 
-  if (body.object) {
-    const messageObj = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (messageObj) {
-      const from = messageObj.from; // número de quem enviou
-      const msg = messageObj.text?.body;
+    if (body.object) {
+      const entry = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
-      console.log("📩 Mensagem recebida de:", from, "->", msg);
+      if (entry && entry.from === process.env.MY_NUMBER) { // só responde ao seu número
+        const from = entry.from;
+        const userMessage = entry.text?.body || "";
 
-      // Só responde ao número do Rafael
-      if (from === "5541995194485") {
-        // Responde mensagem
-        if (msg?.toLowerCase() === "status") {
-          sendMessage(from, "🚀 Donna está online e funcionando!");
-        } else {
-          sendMessage(from, `Oi Rafael 👋, eu sou a Donna 🤖! Você disse: "${msg}"`);
-        }
-      } else {
-        console.log("⚠️ Mensagem recebida de outro número, ignorada.");
+        // Obter resposta humanizada do GPT
+        const aiResponse = await getGPTResponse(userMessage);
+
+        // Salvar no MongoDB
+        await Message.create({ from, body: userMessage, response: aiResponse });
+
+        // Responder no WhatsApp
+        await axios.post(
+          `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
+          {
+            messaging_product: "whatsapp",
+            to: from,
+            text: { body: aiResponse }
+          },
+          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+        );
+
+        console.log("🤖 Mensagem respondida:", aiResponse);
       }
     }
+
     res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
+  } catch (error) {
+    console.error("❌ Erro no webhook:", error.message);
+    res.sendStatus(500);
   }
 });
 
 module.exports = router;
+
