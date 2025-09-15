@@ -5,12 +5,14 @@ const { getGPTResponse } = require('../services/gptService');
 const Message = require('../models/Message');
 
 const router = express.Router();
+
+// Variáveis de ambiente
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
-const MY_NUMBER = process.env.MY_NUMBER;
+const MY_NUMBER = process.env.MY_NUMBER; // Coloque seu número +5541995194485
 
-// Verificação do webhook (GET)
+// ====== Verificação do Webhook (GET) ======
 router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -21,18 +23,18 @@ router.get('/', (req, res) => {
   if (mode && token) {
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       console.log('✅ Webhook verificado com sucesso!');
-      res.status(200).send(challenge);
+      return res.status(200).send(challenge);
     } else {
       console.log('❌ Token de verificação inválido');
-      res.sendStatus(403);
+      return res.sendStatus(403);
     }
   } else {
     console.log('⚠️ GET inválido');
-    res.sendStatus(400);
+    return res.sendStatus(400);
   }
 });
 
-// Receber mensagens do WhatsApp (POST)
+// ====== Receber mensagens do WhatsApp (POST) ======
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
@@ -45,42 +47,39 @@ router.post('/', async (req, res) => {
 
     const entry = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!entry) {
-      console.log("⚠️ Nenhuma mensagem encontrada no body");
-      return res.sendStatus(200); // não precisa responder se não é mensagem
+      console.log("⚠️ Nenhuma mensagem encontrada");
+      return res.sendStatus(200);
     }
 
-    console.log("🔹 Mensagem encontrada:", entry);
-
+    // ====== Responder apenas seu número ======
     if (entry.from !== MY_NUMBER) {
       console.log(`⚠️ Número não autorizado: ${entry.from}`);
-      return res.sendStatus(200); // ignora mensagens de outros números
+      return res.sendStatus(200);
     }
 
     const from = entry.from;
     const userMessage = entry.text?.body || "";
     console.log("📝 Mensagem do usuário:", userMessage);
 
-    // Obter resposta do GPT
+    // ====== Obter resposta do GPT ======
     const aiResponse = await getGPTResponse(userMessage);
     console.log("🤖 Resposta GPT:", aiResponse);
 
-    // Salvar no MongoDB
+    // ====== Salvar mensagem no MongoDB ======
     const savedMessage = await Message.create({ from, body: userMessage, response: aiResponse });
     console.log("💾 Mensagem salva no MongoDB:", savedMessage);
 
-    // Enviar resposta pelo WhatsApp
-    const whatsappResponse = await axios.post(
+    // ====== Enviar resposta pelo WhatsApp ======
+    await axios.post(
       `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
       {
         messaging_product: "whatsapp",
         to: from,
         text: { body: aiResponse }
       },
-      {
-        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
-      }
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
     );
-    console.log("📤 Resposta enviada ao WhatsApp:", whatsappResponse.data);
+    console.log("📤 Resposta enviada ao WhatsApp");
 
     res.sendStatus(200);
 
