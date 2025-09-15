@@ -1,4 +1,19 @@
-// ===== POST webhook (receber mensagens) =====
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');          // ✅ necessário para chamadas HTTP
+const fs = require('fs');                // ✅ necessário para manipular arquivos
+const FormData = require('form-data');   // ✅ necessário para Whisper (áudio)
+const router = express.Router();
+
+const { getGPTResponse } = require('../services/gptService');
+const Message = require('../models/Message');
+const Reminder = require('../models/Reminder');
+const Conversation = require('../models/Conversation');
+
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+const MY_NUMBER = process.env.MY_NUMBER;// ===== POST webhook (receber mensagens) =====
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
