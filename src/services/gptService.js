@@ -1,7 +1,10 @@
-const axios = require("axios");
+const Conversation = require('../models/Conversation'); // modelo de histórico
 
-async function getGPTResponse(userMessage, imageUrl = null) {
+async function getGPTResponse(userMessage, imageUrl = null, userId) {
   try {
+    // Buscar histórico do usuário
+    const history = await Conversation.find({ from: userId }).sort({ createdAt: 1 });
+
     const messages = [
       {
         role: "system",
@@ -17,6 +20,15 @@ Seu papel:
       },
     ];
 
+    // Adicionar histórico no chat
+    history.forEach(h => {
+      messages.push({
+        role: h.role === 'assistant' ? 'assistant' : 'user',
+        content: h.content
+      });
+    });
+
+    // Adicionar a nova mensagem
     if (imageUrl) {
       messages.push({
         role: "user",
