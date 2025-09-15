@@ -61,11 +61,16 @@ router.post('/', async (req, res) => {
 
     console.log("📩 Mensagem recebida:", userMessage);
 
+    // ===== Obter hora e data corretas =====
+    const now = new Date();
+    const currentTime = now.toLocaleTimeString('pt-BR');
+    const currentDate = now.toLocaleDateString('pt-BR');
+
     let responseText = "";
 
     // ===== Lembretes =====
     const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
-    const horaRegex = /\b(hora|que horas|horário)\b/i;
+    const horaRegex = /\b(hora|que horas|horário|data|dia)\b/i;
 
     if (lembreteRegex.test(userMessage)) {
       const match = userMessage.match(lembreteRegex);
@@ -74,19 +79,33 @@ router.post('/', async (req, res) => {
       const date = new Date(dateStr);
 
       if (isNaN(date)) {
-        responseText = "❌ Não consegui entender a data/hora do lembrete. Tente no formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
+        responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
       } else {
         await Reminder.create({ from, text, date });
-        responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString()}`;
+        responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
+
     } else if (horaRegex.test(userMessage)) {
-      const now = new Date();
-      responseText = `⏰ Agora são ${now.toLocaleTimeString('pt-BR')} do dia ${now.toLocaleDateString('pt-BR')}.`;
+      responseText = `⏰ Agora são ${currentTime} do dia ${currentDate}.`;
+
     } else {
-      responseText = await getGPTResponse(userMessage);
+      // GPT humanizado com hora e data do servidor
+      const prompt = `
+Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
+Hora e data atuais: ${currentTime} do dia ${currentDate}.
+Seu papel:
+- Ajudar em administração, legislação, RH e negócios.
+- Ser poliglota: responda no idioma da mensagem do usuário.
+- Dar dicas estratégicas e conselhos.
+- Ajudar com lembretes e compromissos.
+Mensagem do usuário: "${userMessage}"
+      `;
+      responseText = await getGPTResponse(prompt);
     }
 
+    // Salvar mensagem no MongoDB
     await Message.create({ from, body: userMessage, response: responseText });
+    // Enviar resposta pelo WhatsApp
     await sendWhatsApp(from, responseText);
 
     res.sendStatus(200);
@@ -103,7 +122,7 @@ cron.schedule('* * * * *', async () => {
   const reminders = await Reminder.find({ date: { $lte: now } });
 
   for (const r of reminders) {
-    await sendWhatsApp(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString()})`);
+    await sendWhatsApp(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString('pt-BR')})`);
     await Reminder.findByIdAndDelete(r._id);
   }
 });
