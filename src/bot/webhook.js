@@ -109,9 +109,25 @@ router.post('/', async (req, res) => {
     await saveMemory(from, 'user', userMessage);
 
     // ===== Hora e data =====
-    const now = new Date();
-    const currentTime = now.toLocaleTimeString('pt-BR');
-    const currentDate = now.toLocaleDateString('pt-BR');
+const now = new Date();
+
+const formatterTime = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+  timeZone: 'America/Sao_Paulo'
+});
+
+const formatterDate = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: 'America/Sao_Paulo'
+});
+
+const currentTime = formatterTime.format(now); // ex: "20:24:15"
+const currentDate = formatterDate.format(now); // ex: "17/09/2025"
 
     let responseText = "";
 
