@@ -31,7 +31,7 @@ Seu papel:
       });
     });
 
-    // Adicionar a nova mensagem
+    // Nova mensagem do usuário
     if (imageUrl) {
       messages.push({
         role: "user",
@@ -44,10 +44,12 @@ Seu papel:
       messages.push({ role: "user", content: userMessage });
     }
 
-    // 🔑 Modelo: tenta usar o Fine-tuned, senão volta para gpt-4o-mini
-    const modelId = process.env.FINE_TUNED_MODEL_ID || "gpt-4o-mini";
-    console.log("📌 Modelo usado pela Donna:", modelId);
+    // 🔑 Modelo: Fine-tuned se existir, fallback gpt-4o-mini
+    let modelId = process.env.FINE_TUNED_MODEL_ID || "gpt-4o-mini";
+    modelId = modelId.replace(/\s+/g, "").trim(); // remove espaços/quebras de linha invisíveis
+    console.log("📌 Modelo usado pela Donna:", `"${modelId}"`);
 
+    // Chamada ao GPT
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -64,12 +66,13 @@ Seu papel:
       }
     );
 
+    // Retorna resposta
     return response.data.choices[0].message.content.trim();
+
   } catch (error) {
     console.error("❌ Erro no GPT:", error.response?.data || error.message);
     return "Desculpe, tive um problema para responder agora.";
   }
 }
 
-// ✅ Correto agora, sem chaves extras
 module.exports = { getGPTResponse };
