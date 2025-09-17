@@ -1,44 +1,60 @@
-const Memory = require("../models/Memory");
-const axios = require("axios");
+const SemanticMemory = require('../models/semanticMemory');
+const axios = require('axios');
 
-async function getEmbedding(text) {
-  try {
-    const res = await axios.post(
-      "https://api.openai.com/v1/embeddings",
-      { model: "text-embedding-3-small", input: text },
-      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
-    );
-    return res.data.data[0].embedding;
-  } catch (err) {
-    console.error("Erro ao gerar embedding:", err.response?.data || err.message);
-    return [];
-  }
-}
-
-// Salvar mensagem com embedding
+// Salvar memória
 async function saveMemory(userId, role, content) {
-  const embedding = await getEmbedding(content);
-  const memory = new Memory({ userId, role, content, embedding });
-  await memory.save();
+  // Gerar embedding
+  const embeddingRes = await axios.post(
+    'https://api.openai.com/v1/embeddings',
+    {
+      model: 'text-embedding-3-small',
+      input: content
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  const embedding = embeddingRes.data.data[0].embedding;
+
+  await SemanticMemory.create({ userId, role, content, embedding });
 }
 
-// Busca semântica por similaridade
+// Buscar mensagens mais relevantes usando similaridade de cosseno
 async function getRelevantMemory(userId, query, topK = 5) {
-  const queryEmbedding = await getEmbedding(query);
-  const allMemories = await Memory.find({ userId });
+  const embeddingRes = await axios.post(
+    'https://api.openai.com/v1/embeddings',
+    {
+      model: 'text-embedding-3-small',
+      input: query
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  const queryEmbedding = embeddingRes.data.data[0].embedding;
+
+  const memories = await SemanticMemory.find({ userId });
   
-  // Calcular similaridade (cosine similarity)
-  const similarity = (a, b) => {
-    const dot = a.reduce((sum, v, i) => sum + v * b[i], 0);
-    const magA = Math.sqrt(a.reduce((sum, v) => sum + v*v, 0));
-    const magB = Math.sqrt(b.reduce((sum, v) => sum + v*v, 0));
-    return dot / (magA * magB);
-  };
+  // Calcular similaridade de cosseno
+  const similarities = memories.map(m => {
+    const dot = m.embedding.reduce((sum, val, i) => sum + val * queryEmbedding[i], 0);
+    const magA = Math.sqrt(m.embedding.reduce((sum, val) => sum + val * val, 0));
+    const magB = Math.sqrt(queryEmbedding.reduce((sum, val) => sum + val * val, 0));
+    const cosine = dot / (magA * magB || 1);
+    return { memory: m, score: cosine };
+  });
 
-  const scored = allMemories.map(m => ({ memory: m, score: similarity(queryEmbedding, m.embedding) || 0 }));
-  scored.sort((a, b) => b.score - a.score);
-
-  return scored.slice(0, topK).map(s => s.memory);
+  similarities.sort((a, b) => b.score - a.score);
+  return similarities.slice(0, topK).map(s => s.memory);
 }
 
 module.exports = { saveMemory, getRelevantMemory };
+
