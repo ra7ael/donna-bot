@@ -65,8 +65,8 @@ const from = entry.from.replace(/\D/g, ""); // remove tudo que não for número
 
 const authorizedUsers = [
   process.env.MY_NUMBER.replace(/\D/g, ""), // normaliza seu número
-  "5541996820681", // contato 1
-  "5541998682114"  // contato 2
+  "554196820681", // contato 1
+  "554198682114"  // contato 2
 ];
 
 if (!authorizedUsers.includes(from)) {
