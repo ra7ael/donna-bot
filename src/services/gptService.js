@@ -1,17 +1,20 @@
+// services/gptService.js
 const axios = require('axios');
 require('dotenv').config();
 
 const Conversation = require('../models/Conversation'); // modelo de histórico
+
 async function getGPTResponse(userMessage, imageUrl = null, userId) {
   try {
     // Buscar histórico do usuário
     const history = await Conversation.find({ from: userId }).sort({ createdAt: 1 });
 
+    // Montar mensagens para enviar ao GPT
     const messages = [
       {
         role: "system",
         content: `
-Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
+Você é Donna, assistente executiva perspicaz, elegante e humanizada.
 Seu papel:
 - Ajudar em administração, legislação, RH e negócios.
 - Ser poliglota: responda no idioma da mensagem do usuário.
@@ -22,7 +25,7 @@ Seu papel:
       },
     ];
 
-    // Adicionar histórico no chat
+    // Adicionar histórico de mensagens
     history.forEach(h => {
       messages.push({
         role: h.role === 'assistant' ? 'assistant' : 'user',
@@ -30,7 +33,7 @@ Seu papel:
       });
     });
 
-    // Adicionar a nova mensagem
+    // Adicionar a nova mensagem do usuário
     if (imageUrl) {
       messages.push({
         role: "user",
@@ -43,10 +46,11 @@ Seu papel:
       messages.push({ role: "user", content: userMessage });
     }
 
+    // Chamada para o OpenAI usando o fine-tuned model
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o-mini",
+        model: process.env.FINE_TUNED_MODEL_ID, // <- aqui usamos o fine-tuned
         messages,
         max_tokens: 500,
         temperature: 0.8
@@ -60,6 +64,7 @@ Seu papel:
     );
 
     return response.data.choices[0].message.content.trim();
+
   } catch (error) {
     console.error("❌ Erro no GPT:", error.response?.data || error.message);
     return "Desculpe, tive um problema para responder agora.";
@@ -67,5 +72,6 @@ Seu papel:
 }
 
 module.exports = { getGPTResponse };
+
 
 
