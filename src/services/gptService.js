@@ -71,7 +71,5 @@ Seu papel:
   }
 }
 
-module.exports = { getGPTResponse }; };
-
-
-
+// ✅ Correto agora, sem chaves extras
+module.exports = { getGPTResponse };
