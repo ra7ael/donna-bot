@@ -21,8 +21,8 @@ const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ===== Lista de usuários autorizados =====
 const authorizedUsers = [
   process.env.MY_NUMBER.replace('+', ''), // seu número sem "+"
-  "5541996820681",                         // contato 1
-  "5541998682114"                          // contato 2
+  "554196820681",                         // contato 1
+  "554195194485"                          // contato 2
 ];
 
 // ===== GET webhook (verificação) =====
