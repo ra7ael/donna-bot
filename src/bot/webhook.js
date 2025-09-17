@@ -4,6 +4,7 @@ const axios = require('axios');
 const fs = require('fs');
 const FormData = require('form-data');
 const cron = require('node-cron');
+const { DateTime } = require('luxon');
 
 const router = express.Router();
 
@@ -104,17 +105,12 @@ router.post('/', async (req, res) => {
 
     // ===== Salvar mensagem do usuário no histórico =====
     await Conversation.create({ from, role: 'user', content: userMessage });
+    await saveMemory(from, 'user', userMessage); // salvar na memória semântica
 
-    // ===== Salvar na memória semântica =====
-    await saveMemory(from, 'user', userMessage);
-
-    // ===== Hora e data =====
-const { DateTime } = require('luxon');
-
-  const now = DateTime.now().setZone('America/Sao_Paulo');
-  const currentTime = now.toFormat('HH:mm:ss'); // ex: "20:24:15"
-  const currentDate = now.toFormat('dd/MM/yyyy'); // ex: "17/09/2025"
-
+    // ===== Hora e data corretas =====
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    const currentTime = now.toFormat('HH:mm');       // ex: 20:24
+    const currentDate = now.toFormat('dd/MM/yyyy');  // ex: 17/09/2025
 
     let responseText = "";
 
@@ -135,21 +131,24 @@ const { DateTime } = require('luxon');
     } else {
       // ===== Recuperar histórico de curto prazo =====
       const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`).join("\n");
+      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`).join("\n");
 
       // ===== Recuperar histórico de longo prazo (memória semântica) =====
       const relevantMemories = await getRelevantMemory(from, userMessage, 5);
-      const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : 'Donna'}: ${m.content}`).join("\n");
+      const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`).join("\n");
 
       // ===== Gerar resposta da Donna =====
       responseText = await getGPTResponse(`
-Você é Donna , assistente executiva perspicaz, elegante e humanizada.
-Hora e data atuais: ${currentTime} do dia ${currentDate}.
+Você é Donna, assistente executiva perspicaz, elegante e humanizada.
+Hora e data atuais (não altere, use exatamente como está abaixo):
+Hora: ${currentTime}
+Data: ${currentDate}
 Seu papel:
 - Ajudar em administração, legislação, RH e negócios.
 - Ser poliglota: responda no idioma da mensagem do usuário.
-- Dar dicas estratégicas e conselhos, ser minha terapeuta quando necessario.
+- Dar dicas estratégicas e conselhos, ser terapeuta quando necessário.
 - Ajudar com lembretes e compromissos.
+- Evitar chamar o usuário de "Rafa" sempre e não iniciar mensagens com "Donna:".
 Histórico de conversa recente:
 ${conversationContext}
 
@@ -160,10 +159,8 @@ Mensagem do usuário: "${userMessage}"
       `, imageUrl);
     }
 
-    // ===== Salvar resposta da Donna no histórico =====
+    // ===== Salvar resposta da Donna no histórico e memória =====
     await Conversation.create({ from, role: 'assistant', content: responseText });
-
-    // ===== Salvar a resposta da Donna na memória semântica =====
     await saveMemory(from, 'assistant', responseText);
 
     // ===== Salvar no MongoDB e enviar WhatsApp =====
@@ -190,5 +187,6 @@ cron.schedule('* * * * *', async () => {
 });
 
 module.exports = router;
+
 
 
