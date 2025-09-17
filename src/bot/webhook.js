@@ -66,8 +66,8 @@ const from = entry.from;
 // Lista de usuários autorizados (adicione os números completos com DDI)
 const authorizedUsers = [
   process.env.MY_NUMBER,       // seu número
-  "554196820681",            // contato 1
-  "554198682114"             // contato 2
+  "5541996820681",            // contato 1
+  "5541998682114"             // contato 2
 ];
 
 if (!authorizedUsers.includes(from)) return res.sendStatus(200);
