@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -19,11 +18,11 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Lista de usuários autorizados (adicione os números completos com DDI)
+// ===== Lista de usuários autorizados =====
 const authorizedUsers = [
-  process.env.MY_NUMBER,       // seu número
-  "+5541996820681",            // contato 1
-  "+5541998682114"             // contato 2
+  process.env.MY_NUMBER.replace('+', ''), // seu número sem "+"
+  "5541996820681",                         // contato 1
+  "5541998682114"                          // contato 2
 ];
 
 // ===== GET webhook (verificação) =====
@@ -69,20 +68,20 @@ router.post('/', async (req, res) => {
     if (!entry) return res.sendStatus(200);
 
     const from = entry.from;
-    console.log("📌 Mensagem recebida de:", from);
+    console.log("Número recebido do WhatsApp:", from);
 
+    // ===== Verificar se usuário é autorizado =====
     if (!authorizedUsers.includes(from)) {
-      console.log("🚫 Usuário não autorizado:", from);
+      console.log("❌ Usuário não autorizado:", from);
       return res.sendStatus(200);
     }
 
     let userMessage = entry.text?.body || "";
-    console.log("📩 Texto recebido:", userMessage);
+    console.log("📩 Mensagem recebida:", userMessage);
 
     // ===== Processar áudio =====
     if (entry.type === 'audio') {
       try {
-        console.log("🎙️ Áudio detectado");
         const mediaId = entry.audio.id;
         const mediaUrlRes = await axios.get(
           `https://graph.facebook.com/v21.0/${mediaId}`,
@@ -104,9 +103,8 @@ router.post('/', async (req, res) => {
         console.log("🎙️ Transcrição de áudio:", userMessage);
         fs.unlinkSync('/tmp/audio.ogg');
       } catch (err) {
-        console.error("❌ Erro ao processar áudio:", err.response?.data || err.message);
-        await sendWhatsApp(from, "❌ Não consegui processar seu áudio. Tente enviar como texto.");
-        return res.sendStatus(200);
+        console.error("❌ Erro no processamento de áudio:", err.response?.data || err.message);
+        userMessage = "❌ Não consegui processar seu áudio.";
       }
     }
 
@@ -114,7 +112,6 @@ router.post('/', async (req, res) => {
     let imageUrl = null;
     if (entry.type === 'image') {
       try {
-        console.log("📷 Imagem detectada");
         const mediaId = entry.image.id;
         const mediaUrlRes = await axios.get(
           `https://graph.facebook.com/v21.0/${mediaId}`,
@@ -123,17 +120,16 @@ router.post('/', async (req, res) => {
         imageUrl = mediaUrlRes.data.url;
         userMessage = "📷 Imagem recebida. Analisando...";
       } catch (err) {
-        console.error("❌ Erro ao processar imagem:", err.response?.data || err.message);
-        await sendWhatsApp(from, "❌ Não consegui processar sua imagem.");
-        return res.sendStatus(200);
+        console.error("❌ Erro no processamento de imagem:", err.response?.data || err.message);
+        userMessage = "❌ Não consegui processar sua imagem.";
       }
     }
 
-    // ===== Salvar histórico e memória =====
+    // ===== Salvar mensagem no histórico =====
     await Conversation.create({ from, role: 'user', content: userMessage });
     await saveMemory(from, 'user', userMessage);
 
-    // ===== Hora e data corretas =====
+    // ===== Hora e data =====
     const now = DateTime.now().setZone('America/Sao_Paulo');
     const currentTime = now.toFormat('HH:mm:ss');
     const currentDate = now.toFormat('dd/MM/yyyy');
@@ -155,53 +151,49 @@ router.post('/', async (req, res) => {
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
     } else {
-      // ===== Histórico curto e memória longa =====
+      // ===== Histórico de curto prazo =====
       const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`).join("\n");
+      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : ''}${h.content}`).join("\n");
 
+      // ===== Histórico de memória semântica =====
       const relevantMemories = await getRelevantMemory(from, userMessage, 5);
-      const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`).join("\n");
+      const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : ''}${m.content}`).join("\n");
 
-      // ===== Gerar resposta GPT =====
-      try {
-        responseText = await getGPTResponse(`
-Você é uma assistente perspicaz, elegante e humanizada.
+      // ===== Resposta GPT =====
+      responseText = await getGPTResponse(`
+Você é Donna, assistente perspicaz e elegante.
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
 Seu papel:
-- Ajudar em administração, legislação, RH e negócios.
-- Ser poliglota.
-- Dar dicas estratégicas e conselhos.
+- Ajudar em administração, RH e negócios.
+- Dar dicas estratégicas.
 - Ajudar com lembretes e compromissos.
-Histórico de conversa recente:
+Histórico recente:
 ${conversationContext}
 
 Histórico de memória relevante:
 ${memoryContext}
 
 Mensagem do usuário: "${userMessage}"
-        `, imageUrl);
-      } catch (err) {
-        console.error("❌ Erro ao chamar GPT:", err.response?.data || err.message);
-        await sendWhatsApp(from, "❌ Ocorreu um problema ao gerar a resposta. Tente novamente.");
-        return res.sendStatus(200);
-      }
+      `, imageUrl);
     }
 
-    // ===== Salvar resposta =====
+    // ===== Salvar resposta no histórico e memória =====
     await Conversation.create({ from, role: 'assistant', content: responseText });
     await saveMemory(from, 'assistant', responseText);
-    await Message.create({ from, body: userMessage, response: responseText });
 
+    // ===== Salvar no MongoDB e enviar WhatsApp =====
+    await Message.create({ from, body: userMessage, response: responseText });
     await sendWhatsApp(from, responseText);
+
     res.sendStatus(200);
 
   } catch (error) {
-    console.error("❌ Erro geral no webhook:", error.response?.data || error.message);
+    console.error("❌ Erro no webhook:", error.response?.data || error.message);
     res.sendStatus(500);
   }
 });
 
-// ===== Cron job para enviar lembretes =====
+// ===== Cron job para lembretes =====
 cron.schedule('* * * * *', async () => {
   const now = new Date();
   const reminders = await Reminder.find({ date: { $lte: now } });
