@@ -61,8 +61,16 @@ router.post('/', async (req, res) => {
     const entry = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!entry) return res.sendStatus(200);
 
-    const from = entry.from;
-    if (from !== MY_NUMBER) return res.sendStatus(200);
+const from = entry.from;
+
+// Lista de usuários autorizados (adicione os números completos com DDI)
+const authorizedUsers = [
+  process.env.MY_NUMBER,       // seu número
+  "554196820681",            // contato 1
+  "554198682114"             // contato 2
+];
+
+if (!authorizedUsers.includes(from)) return res.sendStatus(200);
 
     let userMessage = entry.text?.body || "";
     console.log("📩 Mensagem recebida:", userMessage);
