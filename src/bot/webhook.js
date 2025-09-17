@@ -1,4 +1,3 @@
-// src/bot/webhook.js
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -11,7 +10,9 @@ const router = express.Router();
 const { getGPTResponse } = require('../services/gptService');
 const Message = require('../models/Message');
 const Reminder = require('../models/Reminder');
-const Conversation = require('../models/Conversation');
+
+// >>> NOVO: memória
+const { saveMemory, getMemory } = require('../utils/memory');
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
@@ -102,8 +103,8 @@ router.post('/', async (req, res) => {
       userMessage = "📷 Imagem recebida. Analisando...";
     }
 
-    // ===== Salvar mensagem do usuário no histórico =====
-    await Conversation.create({ from, role: 'user', content: userMessage });
+    // ===== Salvar mensagem do usuário =====
+    await saveMemory(from, 'user', userMessage);
 
     // ===== Hora e data =====
     const now = new Date();
@@ -127,9 +128,11 @@ router.post('/', async (req, res) => {
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
     } else {
-      // ===== Recuperar histórico para contexto =====
-      const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`).join("\n");
+      // ===== Recuperar últimas mensagens =====
+      const history = await getMemory(from, 10); // últimas 10
+      const conversationContext = history
+        .map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`)
+        .join("\n");
 
       responseText = await getGPTResponse(`
 Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
@@ -145,10 +148,10 @@ Mensagem do usuário: "${userMessage}"
       `, imageUrl);
     }
 
-    // ===== Salvar resposta da Donna no histórico =====
-    await Conversation.create({ from, role: 'assistant', content: responseText });
+    // ===== Salvar resposta no histórico =====
+    await saveMemory(from, 'assistant', responseText);
 
-    // ===== Salvar no MongoDB e enviar WhatsApp =====
+    // ===== Salvar no MongoDB (Message) e enviar WhatsApp =====
     await Message.create({ from, body: userMessage, response: responseText });
     await sendWhatsApp(from, responseText);
 
