@@ -10,9 +10,8 @@ const router = express.Router();
 const { getGPTResponse } = require('../services/gptService');
 const Message = require('../models/Message');
 const Reminder = require('../models/Reminder');
-
-// >>> NOVO: memória
-const { saveMemory, getMemory } = require('../utils/memory');
+const Conversation = require('../models/Conversation');
+const { saveMemory, getRelevantMemory } = require('../utils/memory');
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
@@ -103,7 +102,10 @@ router.post('/', async (req, res) => {
       userMessage = "📷 Imagem recebida. Analisando...";
     }
 
-    // ===== Salvar mensagem do usuário =====
+    // ===== Salvar mensagem do usuário no histórico =====
+    await Conversation.create({ from, role: 'user', content: userMessage });
+
+    // ===== Salvar na memória semântica =====
     await saveMemory(from, 'user', userMessage);
 
     // ===== Hora e data =====
@@ -128,30 +130,40 @@ router.post('/', async (req, res) => {
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
     } else {
-      // ===== Recuperar últimas mensagens =====
-      const history = await getMemory(from, 10); // últimas 10
-      const conversationContext = history
-        .map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`)
-        .join("\n");
+      // ===== Recuperar histórico de curto prazo =====
+      const history = await Conversation.find({ from }).sort({ createdAt: 1 });
+      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Donna'}: ${h.content}`).join("\n");
 
+      // ===== Recuperar histórico de longo prazo (memória semântica) =====
+      const relevantMemories = await getRelevantMemory(from, userMessage, 5);
+      const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : 'Donna'}: ${m.content}`).join("\n");
+
+      // ===== Gerar resposta da Donna =====
       responseText = await getGPTResponse(`
-Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
+Você é Donna , assistente executiva perspicaz, elegante e humanizada.
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
 Seu papel:
 - Ajudar em administração, legislação, RH e negócios.
 - Ser poliglota: responda no idioma da mensagem do usuário.
-- Dar dicas estratégicas e conselhos.
+- Dar dicas estratégicas e conselhos, ser minha terapeuta quando necessario.
 - Ajudar com lembretes e compromissos.
-Histórico de conversa:
+Histórico de conversa recente:
 ${conversationContext}
+
+Histórico de memória relevante:
+${memoryContext}
+
 Mensagem do usuário: "${userMessage}"
       `, imageUrl);
     }
 
-    // ===== Salvar resposta no histórico =====
+    // ===== Salvar resposta da Donna no histórico =====
+    await Conversation.create({ from, role: 'assistant', content: responseText });
+
+    // ===== Salvar a resposta da Donna na memória semântica =====
     await saveMemory(from, 'assistant', responseText);
 
-    // ===== Salvar no MongoDB (Message) e enviar WhatsApp =====
+    // ===== Salvar no MongoDB e enviar WhatsApp =====
     await Message.create({ from, body: userMessage, response: responseText });
     await sendWhatsApp(from, responseText);
 
@@ -175,4 +187,5 @@ cron.schedule('* * * * *', async () => {
 });
 
 module.exports = router;
+
 
