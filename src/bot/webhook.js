@@ -22,7 +22,7 @@ const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const authorizedUsers = [
   process.env.MY_NUMBER.replace('+', ''), // seu número sem "+"
   "554196820681",                         // contato 1
-  "554195194485"                          // contato 2
+                        // contato 2
 ];
 
 // ===== GET webhook (verificação) =====
