@@ -1,4 +1,5 @@
 require('dotenv').config();
+console.log("Número autorizado do MY_NUMBER:", process.env.MY_NUMBER.replace('+',''));
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -21,7 +22,7 @@ const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ===== Lista de usuários autorizados =====
 const authorizedUsers = [
   process.env.MY_NUMBER.replace('+', ''), // seu número sem "+"
-  "554195194485",                         // contato 1
+  "",""                         // contato 1
                         // contato 2
 ];
 
