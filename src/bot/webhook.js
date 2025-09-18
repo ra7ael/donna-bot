@@ -1,5 +1,6 @@
 require('dotenv').config();
 console.log("Número autorizado do MY_NUMBER:", process.env.MY_NUMBER.replace('+',''));
+
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -22,7 +23,7 @@ const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ===== Lista de usuários autorizados =====
 const authorizedUsers = [
   process.env.MY_NUMBER.replace('+', ''), // seu número sem "+"
-  "554195194485"                         // contato 1
+  "554195194485" // contato autorizado
 ];
 
 // ===== GET webhook (verificação) =====
@@ -152,23 +153,17 @@ router.post('/', async (req, res) => {
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
     } else {
-      // ===== Histórico de curto prazo =====
+      // ===== Histórico de curto prazo e memória =====
       const history = await Conversation.find({ from }).sort({ createdAt: 1 });
       const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : ''}${h.content}`).join("\n");
 
-      // ===== Histórico de memória semântica =====
       const relevantMemories = await getRelevantMemory(from, userMessage, 5);
       const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : ''}${m.content}`).join("\n");
 
-    // ===== Resposta GPT =====
-responseText = await getGPTResponse(
-  `
-Você é Donna, assistente perspicaz e elegante.
+      // ===== Resposta GPT =====
+      responseText = await getGPTResponse(
+        `
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
-Seu papel:
-- Ajudar em administração, RH e negócios.
-- Dar dicas estratégicas.
-- Ajudar com lembretes e compromissos.
 Histórico recente:
 ${conversationContext}
 
@@ -176,11 +171,11 @@ Histórico de memória relevante:
 ${memoryContext}
 
 Mensagem do usuário: "${userMessage}"
-  `,
-  imageUrl,
-  from // <-- adiciona o userId aqui
-);
-
+        `,
+        imageUrl,
+        from
+      );
+    }
 
     // ===== Salvar resposta no histórico e memória =====
     await Conversation.create({ from, role: 'assistant', content: responseText });
