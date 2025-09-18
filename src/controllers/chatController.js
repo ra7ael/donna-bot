@@ -1,47 +1,104 @@
-import { OpenAI } from "openai";
-import { buscarMemoria, salvarMemoria } from "../utils/memoryManager.js";
+import { getGPTResponse } from "../services/gptService.js";
+import { salvarMemoria, buscarMemoria } from "../utils/memoryManager.js";
+import Conversation from "../models/Conversation.js";
+import axios from "axios";
+import fs from "fs";
+import FormData from "form-data";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lista de números autorizados
+const authorizedNumbers = ["554195194485"];
 
 export async function chat(req, res) {
   try {
-    const { userId, mensagem } = req.body;
+    const { userId, mensagem, phoneNumber, audioId, imageId, whatsappToken, phoneId } = req.body;
 
-    // 1. Buscar memória existente do usuário
+    // Verifica se o usuário é autorizado
+    if (phoneNumber && !authorizedNumbers.includes(phoneNumber)) {
+      console.log(`❌ Usuário não autorizado: ${phoneNumber}`);
+      return res.status(403).json({ erro: "Usuário não autorizado" });
+    }
+
+    let userMessage = mensagem || "";
+
+    // ===== Processar áudio =====
+    if (audioId) {
+      try {
+        const mediaUrlRes = await axios.get(
+          `https://graph.facebook.com/v21.0/${audioId}`,
+          { headers: { Authorization: `Bearer ${whatsappToken}` } }
+        );
+        const mediaUrl = mediaUrlRes.data.url;
+        const audioRes = await axios.get(mediaUrl, { responseType: "arraybuffer", headers: { Authorization: `Bearer ${whatsappToken}` } });
+        fs.writeFileSync("/tmp/audio.ogg", audioRes.data);
+
+        const form = new FormData();
+        form.append("file", fs.createReadStream("/tmp/audio.ogg"));
+        form.append("model", "whisper-1");
+
+        const whisperRes = await axios.post("https://api.openai.com/v1/audio/transcriptions", form, {
+          headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
+        });
+
+        userMessage = whisperRes.data.text;
+        console.log("🎙️ Transcrição de áudio:", userMessage);
+      } catch (err) {
+        console.error("❌ Erro no processamento de áudio:", err.response?.data || err.message);
+        userMessage = "❌ Não consegui processar seu áudio. Por favor, envie em outro formato ou como mensagem de texto.";
+      } finally {
+        try { fs.unlinkSync("/tmp/audio.ogg"); } catch (e) {}
+      }
+    }
+
+    // ===== Processar imagem =====
+    let imageUrl = null;
+    if (imageId) {
+      try {
+        const mediaUrlRes = await axios.get(
+          `https://graph.facebook.com/v21.0/${imageId}`,
+          { headers: { Authorization: `Bearer ${whatsappToken}` } }
+        );
+        imageUrl = mediaUrlRes.data.url;
+        userMessage = "📷 Imagem recebida. Analisando...";
+      } catch (err) {
+        console.error("❌ Erro no processamento de imagem:", err.response?.data || err.message);
+        userMessage = "❌ Não consegui processar sua imagem.";
+      }
+    }
+
+    // ===== Salvar mensagem no histórico =====
+    await Conversation.create({ from: userId, role: "user", content: userMessage });
+    await salvarMemoria(userId, { ultimaMensagem: userMessage });
+
+    // ===== Buscar histórico e memória =====
+    const history = await Conversation.find({ from: userId }).sort({ createdAt: 1 });
+    const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : ''}${h.content}`).join("\n");
     const memoria = await buscarMemoria(userId);
+    const memoryContext = memoria ? JSON.stringify(memoria.memoria || {}) : "";
 
-    // 2. Montar contexto para o modelo
-    const contexto = memoria
-      ? `Informações conhecidas sobre ${memoria.memoria.nome || "o usuário"}: 
-${JSON.stringify(memoria.memoria, null, 2)}`
-      : "Sem informações anteriores sobre o usuário.";
+    // ===== Resposta GPT =====
+    const responseText = await getGPTResponse(
+      `
+Mensagem do usuário: "${userMessage}"
 
-    // 3. Criar prompt
-    const prompt = `
-Você é um assistente pessoal.
-Aqui está a memória do usuário:
-${contexto}
+Histórico recente:
+${conversationContext}
 
-Mensagem do usuário: "${mensagem}"
-Responda de forma útil e coerente.
-    `;
+Histórico de memória relevante:
+${memoryContext}
+      `,
+      imageUrl,
+      userId,
+      phoneNumber
+    );
 
-    // 4. Chamar API OpenAI
-    const resposta = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: prompt }],
-    });
+    // ===== Salvar resposta no histórico e memória =====
+    await Conversation.create({ from: userId, role: "assistant", content: responseText });
+    await salvarMemoria(userId, { ultimaResposta: responseText });
 
-    const respostaBot = resposta.choices[0].message.content;
+    return res.json({ resposta: responseText });
 
-    // 5. Atualizar memória com algo novo (exemplo simples: salvar última mensagem)
-    await salvarMemoria(userId, { ultimaMensagem: mensagem });
-
-    return res.json({ resposta: respostaBot });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Erro no chatController:", error);
     return res.status(500).json({ erro: "Erro no chat" });
   }
 }
