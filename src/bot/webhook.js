@@ -22,8 +22,7 @@ const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ===== Lista de usuários autorizados =====
 const authorizedUsers = [
   process.env.MY_NUMBER.replace('+', ''), // seu número sem "+"
-  "",""                         // contato 1
-                        // contato 2
+  "554195194485"                         // contato 1
 ];
 
 // ===== GET webhook (verificação) =====
@@ -102,10 +101,11 @@ router.post('/', async (req, res) => {
 
         userMessage = whisperRes.data.text;
         console.log("🎙️ Transcrição de áudio:", userMessage);
-        fs.unlinkSync('/tmp/audio.ogg');
       } catch (err) {
         console.error("❌ Erro no processamento de áudio:", err.response?.data || err.message);
-        userMessage = "❌ Não consegui processar seu áudio.";
+        userMessage = "❌ Não consegui processar seu áudio. Por favor, envie em outro formato ou como mensagem de texto.";
+      } finally {
+        try { fs.unlinkSync('/tmp/audio.ogg'); } catch(e) {}
       }
     }
 
@@ -206,3 +206,4 @@ cron.schedule('* * * * *', async () => {
 });
 
 module.exports = router;
+
