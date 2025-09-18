@@ -160,8 +160,9 @@ router.post('/', async (req, res) => {
       const relevantMemories = await getRelevantMemory(from, userMessage, 5);
       const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : ''}${m.content}`).join("\n");
 
-      // ===== Resposta GPT =====
-      responseText = await getGPTResponse(`
+    // ===== Resposta GPT =====
+responseText = await getGPTResponse(
+  `
 Você é Donna, assistente perspicaz e elegante.
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
 Seu papel:
@@ -175,8 +176,11 @@ Histórico de memória relevante:
 ${memoryContext}
 
 Mensagem do usuário: "${userMessage}"
-      `, imageUrl);
-    }
+  `,
+  imageUrl,
+  from // <-- adiciona o userId aqui
+);
+
 
     // ===== Salvar resposta no histórico e memória =====
     await Conversation.create({ from, role: 'assistant', content: responseText });
