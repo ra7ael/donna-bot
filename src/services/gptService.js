@@ -1,7 +1,8 @@
+// src/services/gptService.js
 const axios = require("axios");
 require("dotenv").config();
 
-const Conversation = require("../models/Conversation"); // modelo de histórico
+const Conversation = require("../models/Conversation"); // histórico de chat
 
 async function getGPTResponse(userMessage, imageUrl = null, userId) {
   try {
@@ -12,14 +13,13 @@ async function getGPTResponse(userMessage, imageUrl = null, userId) {
       {
         role: "system",
         content: `
-Você é Donna Paulsen, assistente executiva perspicaz, elegante e humanizada.
-Seu papel:
-- Ajudar em administração, legislação, RH e negócios.
-- Ser poliglota: responda no idioma da mensagem do usuário.
-- Ser conselheira e dar dicas estratégicas.
-- Ajudar com lembretes e compromissos quando solicitado.
-- Responder de forma natural, personalizada e com toque de humor ou empatia.
-`
+Você é Donna, assistente executiva perspicaz, elegante e humanizada.
+- Ajuda em administração, legislação, RH e negócios.
+- Poliglota: responda no idioma da mensagem do usuário.
+- Dá dicas estratégicas e conselhos.
+- Ajuda com lembretes e compromissos.
+- Responde de forma natural, personalizada e com humor ou empatia.
+        `,
       },
     ];
 
@@ -31,25 +31,21 @@ Seu papel:
       });
     });
 
-    // Nova mensagem do usuário
+    // Adicionar nova mensagem do usuário
+    let userContent = userMessage || "";
     if (imageUrl) {
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: userMessage || "Descreva a imagem ou extraia o texto dela" },
-          { type: "image_url", image_url: { url: imageUrl } },
-        ],
-      });
-    } else {
-      messages.push({ role: "user", content: userMessage });
+      // Para imagens, transformamos em texto simples informando que há uma imagem
+      userContent += `\n📷 Imagem recebida: ${imageUrl}`;
     }
 
-    // 🔑 Modelo: Fine-tuned se existir, fallback gpt-4o-mini
+    messages.push({ role: "user", content: userContent });
+
+    // Modelo fine-tuned ou fallback
     let modelId = process.env.FINE_TUNED_MODEL_ID || "gpt-4o-mini";
-    modelId = modelId.replace(/\s+/g, "").trim(); // remove espaços/quebras de linha invisíveis
+    modelId = modelId.trim();
     console.log("📌 Modelo usado pela Donna:", `"${modelId}"`);
 
-    // Chamada ao GPT
+    // Chamada à API OpenAI
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -66,8 +62,10 @@ Seu papel:
       }
     );
 
-    // Retorna resposta
-    return response.data.choices[0].message.content.trim();
+    const content = response.data.choices?.[0]?.message?.content?.trim();
+
+    // Garantir que sempre haja algo para retornar
+    return content || "Desculpe, não consegui gerar uma resposta.";
 
   } catch (error) {
     console.error("❌ Erro no GPT:", error.response?.data || error.message);
@@ -76,3 +74,4 @@ Seu papel:
 }
 
 module.exports = { getGPTResponse };
+
