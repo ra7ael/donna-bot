@@ -76,55 +76,70 @@ router.post('/', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    let userMessage = entry.text?.body || "";
+    let userMessage = "";
     let mediaUrl = null;
 
-    // ===== Processar áudio =====
-    if (entry.type === 'audio') {
-      try {
-        const mediaId = entry.audio.id;
-        const mediaUrlRes = await axios.get(
-          `https://graph.facebook.com/v21.0/${mediaId}`,
-          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-        );
-        mediaUrl = mediaUrlRes.data.url;
+    // ===== Processar mensagens =====
+    switch (entry.type) {
+      case 'text':
+        userMessage = entry.text?.body || "";
+        break;
 
-        const audioRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
-        fs.writeFileSync('/tmp/audio.ogg', audioRes.data);
+      case 'audio':
+        try {
+          const mediaId = entry.audio.id;
+          const mediaRes = await axios.get(
+            `https://graph.facebook.com/v21.0/${mediaId}`,
+            { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+          );
+          mediaUrl = mediaRes.data.url;
 
-        const form = new FormData();
-        form.append('file', fs.createReadStream('/tmp/audio.ogg'));
-        form.append('model', 'whisper-1');
+          const audioData = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+          fs.writeFileSync('/tmp/audio.ogg', audioData.data);
 
-        const whisperRes = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
-          headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
-        });
+          const form = new FormData();
+          form.append('file', fs.createReadStream('/tmp/audio.ogg'));
+          form.append('model', 'whisper-1');
 
-        userMessage = whisperRes.data.text;
-        console.log("🎙️ Transcrição de áudio:", userMessage);
+          const whisperRes = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+            headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
+          });
 
-      } catch (err) {
-        console.error("❌ Erro no processamento de áudio:", err.response?.data || err.message);
-        userMessage = "❌ Não consegui processar seu áudio. Por favor, envie em outro formato ou como mensagem de texto.";
-      } finally {
-        try { fs.unlinkSync('/tmp/audio.ogg'); } catch(e) {}
-      }
+          userMessage = whisperRes.data.text || "";
+          console.log("🎙️ Transcrição de áudio:", userMessage);
+        } catch (err) {
+          console.error("❌ Erro no processamento de áudio:", err.response?.data || err.message);
+          userMessage = "❌ Não consegui processar seu áudio. Envie em outro formato ou como mensagem de texto.";
+        } finally {
+          try { fs.unlinkSync('/tmp/audio.ogg'); } catch(e) {}
+        }
+        break;
+
+      case 'image':
+        try {
+          const mediaId = entry.image.id;
+          const mediaRes = await axios.get(
+            `https://graph.facebook.com/v21.0/${mediaId}`,
+            { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+          );
+          mediaUrl = mediaRes.data.url;
+          userMessage = "📷 Imagem recebida. Analisando...";
+        } catch (err) {
+          console.error("❌ Erro no processamento de imagem:", err.response?.data || err.message);
+          userMessage = "❌ Não consegui processar sua imagem.";
+        }
+        break;
+
+      default:
+        console.log(`Mensagem ignorada (tipo: ${entry.type})`);
+        await sendWhatsApp(from, "❌ Tipo de mensagem não suportado. Envie texto ou áudio.");
+        return res.sendStatus(200);
     }
 
-    // ===== Processar imagem =====
-    if (entry.type === 'image') {
-      try {
-        const mediaId = entry.image.id;
-        const mediaUrlRes = await axios.get(
-          `https://graph.facebook.com/v21.0/${mediaId}`,
-          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-        );
-        mediaUrl = mediaUrlRes.data.url;
-        userMessage = "📷 Imagem recebida. Analisando...";
-      } catch (err) {
-        console.error("❌ Erro no processamento de imagem:", err.response?.data || err.message);
-        userMessage = "❌ Não consegui processar sua imagem.";
-      }
+    // ===== Validar userMessage =====
+    if (!userMessage || userMessage.trim() === "") {
+      console.log("Mensagem sem conteúdo válido, ignorando.");
+      return res.sendStatus(200);
     }
 
     // ===== Salvar mensagem no histórico =====
@@ -155,10 +170,16 @@ router.post('/', async (req, res) => {
     } else {
       // ===== Histórico de curto prazo e memória =====
       const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-      const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : ''}${h.content}`).join("\n");
+      const conversationContext = history
+        .filter(h => h.content)
+        .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
+        .join("\n");
 
       const relevantMemories = await getRelevantMemory(from, userMessage, 5);
-      const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : ''}${m.content}`).join("\n");
+      const memoryContext = relevantMemories
+        .filter(m => m.content)
+        .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+        .join("\n");
 
       // ===== Resposta GPT =====
       responseText = await getGPTResponse(
@@ -174,16 +195,16 @@ Mensagem do usuário: "${userMessage}"
         `,
         mediaUrl,
         from,
-        from // telefone para validação
+        from
       );
     }
 
-    // ===== Salvar resposta no histórico e memória =====
+    // ===== Salvar resposta =====
     await Conversation.create({ from, role: 'assistant', content: responseText });
     await saveMemory(from, 'assistant', responseText);
-
-    // ===== Salvar no MongoDB e enviar WhatsApp =====
     await Message.create({ from, body: userMessage, response: responseText });
+
+    // ===== Enviar WhatsApp =====
     await sendWhatsApp(from, responseText);
 
     res.sendStatus(200);
