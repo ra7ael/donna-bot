@@ -1,4 +1,4 @@
-// server.js
+// src/server.js
 import express from 'express';
 import { MongoClient } from 'mongodb';
 import bodyParser from 'body-parser';
@@ -12,7 +12,7 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
@@ -33,7 +33,11 @@ async function askGPT(prompt, history = []) {
       'https://api.openai.com/v1/chat/completions',
       {
         model: 'gpt-5-mini',
-        messages: [...history, { role: 'user', content: prompt }]
+        messages: [
+          ...history,
+          { role: 'user', content: prompt }
+        ]
+        // temperatura removida, pois não é suportada neste modelo
       },
       {
         headers: {
@@ -75,9 +79,14 @@ async function sendMessage(to, message) {
 // Endpoint para receber mensagens do WhatsApp
 app.post('/webhook', async (req, res) => {
   try {
-    const messageObj = req.body.entry[0].changes[0].value.messages[0];
+    const changes = req.body.entry?.[0]?.changes?.[0]?.value;
+    const messages = changes?.messages;
+
+    if (!messages || messages.length === 0) return res.sendStatus(200);
+
+    const messageObj = messages[0];
     const from = messageObj.from;
-    const body = messageObj.text?.body;
+    const body = messageObj.text?.body || '';
 
     console.log('Número recebido do WhatsApp:', from);
     console.log('Mensagem recebida:', body);
@@ -96,7 +105,6 @@ app.post('/webhook', async (req, res) => {
     const prompt = `Você é a assistente Donna. Converse de forma amigável e interativa. Usuário disse: "${body}"`;
 
     let reply = await askGPT(prompt, chatHistory);
-
     if (!reply) reply = 'Hmm… estou pensando ainda… me dê só mais um segundo!';
 
     // Salvar histórico
@@ -113,7 +121,6 @@ app.post('/webhook', async (req, res) => {
   } catch (err) {
     console.error('Erro ao processar webhook:', err);
   }
-
   res.sendStatus(200);
 });
 
