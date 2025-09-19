@@ -12,7 +12,7 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
-const GPT_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
