@@ -2,6 +2,7 @@
   "name": "donna-bot",
   "version": "1.0.0",
   "description": "Assistente Donna para WhatsApp com integração Meta e OpenAI",
+  "type": "module",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
