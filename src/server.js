@@ -18,18 +18,23 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 // Lista de números autorizados (formato internacional)
 const allowedNumbers = [
-  '554195194485'// você
-  '554199833283'// contatos
+  '554195194485', // você
+  '554199833283'  // contatos
 ];
 
-// Conectar ao MongoDB
 let db;
-MongoClient.connect(MONGO_URI, { useUnifiedTopology: true })
-  .then(client => {
+
+// Conectar ao MongoDB com async/await
+async function connectDB() {
+  try {
+    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db();
     console.log('✅ Conectado ao MongoDB');
-  })
-  .catch(err => console.error('Erro MongoDB:', err));
+  } catch (err) {
+    console.error('❌ Erro ao conectar ao MongoDB:', err);
+  }
+}
+connectDB();
 
 // Função para chamar GPT
 async function askGPT(prompt, history = []) {
@@ -50,10 +55,10 @@ async function askGPT(prompt, history = []) {
         }
       }
     );
-    return response.data.choices[0].message.content;
+    return response.data.choices?.[0]?.message?.content || "Hmm… estou pensando ainda… me dê só mais um segundo!";
   } catch (err) {
-    console.error('Erro GPT:', err.response?.data || err);
-    return 'Hmm… estou pensando ainda… me dê só mais um segundo!';
+    console.error('❌ Erro GPT:', err.response?.data || err);
+    return "Hmm… estou pensando ainda… me dê só mais um segundo!";
   }
 }
 
@@ -62,44 +67,29 @@ async function sendMessage(to, message) {
   try {
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: to,
-        text: { body: message }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { messaging_product: "whatsapp", to, text: { body: message } },
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
     );
     console.log('📤 Mensagem enviada:', message);
   } catch (err) {
-    console.error('Erro ao enviar WhatsApp:', err.response?.data || err);
+    console.error('❌ Erro ao enviar WhatsApp:', err.response?.data || err);
   }
 }
 
 // Função para baixar mídia do WhatsApp
 async function downloadMedia(mediaId) {
   try {
-    const mediaUrlResp = await axios.get(
-      `https://graph.facebook.com/v17.0/${mediaId}`,
-      {
-        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
-      }
-    );
-
+    const mediaUrlResp = await axios.get(`https://graph.facebook.com/v17.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
+    });
     const mediaUrl = mediaUrlResp.data.url;
-
     const mediaResp = await axios.get(mediaUrl, {
       headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
       responseType: "arraybuffer"
     });
-
     return mediaResp.data;
   } catch (err) {
-    console.error("Erro ao baixar mídia:", err.response?.data || err);
+    console.error("❌ Erro ao baixar mídia:", err.response?.data || err);
     return null;
   }
 }
@@ -114,17 +104,12 @@ async function transcribeAudio(audioBuffer) {
     const response = await axios.post(
       "https://api.openai.com/v1/audio/transcriptions",
       formData,
-      {
-        headers: {
-          "Authorization": `Bearer ${GPT_API_KEY}`,
-          ...formData.getHeaders()
-        }
-      }
+      { headers: { "Authorization": `Bearer ${GPT_API_KEY}`, ...formData.getHeaders() } }
     );
 
-    return response.data.text;
+    return response.data.text || null;
   } catch (err) {
-    console.error("Erro Whisper:", err.response?.data || err);
+    console.error("❌ Erro Whisper:", err.response?.data || err);
     return null;
   }
 }
@@ -136,15 +121,12 @@ app.post('/webhook', async (req, res) => {
     const changes = entry?.changes?.[0];
     const messageObj = changes?.value?.messages?.[0];
 
-    if (!messageObj) {
-      return res.sendStatus(200); // nada para processar
-    }
+    if (!messageObj) return res.sendStatus(200);
 
     const from = messageObj.from;
 
-    // Ignora números não autorizados
     if (!allowedNumbers.includes(from)) {
-      console.log('Número não autorizado:', from);
+      console.log('❌ Número não autorizado:', from);
       return res.sendStatus(200);
     }
 
@@ -153,28 +135,19 @@ app.post('/webhook', async (req, res) => {
     if (messageObj.type === "text") {
       body = messageObj.text?.body;
     } else if (messageObj.type === "audio") {
-      console.log("🎤 Recebi um áudio, baixando...");
-
       const audioId = messageObj.audio?.id;
       const audioBuffer = await downloadMedia(audioId);
-
-      if (audioBuffer) {
-        body = await transcribeAudio(audioBuffer);
-        console.log("📝 Transcrição:", body);
-      }
+      if (audioBuffer) body = await transcribeAudio(audioBuffer);
     } else {
       console.log(`Mensagem ignorada (tipo: ${messageObj.type})`);
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio no momento 😉");
       return res.sendStatus(200);
     }
 
-    if (!body) {
-      console.log("Mensagem sem conteúdo válido, ignorando.");
-      return res.sendStatus(200);
-    }
+    if (!body) return res.sendStatus(200);
 
-    console.log('Número autorizado:', from);
-    console.log('Mensagem recebida:', body);
+    console.log('✅ Número autorizado:', from);
+    console.log('📨 Mensagem recebida:', body);
 
     // Histórico do usuário
     const history = await db.collection('historico')
@@ -183,23 +156,15 @@ app.post('/webhook', async (req, res) => {
       .limit(6)
       .toArray();
 
-    const chatHistory = history.map(h => ({
-      role: 'user',
-      content: h.mensagem
-    })).reverse();
+    const chatHistory = history.reverse().map(h => ({ role: 'user', content: h.mensagem }));
 
-    // Prompt estilo Donna
     const prompt = `
 Você é a Rafa, assistente pessoal.
 Características:
 - Confiante, elegante, sarcástica de forma inteligente, carismática.
 - Respostas curtas, diretas, impactantes.
 - Usa humor sutil quando apropriado.
-- Mantém um tom profissional e envolvente, como se sempre estivesse um passo à frente.
-- Não escreve parágrafos longos; frases curtas.
-Responda de forma confiante, elegante, direta e inteligente, com humor sutil quando apropriado.
-Ofereça apoio, ideias ou respostas afiadas, mas nunca exageradas.
-Seja amigável e carismática, mantendo a sensação de poder e confiança.
+- Mantém um tom profissional e envolvente.
 Usuário disse: "${body}"
 `;
 
@@ -213,15 +178,13 @@ Usuário disse: "${body}"
       timestamp: new Date()
     });
 
-    // Enviar resposta
     await sendMessage(from, reply);
 
   } catch (err) {
-    console.error('Erro ao processar webhook:', err);
+    console.error('❌ Erro ao processar webhook:', err);
   }
+
   res.sendStatus(200);
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
