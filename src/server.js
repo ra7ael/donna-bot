@@ -3,6 +3,7 @@ import { MongoClient } from 'mongodb';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import FormData from 'form-data';
 
 dotenv.config();
 
@@ -17,7 +18,8 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 // Lista de números autorizados (formato internacional)
 const allowedNumbers = [
-  '554195194485' // você
+  '554195194485'// você
+  '554199833283'// contatos
 ];
 
 // Conectar ao MongoDB
@@ -78,16 +80,96 @@ async function sendMessage(to, message) {
   }
 }
 
+// Função para baixar mídia do WhatsApp
+async function downloadMedia(mediaId) {
+  try {
+    const mediaUrlResp = await axios.get(
+      `https://graph.facebook.com/v17.0/${mediaId}`,
+      {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
+      }
+    );
+
+    const mediaUrl = mediaUrlResp.data.url;
+
+    const mediaResp = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      responseType: "arraybuffer"
+    });
+
+    return mediaResp.data;
+  } catch (err) {
+    console.error("Erro ao baixar mídia:", err.response?.data || err);
+    return null;
+  }
+}
+
+// Função para transcrever áudio com Whisper
+async function transcribeAudio(audioBuffer) {
+  try {
+    const formData = new FormData();
+    formData.append("file", audioBuffer, { filename: "audio.ogg" });
+    formData.append("model", "gpt-4o-transcribe");
+
+    const response = await axios.post(
+      "https://api.openai.com/v1/audio/transcriptions",
+      formData,
+      {
+        headers: {
+          "Authorization": `Bearer ${GPT_API_KEY}`,
+          ...formData.getHeaders()
+        }
+      }
+    );
+
+    return response.data.text;
+  } catch (err) {
+    console.error("Erro Whisper:", err.response?.data || err);
+    return null;
+  }
+}
+
 // Endpoint do webhook
 app.post('/webhook', async (req, res) => {
   try {
-    const messageObj = req.body.entry[0].changes[0].value.messages[0];
+    const entry = req.body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const messageObj = changes?.value?.messages?.[0];
+
+    if (!messageObj) {
+      return res.sendStatus(200); // nada para processar
+    }
+
     const from = messageObj.from;
-    const body = messageObj.text?.body;
 
     // Ignora números não autorizados
     if (!allowedNumbers.includes(from)) {
       console.log('Número não autorizado:', from);
+      return res.sendStatus(200);
+    }
+
+    let body;
+
+    if (messageObj.type === "text") {
+      body = messageObj.text?.body;
+    } else if (messageObj.type === "audio") {
+      console.log("🎤 Recebi um áudio, baixando...");
+
+      const audioId = messageObj.audio?.id;
+      const audioBuffer = await downloadMedia(audioId);
+
+      if (audioBuffer) {
+        body = await transcribeAudio(audioBuffer);
+        console.log("📝 Transcrição:", body);
+      }
+    } else {
+      console.log(`Mensagem ignorada (tipo: ${messageObj.type})`);
+      await sendMessage(from, "Só consigo responder mensagens de texto ou áudio no momento 😉");
+      return res.sendStatus(200);
+    }
+
+    if (!body) {
+      console.log("Mensagem sem conteúdo válido, ignorando.");
       return res.sendStatus(200);
     }
 
@@ -106,9 +188,9 @@ app.post('/webhook', async (req, res) => {
       content: h.mensagem
     })).reverse();
 
-    // Prompt inicial baseado em Harvey Specter / Donna Paulsen
+    // Prompt estilo Donna
     const prompt = `
-Você é a Donna, assistente de estilo Paulsen de Suits.
+Você é a Rafa, assistente pessoal.
 Características:
 - Confiante, elegante, sarcástica de forma inteligente, carismática.
 - Respostas curtas, diretas, impactantes.
