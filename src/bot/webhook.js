@@ -21,9 +21,7 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 // ===== Lista de usuários autorizados =====
-const authorizedUsers = [
-  process.env.MY_NUMBER.replace('+', ''), // seu número sem "+" // contato autorizado
-];
+const authorizedUsers = [process.env.MY_NUMBER.replace('+', '')];
 
 // ===== GET webhook (verificação) =====
 router.get('/', (req, res) => {
@@ -58,6 +56,37 @@ async function sendWhatsApp(to, text) {
   }
 }
 
+// ===== Função para processar áudio =====
+async function processAudio(mediaId) {
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const mediaUrlRes = await axios.get(
+        `https://graph.facebook.com/v21.0/${mediaId}`,
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
+      const mediaUrl = mediaUrlRes.data.url;
+      const audioRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+      fs.writeFileSync('/tmp/audio.ogg', audioRes.data);
+
+      const form = new FormData();
+      form.append('file', fs.createReadStream('/tmp/audio.ogg'));
+      form.append('model', 'whisper-1');
+
+      const whisperRes = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
+      });
+
+      fs.unlinkSync('/tmp/audio.ogg');
+      return whisperRes.data.text;
+
+    } catch (err) {
+      console.error(`❌ Erro no processamento de áudio (tentativa ${attempt}):`, err.response?.data || err.message);
+      if (attempt === maxRetries) return null;
+    }
+  }
+}
+
 // ===== POST webhook (receber mensagens) =====
 router.post('/', async (req, res) => {
   try {
@@ -70,7 +99,6 @@ router.post('/', async (req, res) => {
     const from = entry.from;
     console.log("Número recebido do WhatsApp:", from);
 
-    // ===== Verificar se usuário é autorizado =====
     if (!authorizedUsers.includes(from)) {
       console.log("❌ Usuário não autorizado:", from);
       return res.sendStatus(200);
@@ -81,31 +109,13 @@ router.post('/', async (req, res) => {
 
     // ===== Processar áudio =====
     if (entry.type === 'audio') {
-      try {
-        const mediaId = entry.audio.id;
-        const mediaUrlRes = await axios.get(
-          `https://graph.facebook.com/v21.0/${mediaId}`,
-          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-        );
-        const mediaUrl = mediaUrlRes.data.url;
-        const audioRes = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
-        fs.writeFileSync('/tmp/audio.ogg', audioRes.data);
-
-        const form = new FormData();
-        form.append('file', fs.createReadStream('/tmp/audio.ogg'));
-        form.append('model', 'whisper-1');
-
-        const whisperRes = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
-          headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
-        });
-
-        userMessage = whisperRes.data.text;
+      const transcription = await processAudio(entry.audio.id);
+      if (transcription) {
+        userMessage = transcription;
         console.log("🎙️ Transcrição de áudio:", userMessage);
-      } catch (err) {
-        console.error("❌ Erro no processamento de áudio:", err.response?.data || err.message);
-        userMessage = "❌ Não consegui processar seu áudio. Por favor, envie em outro formato ou como mensagem de texto.";
-      } finally {
-        try { fs.unlinkSync('/tmp/audio.ogg'); } catch(e) {}
+      } else {
+        userMessage = "❌ Não consegui processar seu áudio. Por favor, envie como mensagem de texto.";
+        console.log("⚠️ Falha na transcrição de áudio após múltiplas tentativas.");
       }
     }
 
@@ -114,10 +124,7 @@ router.post('/', async (req, res) => {
     if (entry.type === 'image') {
       try {
         const mediaId = entry.image.id;
-        const mediaUrlRes = await axios.get(
-          `https://graph.facebook.com/v21.0/${mediaId}`,
-          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-        );
+        const mediaUrlRes = await axios.get(`https://graph.facebook.com/v21.0/${mediaId}`, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
         imageUrl = mediaUrlRes.data.url;
         userMessage = "📷 Imagem recebida. Analisando...";
       } catch (err) {
@@ -126,11 +133,10 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // ===== Salvar mensagem no histórico =====
+    // ===== Salvar histórico =====
     await Conversation.create({ from, role: 'user', content: userMessage });
     await saveMemory(from, 'user', userMessage);
 
-    // ===== Hora e data =====
     const now = DateTime.now().setZone('America/Sao_Paulo');
     const currentTime = now.toFormat('HH:mm:ss');
     const currentDate = now.toFormat('dd/MM/yyyy');
@@ -152,16 +158,15 @@ router.post('/', async (req, res) => {
         responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
       }
     } else {
-      // ===== Histórico de curto prazo e memória =====
       const history = await Conversation.find({ from }).sort({ createdAt: 1 });
       const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : ''}${h.content}`).join("\n");
 
       const relevantMemories = await getRelevantMemory(from, userMessage, 5);
       const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : ''}${m.content}`).join("\n");
 
-      // ===== Resposta GPT =====
-      responseText = await getGPTResponse(
-        `
+      try {
+        responseText = await getGPTResponse(
+          `
 Hora e data atuais: ${currentTime} do dia ${currentDate}.
 Histórico recente:
 ${conversationContext}
@@ -170,17 +175,19 @@ Histórico de memória relevante:
 ${memoryContext}
 
 Mensagem do usuário: "${userMessage}"
-        `,
-        imageUrl,
-        from
-      );
+          `,
+          imageUrl,
+          from
+        );
+      } catch (err) {
+        console.error("❌ Erro no getGPTResponse:", err.message);
+        responseText = "Desculpe, tive um problema para responder agora.";
+      }
     }
 
-    // ===== Salvar resposta no histórico e memória =====
     await Conversation.create({ from, role: 'assistant', content: responseText });
     await saveMemory(from, 'assistant', responseText);
 
-    // ===== Salvar no MongoDB e enviar WhatsApp =====
     await Message.create({ from, body: userMessage, response: responseText });
     await sendWhatsApp(from, responseText);
 
@@ -204,4 +211,3 @@ cron.schedule('* * * * *', async () => {
 });
 
 module.exports = router;
-
