@@ -21,7 +21,7 @@ async function getGPTResponse(userMessage, imageUrl = null, userId, phoneNumber)
       {
         role: "system",
         content: `
-Você é Donna, assistente executiva perspicaz, elegante e humanizada.
+Você é Rafa, assistente executiva perspicaz, elegante e humanizada.
 - Ajuda em administração, legislação, RH e negócios.
 - Poliglota: responda no idioma da mensagem do usuário.
 - Dá dicas estratégicas e conselhos.
@@ -80,7 +80,7 @@ Você é Donna, assistente executiva perspicaz, elegante e humanizada.
         {
           model: fallbackModel,
           messages,
-          max_tokens: 500,
+          max_tokens: 100,
           temperature: 0.8,
         },
         {
