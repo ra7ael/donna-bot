@@ -1,22 +1,25 @@
 // server.js
-require('dotenv').config(); // carregar variáveis do .env
-const express = require('express');
-const { MongoClient } = require('mongodb');
-const bodyParser = require('body-parser');
-const axios = require('axios');
+import express from 'express';
+import { MongoClient } from 'mongodb';
+import bodyParser from 'body-parser';
+import axios from 'axios';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
-const GPT_API_KEY = process.env.GPT_API_KEY;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN; // token da Meta API
-const PHONE_ID = process.env.PHONE_ID; // id do número da Meta API
+const GPT_API_KEY = process.env.OPENAI_API_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+
+let db;
 
 // Conectar ao MongoDB
-let db;
-MongoClient.connect(MONGO_URI)
+MongoClient.connect(MONGO_URI, { useUnifiedTopology: true })
   .then(client => {
     db = client.db();
     console.log('✅ Conectado ao MongoDB');
@@ -30,8 +33,7 @@ async function askGPT(prompt, history = []) {
       'https://api.openai.com/v1/chat/completions',
       {
         model: 'gpt-5-mini',
-        messages: [...history, { role: 'user', content: prompt }],
-        temperature: 0.7
+        messages: [...history, { role: 'user', content: prompt }]
       },
       {
         headers: {
@@ -42,18 +44,18 @@ async function askGPT(prompt, history = []) {
     );
     return response.data.choices[0].message.content;
   } catch (err) {
-    console.error('Erro GPT:', err.response?.data || err.message);
+    console.error('Erro GPT:', err.response?.data || err);
     return null;
   }
 }
 
-// Função para enviar mensagem pelo WhatsApp via Meta API
+// Função para enviar mensagem no WhatsApp
 async function sendMessage(to, message) {
   try {
     await axios.post(
-      `https://graph.facebook.com/v17.0/${PHONE_ID}/messages`,
+      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
       {
-        messaging_product: 'whatsapp',
+        messaging_product: "whatsapp",
         to,
         text: { body: message }
       },
@@ -66,49 +68,51 @@ async function sendMessage(to, message) {
     );
     console.log('📤 Mensagem enviada:', message);
   } catch (err) {
-    console.error('Erro ao enviar WhatsApp:', err.response?.data || err.message);
+    console.error('Erro ao enviar WhatsApp:', err.response?.data || err);
   }
 }
 
 // Endpoint para receber mensagens do WhatsApp
 app.post('/webhook', async (req, res) => {
-  const { from, body } = req.body; // garantir que o webhook envia "from" e "body"
-  console.log('Número recebido do WhatsApp:', from);
-  console.log('Mensagem recebida:', body);
+  try {
+    const messageObj = req.body.entry[0].changes[0].value.messages[0];
+    const from = messageObj.from;
+    const body = messageObj.text?.body;
 
-  // Histórico do usuário
-  let history = [];
-  if (db) {
-    history = await db.collection('historico')
+    console.log('Número recebido do WhatsApp:', from);
+    console.log('Mensagem recebida:', body);
+
+    // Pegar histórico do usuário
+    const history = await db.collection('historico')
       .find({ numero: from })
       .sort({ timestamp: -1 })
       .limit(5)
       .toArray();
-  }
 
-  const chatHistory = history.map(h => ({
-    role: 'user',
-    content: h.mensagem
-  })).reverse();
+    const chatHistory = history.map(h => ({
+      role: 'user', content: h.mensagem
+    })).reverse();
 
-  const prompt = `Você é a assistente Donna. Converse de forma amigável e interativa. Usuário disse: "${body}"`;
+    const prompt = `Você é a assistente Donna. Converse de forma amigável e interativa. Usuário disse: "${body}"`;
 
-  let reply = await askGPT(prompt, chatHistory);
+    let reply = await askGPT(prompt, chatHistory);
 
-  if (!reply) reply = 'Hmm… estou pensando ainda… me dê só mais um segundo!';
+    if (!reply) reply = 'Hmm… estou pensando ainda… me dê só mais um segundo!';
 
-  // Salvar histórico
-  if (db) {
+    // Salvar histórico
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
       resposta: reply,
       timestamp: new Date()
     });
-  }
 
-  // Enviar resposta
-  await sendMessage(from, reply);
+    // Enviar resposta
+    await sendMessage(from, reply);
+
+  } catch (err) {
+    console.error('Erro ao processar webhook:', err);
+  }
 
   res.sendStatus(200);
 });
@@ -116,3 +120,4 @@ app.post('/webhook', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
