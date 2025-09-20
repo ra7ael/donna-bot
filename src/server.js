@@ -189,4 +189,12 @@ Usuário disse: "${body}"
 
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
 
-import "./models/Reminder.js";
+
+import mongoose from "mongoose";
+import { startReminderCron } from "./cron/reminders.js";
+
+await mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+console.log("✅ Conectado ao MongoDB");
+
+// Só depois que a conexão estiver pronta
+startReminderCron();
