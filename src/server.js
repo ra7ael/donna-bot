@@ -4,6 +4,8 @@ import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
+import mongoose from "mongoose";
+import { startReminderCron } from "./cron/reminders.js";
 
 dotenv.config();
 
@@ -189,10 +191,7 @@ Usuário disse: "${body}"
 
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
 
-
-import mongoose from "mongoose";
-import { startReminderCron } from "./cron/reminders.js";
-
+// ===== Conexão Mongoose + cron =====
 await mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
 console.log("✅ Conectado ao MongoDB");
 
