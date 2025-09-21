@@ -1,11 +1,12 @@
+// server.js
 import express from 'express';
-import { MongoClient } from 'mongodb';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
 import mongoose from "mongoose";
-import { startReminderCron } from "./cron/reminders.js"; // precisa estar exportado no reminders.js
+import { startReminderCron } from "./cron/reminders.js";
+import Historico from "./models/Historico.js";
 
 dotenv.config();
 
@@ -18,22 +19,8 @@ const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Lista de números autorizados (formato internacional)
+// Lista de números autorizados
 const allowedNumbers = ['554195194485', '554199833283'];
-
-let db;
-
-// Conectar ao MongoDB com async/await (MongoClient usado para histórico)
-async function connectDB() {
-  try {
-    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-    db = client.db();
-    console.log('✅ Conectado ao MongoDB (histórico)');
-  } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB (histórico):', err);
-  }
-}
-connectDB();
 
 // ===== Funções auxiliares =====
 async function askGPT(prompt, history = []) {
@@ -120,13 +107,11 @@ app.post('/webhook', async (req, res) => {
     if (!body) return res.sendStatus(200);
 
     // Histórico
-    const history = await db.collection('historico')
-      .find({ numero: from })
+    const historyDocs = await Historico.find({ numero: from })
       .sort({ timestamp: -1 })
-      .limit(6)
-      .toArray();
+      .limit(6);
 
-    const chatHistory = history.reverse().map(h => ({ role: 'user', content: h.mensagem }));
+    const chatHistory = historyDocs.reverse().map(h => ({ role: 'user', content: h.mensagem }));
 
     const prompt = `
 Você é a Rafa, assistente pessoal.
@@ -136,7 +121,7 @@ Usuário disse: "${body}"
     const reply = await askGPT(prompt, chatHistory);
 
     // Salvar histórico
-    await db.collection('historico').insertOne({
+    await Historico.create({
       numero: from,
       mensagem: body,
       resposta: reply,
@@ -144,6 +129,7 @@ Usuário disse: "${body}"
     });
 
     await sendMessage(from, reply);
+
   } catch (err) {
     console.error('❌ Erro ao processar webhook:', err);
   }
@@ -155,7 +141,7 @@ Usuário disse: "${body}"
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-    console.log("✅ Conectado ao MongoDB (reminders)");
+    console.log("✅ Conectado ao MongoDB (Atlas)");
 
     // Inicia cron de reminders
     startReminderCron();
