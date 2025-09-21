@@ -1,12 +1,13 @@
-// server.js
+// src/server.js
 import express from 'express';
+import { MongoClient } from 'mongodb';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
-import Historico from "./models/Historico.js";
+import SemanticMemory from "./models/semanticMemory.js"; // memória de longo prazo
 
 dotenv.config();
 
@@ -19,8 +20,22 @@ const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Lista de números autorizados
+// Números autorizados
 const allowedNumbers = ['554195194485', '554199833283'];
+
+let db;
+
+// Conectar ao MongoDB (para histórico simples)
+async function connectDB() {
+  try {
+    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
+    db = client.db();
+    console.log('✅ Conectado ao MongoDB (histórico)');
+  } catch (err) {
+    console.error('❌ Erro ao conectar ao MongoDB (histórico):', err);
+  }
+}
+connectDB();
 
 // ===== Funções auxiliares =====
 async function askGPT(prompt, history = []) {
@@ -106,30 +121,47 @@ app.post('/webhook', async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    // Histórico
-    const historyDocs = await Historico.find({ numero: from })
+    // Histórico de curto prazo
+    const history = await db.collection('historico')
+      .find({ numero: from })
       .sort({ timestamp: -1 })
-      .limit(6);
+      .limit(6)
+      .toArray();
+    const chatHistory = history.reverse().map(h => ({ role: 'user', content: h.mensagem }));
 
-    const chatHistory = historyDocs.reverse().map(h => ({ role: 'user', content: h.mensagem }));
+    // Memória de longo prazo
+    const memoryItems = await SemanticMemory.find({ userNumber: from });
+    const memoryContext = memoryItems.map(m => m.content).join("\n");
 
+    // Prompt final
     const prompt = `
 Você é a Rafa, assistente pessoal.
+Use as informações de memória abaixo para lembrar do usuário:
+${memoryContext}
+
 Usuário disse: "${body}"
 `;
 
     const reply = await askGPT(prompt, chatHistory);
 
     // Salvar histórico
-    await Historico.create({
+    await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
       resposta: reply,
       timestamp: new Date()
     });
 
-    await sendMessage(from, reply);
+    // Salvar informação relevante na memória de longo prazo (opcional)
+    if (body.toLowerCase().includes("informação importante")) {
+      await SemanticMemory.create({
+        userNumber: from,
+        content: body,
+        timestamp: new Date()
+      });
+    }
 
+    await sendMessage(from, reply);
   } catch (err) {
     console.error('❌ Erro ao processar webhook:', err);
   }
@@ -141,7 +173,7 @@ Usuário disse: "${body}"
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-    console.log("✅ Conectado ao MongoDB (Atlas)");
+    console.log("✅ Conectado ao MongoDB (reminders)");
 
     // Inicia cron de reminders
     startReminderCron();
