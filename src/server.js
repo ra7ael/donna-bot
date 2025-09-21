@@ -8,7 +8,6 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import Contact from "./models/Contact.js";
 import { getWeather } from "./utils/weather.js";
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
@@ -114,10 +113,24 @@ async function getUserMemory(userId, limit = 6) {
   return await SemanticMemory.find({ userId }).sort({ createdAt: -1 }).limit(limit).lean();
 }
 
-async function saveMemory(userId, role, content) {
+async function saveMemory(userId, role, content, contentType = "general") {
   const embedding = await generateEmbedding(content);
-  const memory = new SemanticMemory({ userId, role, content, embedding });
+  const memory = new SemanticMemory({ userId, role, content, embedding, contentType });
   await memory.save();
+}
+
+// ===== Memória do nome do usuário =====
+async function setUserName(userId, name) {
+  await SemanticMemory.findOneAndUpdate(
+    { userId, contentType: "name" },
+    { userId, role: "user", content: name, contentType: "name" },
+    { upsert: true, new: true }
+  );
+}
+
+async function getUserName(userId) {
+  const record = await SemanticMemory.findOne({ userId, contentType: "name" });
+  return record?.content || null;
 }
 
 // ===== Webhook endpoint =====
@@ -142,20 +155,16 @@ app.post('/webhook', async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    // ===== Contato e registro de nome =====
-    let contact = await Contact.findOne({ phone: from });
-    if (!contact) {
-      contact = await Contact.create({ phone: from, waitingName: true });
-      await sendMessage(from, "Oi! 😊 Eu ainda não sei seu nome. Como devo te chamar?");
+    // ===== Detectar e salvar nome do usuário =====
+    const nameMatch = body.match(/meu nome é (\w+)/i);
+    if (nameMatch) {
+      const name = nameMatch[1];
+      await setUserName(from, name);
+      await sendMessage(from, `Prazer, ${name}! Agora vou me lembrar de você.`);
       return res.sendStatus(200);
     }
-    if (contact.waitingName) {
-      contact.name = body;
-      contact.waitingName = false;
-      await contact.save();
-      await sendMessage(from, `Prazer, ${contact.name}! Agora vou te chamar assim sempre que falarmos.`);
-      return res.sendStatus(200);
-    }
+
+    const userName = await getUserName(from) || "usuário";
 
     // Histórico de memória semântica
     const memories = await getUserMemory(from, 6);
@@ -164,7 +173,7 @@ app.post('/webhook', async (req, res) => {
     // Sistema GPT
     const systemMessage = {
       role: "system",
-      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
+      content: `Você é a Donna, assistente pessoal do usuário chamado ${userName}. Responda de forma objetiva, curta e direta.`
     };
     
     // Comandos especiais: hora, data, clima
@@ -202,8 +211,7 @@ app.post('/webhook', async (req, res) => {
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    // Enviar mensagem com nome do usuário
-    await sendMessage(from, `${contact.name}, ${reply}`);
+    await sendMessage(from, reply);
 
   } catch (err) {
     console.error('❌ Erro ao processar webhook:', err);
@@ -224,4 +232,4 @@ app.post('/webhook', async (req, res) => {
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
-})();// src/server.j
+})();
