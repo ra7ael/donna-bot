@@ -13,7 +13,13 @@ export async function getWeather(city) {
     });
 
     const data = res.data;
-    return `🌤️ Clima em ${data.name}: ${data.weather[0].description}, temperatura ${data.main.temp}°C, sensação ${data.main.feels_like}°C.`;
+
+    if (!data || !data.weather || !data.weather[0]) {
+      return "❌ Não consegui obter o clima dessa cidade.";
+    }
+
+    return `🌤️ Clima em ${data.name}: ${data.weather[0].description}, temperatura ${data.main.temp}°C, sensação ${data.main.feels_like}°C, umidade ${data.main.humidity}%.`;
+    
   } catch (err) {
     console.error("❌ Erro ao buscar clima:", err.response?.data || err.message);
     return "❌ Não consegui obter o clima agora.";
