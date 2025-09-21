@@ -8,7 +8,8 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import { getWeather } from "./utils/weather.js"; // agora suporta hoje/amanhã/data
+import Contact from "./models/Contact.js";
+import { getWeather } from "./utils/weather.js";
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
 
@@ -141,17 +142,32 @@ app.post('/webhook', async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
+    // ===== Contato e registro de nome =====
+    let contact = await Contact.findOne({ phone: from });
+    if (!contact) {
+      contact = await Contact.create({ phone: from, waitingName: true });
+      await sendMessage(from, "Oi! 😊 Eu ainda não sei seu nome. Como devo te chamar?");
+      return res.sendStatus(200);
+    }
+    if (contact.waitingName) {
+      contact.name = body;
+      contact.waitingName = false;
+      await contact.save();
+      await sendMessage(from, `Prazer, ${contact.name}! Agora vou te chamar assim sempre que falarmos.`);
+      return res.sendStatus(200);
+    }
+
     // Histórico de memória semântica
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // ===== Sistema GPT =====
+    // Sistema GPT
     const systemMessage = {
       role: "system",
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
     };
     
-    // ===== Comandos especiais: hora, data, clima =====
+    // Comandos especiais: hora, data, clima
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
     
@@ -186,7 +202,8 @@ app.post('/webhook', async (req, res) => {
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    await sendMessage(from, reply);
+    // Enviar mensagem com nome do usuário
+    await sendMessage(from, `${contact.name}, ${reply}`);
 
   } catch (err) {
     console.error('❌ Erro ao processar webhook:', err);
@@ -201,12 +218,10 @@ app.post('/webhook', async (req, res) => {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
 
-    // Inicia cron de reminders
     startReminderCron();
 
-    // Inicia servidor
     app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
-})();
+})();// src/server.j
