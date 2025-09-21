@@ -6,8 +6,9 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
 import mongoose from "mongoose";
-import { startReminderCron } from "./cron/reminders.js"; // cron de lembretes
+import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
+import { getWeather } from "./utils/weather.js"; // função de clima
 import OpenAI from "openai";
 
 dotenv.config();
@@ -22,13 +23,9 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
-
-// Lista de números autorizados (formato internacional)
-const allowedNumbers = ['554195194485', '554199833283'];
-
 let db;
 
-// Conectar ao MongoDB com async/await (MongoClient usado para histórico)
+// ===== Conectar ao MongoDB =====
 async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
@@ -45,13 +42,13 @@ async function askGPT(prompt, history = []) {
   try {
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
-      { model: 'gpt-5-mini', messages: [...history, { role: 'user', content: prompt }] },
+      { model: 'gpt-5-mini', messages: history.concat({ role: 'user', content: prompt }) },
       { headers: { Authorization: `Bearer ${GPT_API_KEY}`, 'Content-Type': 'application/json' } }
     );
-    return response.data.choices?.[0]?.message?.content || "Hmm… estou pensando ainda… me dê só mais um segundo!";
+    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
     console.error('❌ Erro GPT:', err.response?.data || err);
-    return "Hmm… estou pensando ainda… me dê só mais um segundo!";
+    return "Hmm… ainda estou pensando!";
   }
 }
 
@@ -95,7 +92,6 @@ async function transcribeAudio(audioBuffer) {
       formData,
       { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...formData.getHeaders() } }
     );
-
     return response.data.text || null;
   } catch (err) {
     console.error("❌ Erro Whisper:", err.response?.data || err);
@@ -103,7 +99,7 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
-// ===== Funções de memória semântica =====
+// ===== Memória semântica =====
 async function generateEmbedding(text) {
   const response = await openai.embeddings.create({
     model: "text-embedding-3-small",
@@ -113,10 +109,7 @@ async function generateEmbedding(text) {
 }
 
 async function getUserMemory(userId, limit = 6) {
-  return await SemanticMemory.find({ userId })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .lean();
+  return await SemanticMemory.find({ userId }).sort({ createdAt: -1 }).limit(limit).lean();
 }
 
 async function saveMemory(userId, role, content) {
@@ -132,6 +125,7 @@ app.post('/webhook', async (req, res) => {
     if (!messageObj) return res.sendStatus(200);
 
     const from = messageObj.from;
+    const allowedNumbers = ['554195194485', '554199833283'];
     if (!allowedNumbers.includes(from)) return res.sendStatus(200);
 
     let body;
@@ -150,16 +144,29 @@ app.post('/webhook', async (req, res) => {
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
+    // ===== Sistema GPT =====
     const systemMessage = {
       role: "system",
       content: "Você é a Rafa, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
     };
 
-    const prompt = body; // mensagem do usuário sem apresentações
-    const reply = await askGPT(prompt, [systemMessage, ...chatHistory]);
+    // ===== Comandos especiais: hora, data, clima =====
+    let reply;
+    const now = new Date();
 
+    if (/que horas são\??/i.test(body)) {
+      reply = `🕒 Agora são ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
+    } else if (/qual a data( de hoje)?\??/i.test(body)) {
+      reply = `📅 Hoje é ${now.toLocaleDateString('pt-BR')}`;
+    } else if (/como está o tempo em (.+)\??/i.test(body)) {
+      const cityMatch = body.match(/como está o tempo em (.+)\??/i);
+      const city = cityMatch[1];
+      reply = await getWeather(city);
+    } else {
+      reply = await askGPT(body, [systemMessage, ...chatHistory]);
+    }
 
-    // Salvar no MongoDB e SemanticMemory
+    // Salvar histórico
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
@@ -170,6 +177,7 @@ app.post('/webhook', async (req, res) => {
     await saveMemory(from, "assistant", reply);
 
     await sendMessage(from, reply);
+
   } catch (err) {
     console.error('❌ Erro ao processar webhook:', err);
   }
