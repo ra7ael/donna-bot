@@ -8,7 +8,7 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import { getWeather } from "./utils/weather.js";
+import { getWeather } from "./utils/weather.js"; // agora suporta hoje/amanhã/data
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
 
@@ -145,13 +145,13 @@ app.post('/webhook', async (req, res) => {
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // Sistema GPT
+    // ===== Sistema GPT =====
     const systemMessage = {
       role: "system",
-      content: "Você é a Rafa, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
+      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
     };
     
-    // Comandos especiais: hora, data, clima
+    // ===== Comandos especiais: hora, data, clima =====
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
     
@@ -159,15 +159,24 @@ app.post('/webhook', async (req, res) => {
       reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
     } else if (/qual a data( de hoje)?\??/i.test(body)) {
       reply = `📅 Hoje é ${now.toFormat('dd/MM/yyyy')}`;
-    } else if (/como está o tempo em (.+)\??/i.test(body)) {
-      const cityMatch = body.match(/como está o tempo em (.+)\??/i);
-      const city = cityMatch[1].trim();
-      reply = await getWeather(city);
+    } else if (/tempo|clima|previsão/i.test(body)) {
+      const matchCity = body.match(/em\s+([a-z\s]+)/i);
+      const city = matchCity ? matchCity[1].trim() : "Curitiba";
+
+      let when = "hoje";
+      if (/amanhã/i.test(body)) {
+        when = "amanhã";
+      } else {
+        const dateMatch = body.match(/(\d{1,2}\/\d{1,2}(?:\/\d{4})?)/);
+        if (dateMatch) when = dateMatch[1];
+      }
+
+      reply = await getWeather(city, when);
     } else {
       reply = await askGPT(body, [systemMessage, ...chatHistory]);
     }
 
-    // Salvar histórico e memória semântica
+    // Salvar histórico
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
