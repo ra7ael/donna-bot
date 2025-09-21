@@ -1,132 +1,198 @@
-// src/controllers/chatController.js
-import { getGPTResponse } from "../services/gptService.js";
-import { salvarMemoria, buscarMemoria } from "../utils/memoryManager.js";
-import { saveMemory, getRelevantMemory } from "../utils/memory.js";  // ⬅️ adicionado
-import Conversation from "../models/Conversation.js";
-import Reminder from "../models/Reminder.js";
-import axios from "axios";
-import fs from "fs";
-import FormData from "form-data";
+import axios from 'axios';
+import fs from 'fs';
+import FormData from 'form-data';
+import cron from 'node-cron';
+import { DateTime } from 'luxon';
 
-// Lista de números autorizados
-const authorizedNumbers = ["554195194485"];
+import { getGPTResponse } from '../services/gptService.js';
+import Message from '../models/Message.js';
+import Reminder from '../models/Reminder.js';
+import Conversation from '../models/Conversation.js';
+import { saveMemory, getRelevantMemory } from '../utils/memory.js';
+import { getWeather } from '../utils/weather.js';
 
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+
+// Lista de usuários autorizados
+const authorizedUsers = [
+  process.env.MY_NUMBER.replace('+', ''),
+];
+
+// Função para enviar WhatsApp
+async function sendWhatsApp(to, text) {
+  if (!text) return;
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
+      { messaging_product: "whatsapp", to, text: { body: text } },
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+    );
+    console.log("📤 Mensagem enviada:", text);
+  } catch (err) {
+    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err.message);
+  }
+}
+
+// Função principal do webhook
 export async function chat(req, res) {
   try {
-    const { userId, mensagem, phoneNumber, audioId, imageId, whatsappToken } = req.body;
+    const body = req.body;
+    if (!body.object) return res.sendStatus(400);
 
-    if (phoneNumber && !authorizedNumbers.includes(phoneNumber)) {
-      console.log(`❌ Usuário não autorizado: ${phoneNumber}`);
-      return res.status(403).json({ erro: "Usuário não autorizado" });
+    const entry = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    if (!entry) return res.sendStatus(200);
+
+    const from = entry.from;
+    console.log("Número recebido do WhatsApp:", from);
+
+    if (!authorizedUsers.includes(from)) {
+      console.log("❌ Usuário não autorizado:", from);
+      return res.sendStatus(200);
     }
 
-    let userMessage = mensagem || "";
+    let userMessage = "";
     let mediaUrl = null;
 
-    // ===== ÁUDIO =====
-    if (audioId) {
+    // ===== Processar mensagens =====
+    if (entry.type === 'text') {
+      userMessage = entry.text?.body || "";
+    } else if (entry.type === 'audio') {
       try {
+        const mediaId = entry.audio.id;
         const mediaRes = await axios.get(
-          `https://graph.facebook.com/v21.0/${audioId}`,
-          { headers: { Authorization: `Bearer ${whatsappToken}` } }
+          `https://graph.facebook.com/v21.0/${mediaId}`,
+          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
         );
         mediaUrl = mediaRes.data.url;
-        const audioRes = await axios.get(mediaUrl, { responseType: "arraybuffer", headers: { Authorization: `Bearer ${whatsappToken}` } });
-        fs.writeFileSync("/tmp/audio.ogg", audioRes.data);
+
+        const audioData = await axios.get(mediaUrl, { responseType: 'arraybuffer', headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+        fs.writeFileSync('/tmp/audio.ogg', audioData.data);
 
         const form = new FormData();
-        form.append("file", fs.createReadStream("/tmp/audio.ogg"));
-        form.append("model", "whisper-1");
+        form.append('file', fs.createReadStream('/tmp/audio.ogg'));
+        form.append('model', 'whisper-1');
 
-        const whisperRes = await axios.post("https://api.openai.com/v1/audio/transcriptions", form, {
+        const whisperRes = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
           headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() }
         });
 
         userMessage = whisperRes.data?.text || "";
         console.log("🎙️ Transcrição de áudio:", userMessage);
       } catch (err) {
-        console.error("❌ Erro no áudio:", err.response?.data || err.message);
+        console.error("❌ Erro no processamento de áudio:", err.response?.data || err.message);
         userMessage = "❌ Não consegui processar seu áudio. Envie como texto.";
       } finally {
-        try { fs.unlinkSync("/tmp/audio.ogg"); } catch {}
+        try { fs.unlinkSync('/tmp/audio.ogg'); } catch(e) {}
       }
-    }
-
-    // ===== IMAGEM =====
-    if (imageId) {
+    } else if (entry.type === 'image') {
       try {
+        const mediaId = entry.image.id;
         const mediaRes = await axios.get(
-          `https://graph.facebook.com/v21.0/${imageId}`,
-          { headers: { Authorization: `Bearer ${whatsappToken}` } }
+          `https://graph.facebook.com/v21.0/${mediaId}`,
+          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
         );
         mediaUrl = mediaRes.data.url;
         userMessage = "📷 Imagem recebida. Analisando...";
       } catch (err) {
-        console.error("❌ Erro na imagem:", err.response?.data || err.message);
+        console.error("❌ Erro no processamento de imagem:", err.response?.data || err.message);
         userMessage = "❌ Não consegui processar sua imagem.";
       }
+    } else {
+      await sendWhatsApp(from, "❌ Tipo de mensagem não suportado. Envie texto ou áudio.");
+      return res.sendStatus(200);
     }
 
-    // ===== LEMBRETE =====
-    const lembreteRegex = /lembre-me de (.+) (em|às|para) (.+)/i;
+    if (!userMessage?.trim()) {
+      console.log("Mensagem sem conteúdo válido, ignorando.");
+      return res.sendStatus(200);
+    }
+
+    // ===== Salvar no histórico =====
+    await Conversation.create({ from, role: 'user', content: userMessage });
+    await saveMemory(from, 'user', userMessage);
+
+    const now = DateTime.now().setZone('America/Sao_Paulo');
+    const currentTime = now.toFormat('HH:mm:ss');
+    const currentDate = now.toFormat('dd/MM/yyyy');
+
     let responseText = "";
 
-    if (lembreteRegex.test(userMessage)) {
-      const match = userMessage.match(lembreteRegex);
-      const texto = match[1];
-      const dateStr = match[3];
-      const date = new Date(dateStr);
-
-      if (isNaN(date)) {
-        responseText = "❌ Data/hora inválida. Exemplo: 'Lembre-me de reunião em 2025-09-18 14:00'";
-      } else {
-        await Reminder.create({ from: userId, text: texto, date });
-        responseText = `✅ Lembrete salvo: "${texto}" para ${date.toLocaleString("pt-BR")}`;
-      }
+    // ===== Comandos especiais: hora, data e clima =====
+    if (/que horas são\??/i.test(userMessage)) {
+      responseText = `🕒 Agora são ${currentTime}`;
+    } else if (/qual a data( de hoje)?\??/i.test(userMessage)) {
+      responseText = `📅 Hoje é ${currentDate}`;
+    } else if (/como está o tempo em (.+)\??/i.test(userMessage)) {
+      const cityMatch = userMessage.match(/como está o tempo em (.+)\??/i);
+      const city = cityMatch[1];
+      responseText = await getWeather(city);
     } else {
-      // ===== SALVAR CONTEXTO =====
-      await Conversation.create({ from: userId, role: "user", content: userMessage });
-      await salvarMemoria(userId, { ultimaMensagem: userMessage });
-      await saveMemory(userId, "user", userMessage);  // ⬅️ salva embedding
+      // ===== Lembretes =====
+      const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
+      if (lembreteRegex.test(userMessage)) {
+        const match = userMessage.match(lembreteRegex);
+        const text = match[1];
+        const dateStr = match[3];
+        const date = new Date(dateStr);
 
-      const history = await Conversation.find({ from: userId }).sort({ createdAt: 1 });
-      const conversationContext = history.map(h => `${h.role === "user" ? "Usuário" : "Assistente"}: ${h.content}`).join("\n");
+        if (isNaN(date)) {
+          responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
+        } else {
+          await Reminder.create({ from, text, date });
+          responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
+        }
+      } else {
+        // ===== Histórico curto e memória =====
+        const history = await Conversation.find({ from }).sort({ createdAt: 1 });
+        const conversationContext = history
+          .filter(h => h.content)
+          .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
+          .join("\n");
 
-      const memoria = await buscarMemoria(userId);
-      const memoryContext = memoria ? JSON.stringify(memoria.memoria || {}) : "";
+        const relevantMemories = await getRelevantMemory(from, userMessage, 5);
+        const memoryContext = relevantMemories
+          .filter(m => m.content)
+          .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+          .join("\n");
 
-      const relevantMemories = await getRelevantMemory(userId, userMessage, 3); // ⬅️ busca memórias relevantes
-      const semanticContext = relevantMemories.map(m => `Memória: ${m.content}`).join("\n");
-
-      // ===== GPT =====
-      responseText = await getGPTResponse(
-        `
-Mensagem do usuário: "${userMessage}"
-
+        // ===== Chamada GPT =====
+        responseText = await getGPTResponse(
+          `Hora e data atuais: ${currentTime} do dia ${currentDate}.
 Histórico recente:
 ${conversationContext}
 
-Histórico de memória estruturada:
+Histórico de memória relevante:
 ${memoryContext}
 
-Memórias relevantes:
-${semanticContext}
-        `,
-        mediaUrl,
-        userId,
-        phoneNumber
-      );
+Mensagem do usuário: "${userMessage}"`,
+          mediaUrl,
+          from,
+          from
+        );
+      }
     }
 
-    // ===== SALVAR RESPOSTA =====
-    await Conversation.create({ from: userId, role: "assistant", content: responseText });
-    await salvarMemoria(userId, { ultimaResposta: responseText });
-    await saveMemory(userId, "assistant", responseText); // ⬅️ salva embedding da resposta
+    await Conversation.create({ from, role: 'assistant', content: responseText });
+    await saveMemory(from, 'assistant', responseText);
+    await Message.create({ from, body: userMessage, response: responseText });
 
-    return res.json({ resposta: responseText });
+    await sendWhatsApp(from, responseText);
+    res.sendStatus(200);
 
   } catch (error) {
-    console.error("❌ Erro no chatController:", error.response?.data || error.message || error);
-    return res.status(500).json({ erro: "Erro no chat" });
+    console.error("❌ Erro no webhook:", error.response?.data || error.message);
+    res.sendStatus(500);
   }
 }
+
+// ===== Cron job para lembretes =====
+cron.schedule('* * * * *', async () => {
+  const now = new Date();
+  const reminders = await Reminder.find({ date: { $lte: now } });
+  for (const r of reminders) {
+    await sendWhatsApp(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString('pt-BR')})`);
+    await Reminder.findByIdAndDelete(r._id);
+  }
+});
