@@ -150,10 +150,14 @@ app.post('/webhook', async (req, res) => {
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    const prompt = `Você é a Rafa, assistente pessoal.\nUsuário disse: "${body}"`;
+    const systemMessage = {
+      role: "system",
+      content: "Você é a Rafa, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
+    };
 
-    // Resposta GPT
-    const reply = await askGPT(prompt, chatHistory);
+    const prompt = body; // mensagem do usuário sem apresentações
+    const reply = await askGPT(prompt, [systemMessage, ...chatHistory]);
+
 
     // Salvar no MongoDB e SemanticMemory
     await db.collection('historico').insertOne({
