@@ -6,8 +6,9 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
 import mongoose from "mongoose";
-import { startReminderCron } from "./cron/reminders.js";
-import SemanticMemory from "./models/semanticMemory.js"; // memória de longo prazo
+import { startReminderCron } from "./cron/reminders.js"; // cron de lembretes
+import SemanticMemory from "./models/semanticMemory.js";
+import OpenAI from "openai";
 
 dotenv.config();
 
@@ -20,12 +21,14 @@ const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Números autorizados
+const openai = new OpenAI({ apiKey: GPT_API_KEY });
+
+// Lista de números autorizados (formato internacional)
 const allowedNumbers = ['554195194485', '554199833283'];
 
 let db;
 
-// Conectar ao MongoDB (para histórico simples)
+// Conectar ao MongoDB com async/await (MongoClient usado para histórico)
 async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
@@ -100,6 +103,28 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
+// ===== Funções de memória semântica =====
+async function generateEmbedding(text) {
+  const response = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: text,
+  });
+  return response.data[0].embedding;
+}
+
+async function getUserMemory(userId, limit = 6) {
+  return await SemanticMemory.find({ userId })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+}
+
+async function saveMemory(userId, role, content) {
+  const embedding = await generateEmbedding(content);
+  const memory = new SemanticMemory({ userId, role, content, embedding });
+  await memory.save();
+}
+
 // ===== Webhook endpoint =====
 app.post('/webhook', async (req, res) => {
   try {
@@ -121,45 +146,24 @@ app.post('/webhook', async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    // Histórico de curto prazo
-    const history = await db.collection('historico')
-      .find({ numero: from })
-      .sort({ timestamp: -1 })
-      .limit(6)
-      .toArray();
-    const chatHistory = history.reverse().map(h => ({ role: 'user', content: h.mensagem }));
+    // Histórico de memória semântica
+    const memories = await getUserMemory(from, 6);
+    const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // Memória de longo prazo
-    const memoryItems = await SemanticMemory.find({ userNumber: from });
-    const memoryContext = memoryItems.map(m => m.content).join("\n");
+    const prompt = `Você é a Rafa, assistente pessoal.\nUsuário disse: "${body}"`;
 
-    // Prompt final
-    const prompt = `
-Você é a Rafa, assistente pessoal.
-Use as informações de memória abaixo para lembrar do usuário:
-${memoryContext}
-
-Usuário disse: "${body}"
-`;
-
+    // Resposta GPT
     const reply = await askGPT(prompt, chatHistory);
 
-    // Salvar histórico
+    // Salvar no MongoDB e SemanticMemory
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
       resposta: reply,
       timestamp: new Date()
     });
-
-    // Salvar informação relevante na memória de longo prazo (opcional)
-    if (body.toLowerCase().includes("informação importante")) {
-      await SemanticMemory.create({
-        userNumber: from,
-        content: body,
-        timestamp: new Date()
-      });
-    }
+    await saveMemory(from, "user", body);
+    await saveMemory(from, "assistant", reply);
 
     await sendMessage(from, reply);
   } catch (err) {
