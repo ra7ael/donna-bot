@@ -8,7 +8,7 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import { getWeather } from "./utils/weather.js"; // função de clima
+import { getWeather } from "./utils/weather.js";
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
 
@@ -145,15 +145,15 @@ app.post('/webhook', async (req, res) => {
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // ===== Sistema GPT =====
+    // Sistema GPT
     const systemMessage = {
       role: "system",
       content: "Você é a Rafa, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
     };
     
-    // ===== Comandos especiais: hora, data, clima =====
+    // Comandos especiais: hora, data, clima
     let reply;
-    const now = DateTime.now().setZone('America/Sao_Paulo'); // horário de Curitiba (UTC-3)
+    const now = DateTime.now().setZone('America/Sao_Paulo');
     
     if (/que horas são\??/i.test(body)) {
       reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
@@ -161,13 +161,13 @@ app.post('/webhook', async (req, res) => {
       reply = `📅 Hoje é ${now.toFormat('dd/MM/yyyy')}`;
     } else if (/como está o tempo em (.+)\??/i.test(body)) {
       const cityMatch = body.match(/como está o tempo em (.+)\??/i);
-      const city = cityMatch[1];
+      const city = cityMatch[1].trim();
       reply = await getWeather(city);
     } else {
       reply = await askGPT(body, [systemMessage, ...chatHistory]);
     }
 
-    // Salvar histórico
+    // Salvar histórico e memória semântica
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
