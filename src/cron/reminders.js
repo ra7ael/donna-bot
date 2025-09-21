@@ -33,11 +33,12 @@ async function sendWhatsAppReminder(reminder) {
   }
 }
 
-// ===== Exportar função para rodar cron =====
+// ===== Função para iniciar cron de lembretes =====
 export function startReminderCron() {
-  // roda a cada minuto
+  // Roda a cada minuto
   cron.schedule("* * * * *", async () => {
     try {
+      // Só continua se o Mongo estiver conectado
       if (mongoose.connection.readyState !== 1) {
         console.log("❌ Mongo não conectado. Cron aguardando...");
         return;
