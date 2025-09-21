@@ -10,6 +10,7 @@ import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
 import { getWeather } from "./utils/weather.js"; // função de clima
 import OpenAI from "openai";
+import { DateTime } from 'luxon';
 
 dotenv.config();
 
@@ -149,15 +150,15 @@ app.post('/webhook', async (req, res) => {
       role: "system",
       content: "Você é a Rafa, assistente pessoal do usuário. Responda de forma objetiva, curta e direta. Não repita apresentações."
     };
-
+    
     // ===== Comandos especiais: hora, data, clima =====
     let reply;
-    const now = new Date();
-
+    const now = DateTime.now().setZone('America/Sao_Paulo'); // horário de Curitiba (UTC-3)
+    
     if (/que horas são\??/i.test(body)) {
-      reply = `🕒 Agora são ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
+      reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
     } else if (/qual a data( de hoje)?\??/i.test(body)) {
-      reply = `📅 Hoje é ${now.toLocaleDateString('pt-BR')}`;
+      reply = `📅 Hoje é ${now.toFormat('dd/MM/yyyy')}`;
     } else if (/como está o tempo em (.+)\??/i.test(body)) {
       const cityMatch = body.match(/como está o tempo em (.+)\??/i);
       const city = cityMatch[1];
