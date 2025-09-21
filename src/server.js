@@ -189,11 +189,18 @@ Usuário disse: "${body}"
   res.sendStatus(200);
 });
 
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
-
 // ===== Conexão Mongoose + cron =====
-await mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-console.log("✅ Conectado ao MongoDB");
+(async () => {
+  try {
+    await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+    console.log("✅ Conectado ao MongoDB");
 
-// Só depois que a conexão estiver pronta
-startReminderCron();
+    // Só depois que a conexão estiver pronta
+    startReminderCron();
+
+    // Só então iniciar o servidor
+    app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+  } catch (err) {
+    console.error("❌ Erro ao conectar ao MongoDB:", err);
+  }
+})();
