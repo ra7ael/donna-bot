@@ -1,3 +1,4 @@
+
 // src/server.js
 import express from 'express';
 import { MongoClient } from 'mongodb';
@@ -8,7 +9,7 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import { getWeather } from "./utils/weather.js"; // suporte hoje/amanhã/data
+import { getWeather } from "./utils/weather.js"; // função de clima
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
 
@@ -113,24 +114,25 @@ async function getUserMemory(userId, limit = 6) {
   return await SemanticMemory.find({ userId }).sort({ createdAt: -1 }).limit(limit).lean();
 }
 
-async function saveMemory(userId, role, content, contentType = "text") {
+async function saveMemory(userId, role, content, contentType = null) {
   const embedding = await generateEmbedding(content);
   const memory = new SemanticMemory({ userId, role, content, embedding, contentType });
   await memory.save();
 }
 
-// ===== Memória de nomes =====
+// ===== Memória do nome do usuário =====
 async function setUserName(userId, name) {
+  const embedding = await generateEmbedding(name);
   await SemanticMemory.findOneAndUpdate(
     { userId, role: "user", contentType: "name" },
-    { content: name },
+    { content: name, embedding },
     { upsert: true, new: true }
   );
 }
 
 async function getUserName(userId) {
   const memory = await SemanticMemory.findOne({ userId, role: "user", contentType: "name" }).lean();
-  return memory ? memory.content : null;
+  return memory?.content || null;
 }
 
 // ===== Webhook endpoint =====
@@ -155,12 +157,15 @@ app.post('/webhook', async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    // ===== Verificar se usuário está informando seu nome =====
+    // ===== Recuperar nome do usuário =====
+    let userName = await getUserName(from);
+
+    // ===== Captura de nome =====
     const nameMatch = body.match(/meu nome é (\w+)/i);
     if (nameMatch) {
-      const name = nameMatch[1];
-      await setUserName(from, name);
-      await sendMessage(from, `Prazer, ${name}! Agora vou me lembrar de você 😊`);
+      userName = nameMatch[1];
+      await setUserName(from, userName);
+      await sendMessage(from, `Ótimo! Agora vou te chamar de ${userName} 😊`);
       return res.sendStatus(200);
     }
 
@@ -168,38 +173,37 @@ app.post('/webhook', async (req, res) => {
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // ===== Buscar nome do usuário =====
-    const userName = await getUserName(from) || "usuário";
-
     // ===== Sistema GPT =====
     const systemMessage = {
       role: "system",
-      content: `Você é a Donna, assistente pessoal do usuário chamado ${userName}. Responda de forma objetiva, curta e direta.`
+      content: `Você é a Donna, assistente pessoal do usuário. Sempre chame o usuário pelo nome se souber. Responda de forma objetiva, curta e direta. Não repita apresentações.`
     };
-    
+
     // ===== Comandos especiais: hora, data, clima =====
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
-    
+
     if (/que horas são\??/i.test(body)) {
       reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
     } else if (/qual a data( de hoje)?\??/i.test(body)) {
-      reply = `📅 Hoje é ${now.toFormat('EEEE, dd/MM/yyyy')}`;
+      const weekday = now.toFormat('cccc');
+      reply = `📅 Hoje é ${weekday}, ${now.toFormat('dd/MM/yyyy')}`;
     } else if (/tempo|clima|previsão/i.test(body)) {
       const matchCity = body.match(/em\s+([a-z\s]+)/i);
       const city = matchCity ? matchCity[1].trim() : "Curitiba";
 
       let when = "hoje";
-      if (/amanhã/i.test(body)) {
-        when = "amanhã";
-      } else {
+      if (/amanhã/i.test(body)) when = "amanhã";
+      else {
         const dateMatch = body.match(/(\d{1,2}\/\d{1,2}(?:\/\d{4})?)/);
         if (dateMatch) when = dateMatch[1];
       }
 
       reply = await getWeather(city, when);
     } else {
-      reply = await askGPT(body, [systemMessage, ...chatHistory]);
+      // Se sabemos o nome, inserimos no prompt
+      const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
+      reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
     }
 
     // Salvar histórico
@@ -227,10 +231,8 @@ app.post('/webhook', async (req, res) => {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
 
-    // Inicia cron de reminders
     startReminderCron();
 
-    // Inicia servidor
     app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
