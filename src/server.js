@@ -126,7 +126,7 @@ app.post('/webhook', async (req, res) => {
     if (!messageObj) return res.sendStatus(200);
 
     const from = messageObj.from;
-    const allowedNumbers = ['554195194485', '554199833283'];
+    const allowedNumbers = ['554195194485', '554199833283','554196820681'];
     if (!allowedNumbers.includes(from)) return res.sendStatus(200);
 
     let body;
