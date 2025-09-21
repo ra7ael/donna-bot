@@ -1,34 +1,50 @@
-// src/utils/weather.js
 import axios from "axios";
-import dotenv from "dotenv";
+import { DateTime } from "luxon";
 
-dotenv.config();
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 
-export async function getWeather(city) {
-  if (!OPENWEATHER_API_KEY) return "❌ Chave da API de clima não configurada.";
-
+export async function getWeather(city, when = "hoje") {
   try {
-    // Ajusta a cidade: remove espaços extras e normaliza acentos
-    const normalizedCity = city.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(normalizedCity)}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=pt_br`;
-    const response = await axios.get(url);
-    const data = response.data;
+    const encodedCity = encodeURIComponent(city);
 
-    const temp = data.main.temp.toFixed(1);
-    const description = data.weather[0].description;
-    const humidity = data.main.humidity;
-    const wind = data.wind.speed;
+    // Tempo atual
+    if (when === "hoje") {
+      const resp = await axios.get(
+        `https://api.openweathermap.org/data/2.5/weather?q=${encodedCity}&appid=${OPENWEATHER_API_KEY}&lang=pt_br&units=metric`
+      );
+      const data = resp.data;
+      return `🌤️ Hoje em ${data.name}: ${data.weather[0].description}, ${data.main.temp}°C.`;
+    }
 
-    return `🌤️ Clima em ${data.name}:
-Temperatura: ${temp}°C
-Condição: ${description}
-Umidade: ${humidity}%
-Vento: ${wind} m/s`;
+    // Previsão (amanhã ou data específica)
+    const forecastResp = await axios.get(
+      `https://api.openweathermap.org/data/2.5/forecast?q=${encodedCity}&appid=${OPENWEATHER_API_KEY}&lang=pt_br&units=metric`
+    );
+    const forecastList = forecastResp.data.list;
+
+    let targetDate;
+    if (when === "amanhã") {
+      targetDate = DateTime.now().plus({ days: 1 }).toISODate();
+    } else {
+      // formato dd/mm ou dd/mm/yyyy
+      const parts = when.split("/");
+      const year = parts.length === 3 ? parts[2] : DateTime.now().year;
+      targetDate = DateTime.fromFormat(`${parts[0]}/${parts[1]}/${year}`, "dd/LL/yyyy").toISODate();
+    }
+
+    // procura previsão mais próxima do meio-dia
+    const forecast = forecastList.find(f => {
+      const fDate = DateTime.fromSeconds(f.dt).toISODate();
+      return fDate === targetDate && f.dt_txt.includes("12:00:00");
+    });
+
+    if (forecast) {
+      return `📅 Previsão para ${when} em ${forecastResp.data.city.name}: ${forecast.weather[0].description}, ${forecast.main.temp}°C.`;
+    } else {
+      return `⚠️ Não encontrei previsão para ${when} em ${city}.`;
+    }
   } catch (err) {
-    if (err.response?.status === 404) return `❌ Não encontrei a cidade "${city}". Verifique a grafia.`;
-    console.error("Erro getWeather:", err.response?.data || err.message);
-    return "❌ Não consegui obter a previsão do tempo agora 😅";
+    console.error("❌ Erro OpenWeather:", err.response?.data || err);
+    return "Não consegui obter a previsão do tempo agora 😅";
   }
 }
