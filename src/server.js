@@ -26,14 +26,14 @@ const allowedNumbers = [
 
 let db;
 
-// Conectar ao MongoDB com async/await
+// Conectar ao MongoDB com async/await (MongoClient usado para histórico)
 async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db();
-    console.log('✅ Conectado ao MongoDB');
+    console.log('✅ Conectado ao MongoDB (histórico)');
   } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB:', err);
+    console.error('❌ Erro ao conectar ao MongoDB (histórico):', err);
   }
 }
 connectDB();
@@ -189,16 +189,16 @@ Usuário disse: "${body}"
   res.sendStatus(200);
 });
 
-// ===== Conexão Mongoose + cron =====
+// ===== Conexão Mongoose + cron + servidor =====
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-    console.log("✅ Conectado ao MongoDB");
+    console.log("✅ Conectado ao MongoDB (reminders)");
 
     // Só depois que a conexão estiver pronta
     startReminderCron();
 
-    // Só então iniciar o servidor
+    // Inicia o servidor
     app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
