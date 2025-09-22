@@ -11,6 +11,7 @@ import { getWeather } from "./utils/weather.js";
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
 import speak from "./utils/speak.js"; // agora usando Coqui TTS
+import { downloadMedia } from './utils/downloadMedia.js';
 
 dotenv.config();
 
