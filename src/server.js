@@ -11,7 +11,7 @@ import SemanticMemory from "./models/semanticMemory.js";
 import { getWeather } from "./utils/weather.js"; // função de clima
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
-import speak from "./utils/speak.js"; // import ajustado
+import speak from "./utils/speak.js";
 
 dotenv.config();
 
@@ -165,15 +165,19 @@ app.post('/webhook', async (req, res) => {
     if (!allowedNumbers.includes(from)) return res.sendStatus(200);
 
     let body;
-    let isAudioResponse = false; // flag para decidir envio em áudio
+    let isAudioResponse = false;
 
     if (messageObj.type === "text") {
       body = messageObj.text?.body;
+      if (body.toLowerCase().startsWith("fala ")) {
+        body = body.slice(5).trim();
+        isAudioResponse = true;
+      }
     } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) {
         body = await transcribeAudio(audioBuffer);
-        isAudioResponse = true; // vamos responder em áudio
+        isAudioResponse = true;
       }
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
