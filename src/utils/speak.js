@@ -22,7 +22,12 @@ async function speak(text) {
     );
     return response.data;
   } catch (err) {
-    console.error("❌ Erro ao gerar áudio:", err.response?.data || err);
+    // Debug detalhado do erro
+    if (err.response) {
+      console.error("❌ Erro ao gerar áudio (resposta da API):", JSON.stringify(err.response.data, null, 2));
+    } else {
+      console.error("❌ Erro ao gerar áudio:", err.message);
+    }
     return null;
   }
 }
