@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
-const VOICE_ID = process.env.DEFAULT_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+const VOICE_ID = process.env.DEFAULT_VOICE_ID || "IwYczQpZ9cL8cSLltfoT"; // voz Rachel
 
 async function speak(text) {
   try {
