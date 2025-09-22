@@ -7,7 +7,6 @@ import dotenv from 'dotenv';
 import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
-import SemanticMemory from "./models/semanticMemory.js";
 import { getWeather } from "./utils/weather.js";
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
@@ -32,9 +31,9 @@ async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db();
-    console.log('✅ Conectado ao MongoDB (histórico)');
+    console.log('✅ Conectado ao MongoDB (histórico e usuários)');
   } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB (histórico):', err);
+    console.error('❌ Erro ao conectar ao MongoDB:', err);
   }
 }
 connectDB();
@@ -84,6 +83,37 @@ async function sendAudio(to, audioBuffer) {
   } catch (err) {
     console.error('❌ Erro ao enviar áudio:', err.response?.data || err);
   }
+}
+
+// ===== Funções de usuários e memória =====
+async function getUserName(number) {
+  const doc = await db.collection('users').findOne({ numero: number });
+  return doc?.nome || null;
+}
+
+async function setUserName(number, name) {
+  await db.collection('users').updateOne(
+    { numero: number },
+    { $set: { nome: name } },
+    { upsert: true }
+  );
+}
+
+async function getUserMemory(number, limit = 5) {
+  return await db.collection('semanticMemory')
+    .find({ numero: number })
+    .sort({ timestamp: -1 })
+    .limit(limit)
+    .toArray();
+}
+
+async function saveMemory(number, role, content) {
+  await db.collection('semanticMemory').insertOne({
+    numero: number,
+    role,
+    content,
+    timestamp: new Date()
+  });
 }
 
 // ===== Webhook endpoint =====
@@ -196,4 +226,3 @@ app.post('/webhook', async (req, res) => {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
 })();
-
