@@ -1,5 +1,3 @@
-
-// src/server.js
 import express from 'express';
 import { MongoClient } from 'mongodb';
 import bodyParser from 'body-parser';
@@ -9,7 +7,8 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import { getWeather } from "./utils/weather.js"; // função de clima
+import { getWeather } from "./utils/weather.js";
+import { speak } from "./utils/speak.js";
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
 
@@ -64,6 +63,20 @@ async function sendMessage(to, message) {
     console.log('📤 Mensagem enviada:', message);
   } catch (err) {
     console.error('❌ Erro ao enviar WhatsApp:', err.response?.data || err);
+  }
+}
+
+async function sendAudio(to, audioBuffer) {
+  try {
+    const base64Audio = Buffer.from(audioBuffer).toString('base64');
+    await axios.post(
+      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
+      { messaging_product: "whatsapp", to, audio: { data: base64Audio, mime_type: "audio/mpeg" } },
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+    );
+    console.log('📤 Áudio enviado');
+  } catch (err) {
+    console.error('❌ Erro ao enviar áudio:', err.response?.data || err);
   }
 }
 
@@ -146,10 +159,13 @@ app.post('/webhook', async (req, res) => {
     if (!allowedNumbers.includes(from)) return res.sendStatus(200);
 
     let body;
+    let isAudioReply = false;
+
     if (messageObj.type === "text") body = messageObj.text?.body;
     else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
+      isAudioReply = true;
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
       return res.sendStatus(200);
@@ -169,23 +185,19 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Histórico de memória semântica
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // ===== Sistema GPT =====
     const systemMessage = {
       role: "system",
       content: `Você é a Donna, assistente pessoal do usuário. Sempre chame o usuário pelo nome se souber. Responda de forma objetiva, curta e direta. Não repita apresentações.`
     };
 
-    // ===== Comandos especiais: hora, data, clima =====
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
 
-    if (/que horas são\??/i.test(body)) {
-      reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
-    } else if (/qual a data( de hoje)?\??/i.test(body)) {
+    if (/que horas são\??/i.test(body)) reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
+    else if (/qual a data( de hoje)?\??/i.test(body)) {
       const weekday = now.toFormat('cccc');
       reply = `📅 Hoje é ${weekday}, ${now.toFormat('dd/MM/yyyy')}`;
     } else if (/tempo|clima|previsão/i.test(body)) {
@@ -201,22 +213,30 @@ app.post('/webhook', async (req, res) => {
 
       reply = await getWeather(city, when);
     } else {
-      // Se sabemos o nome, inserimos no prompt
       const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
     }
 
-    // Salvar histórico
+    // ===== Gerar áudio se necessário =====
+    let replyAudio = null;
+    if (isAudioReply || /^fala\s/i.test(body)) {
+      if (/^fala\s/i.test(body)) reply = reply.replace(/^fala\s/i, "").trim();
+      replyAudio = await speak(reply);
+      reply = null; // não enviar texto se enviar áudio
+    }
+
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
-      resposta: reply,
+      resposta: reply || "[áudio enviado]",
       timestamp: new Date()
     });
-    await saveMemory(from, "user", body);
-    await saveMemory(from, "assistant", reply);
 
-    await sendMessage(from, reply);
+    await saveMemory(from, "user", body);
+    await saveMemory(from, "assistant", reply || "[áudio enviado]");
+
+    if (reply) await sendMessage(from, reply);
+    if (replyAudio) await sendAudio(from, replyAudio);
 
   } catch (err) {
     console.error('❌ Erro ao processar webhook:', err);
@@ -238,3 +258,4 @@ app.post('/webhook', async (req, res) => {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
 })();
+
