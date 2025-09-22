@@ -8,10 +8,10 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import { getWeather } from "./utils/weather.js"; // função de clima
+import { getWeather } from "./utils/weather.js";
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
-import speak from "./utils/speak.js";
+import speak from "./utils/speak.js"; // já usando ElevenLabs SDK
 
 dotenv.config();
 
@@ -86,74 +86,6 @@ async function sendAudio(to, audioBuffer) {
   }
 }
 
-async function downloadMedia(mediaId) {
-  try {
-    const mediaUrlResp = await axios.get(`https://graph.facebook.com/v17.0/${mediaId}`, {
-      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
-    });
-    const mediaResp = await axios.get(mediaUrlResp.data.url, {
-      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-      responseType: "arraybuffer"
-    });
-    return mediaResp.data;
-  } catch (err) {
-    console.error("❌ Erro ao baixar mídia:", err.response?.data || err);
-    return null;
-  }
-}
-
-async function transcribeAudio(audioBuffer) {
-  try {
-    const formData = new FormData();
-    formData.append("file", audioBuffer, { filename: "audio.ogg" });
-    formData.append("model", "gpt-4o-transcribe");
-
-    const response = await axios.post(
-      "https://api.openai.com/v1/audio/transcriptions",
-      formData,
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...formData.getHeaders() } }
-    );
-    return response.data.text || null;
-  } catch (err) {
-    console.error("❌ Erro Whisper:", err.response?.data || err);
-    return null;
-  }
-}
-
-// ===== Memória semântica =====
-async function generateEmbedding(text) {
-  const response = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: text,
-  });
-  return response.data[0].embedding;
-}
-
-async function getUserMemory(userId, limit = 6) {
-  return await SemanticMemory.find({ userId }).sort({ createdAt: -1 }).limit(limit).lean();
-}
-
-async function saveMemory(userId, role, content, contentType = null) {
-  const embedding = await generateEmbedding(content);
-  const memory = new SemanticMemory({ userId, role, content, embedding, contentType });
-  await memory.save();
-}
-
-// ===== Memória do nome do usuário =====
-async function setUserName(userId, name) {
-  const embedding = await generateEmbedding(name);
-  await SemanticMemory.findOneAndUpdate(
-    { userId, role: "user", contentType: "name" },
-    { content: name, embedding },
-    { upsert: true, new: true }
-  );
-}
-
-async function getUserName(userId) {
-  const memory = await SemanticMemory.findOne({ userId, role: "user", contentType: "name" }).lean();
-  return memory?.content || null;
-}
-
 // ===== Webhook endpoint =====
 app.post('/webhook', async (req, res) => {
   try {
@@ -202,13 +134,13 @@ app.post('/webhook', async (req, res) => {
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // ===== Sistema GPT =====
+    // Sistema GPT
     const systemMessage = {
       role: "system",
-      content: `Você é a Donna, assistente pessoal do usuário. Sempre chame o usuário pelo nome se souber. Responda de forma objetiva, curta e direta. Não repita apresentações.`
+      content: `Você é a Donna, assistente pessoal do usuário. Sempre chame o usuário pelo nome se souber. Responda de forma objetiva, curta e direta.`
     };
 
-    // ===== Comandos especiais: hora, data, clima =====
+    // Comandos especiais
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
 
@@ -220,15 +152,7 @@ app.post('/webhook', async (req, res) => {
     } else if (/tempo|clima|previsão/i.test(body)) {
       const matchCity = body.match(/em\s+([a-z\s]+)/i);
       const city = matchCity ? matchCity[1].trim() : "Curitiba";
-
-      let when = "hoje";
-      if (/amanhã/i.test(body)) when = "amanhã";
-      else {
-        const dateMatch = body.match(/(\d{1,2}\/\d{1,2}(?:\/\d{4})?)/);
-        if (dateMatch) when = dateMatch[1];
-      }
-
-      reply = await getWeather(city, when);
+      reply = await getWeather(city, "hoje");
     } else {
       const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
@@ -246,7 +170,7 @@ app.post('/webhook', async (req, res) => {
 
     // ===== Enviar resposta =====
     if (isAudioResponse) {
-      const audioData = await speak(reply);
+      const audioData = await speak(reply); // SDK ElevenLabs
       if (audioData) await sendAudio(from, audioData);
     } else {
       await sendMessage(from, reply);
@@ -272,3 +196,4 @@ app.post('/webhook', async (req, res) => {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
 })();
+
