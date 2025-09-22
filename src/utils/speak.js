@@ -1,37 +1,27 @@
-// src/utils/speak.js
-import axios from 'axios';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
-const VOICE_ID = process.env.DEFAULT_VOICE_ID || "IwYczQpZ9cL8cSLltfoT"; // voz Rachel
+const elevenlabs = new ElevenLabsClient({
+  apiKey: process.env.ELEVEN_API_KEY, // sua chave do ElevenLabs
+});
 
-async function speak(text) {
+const VOICE_ID = process.env.DEFAULT_VOICE_ID || 'IwYczQpZ9cL8cSLltfoT'; // Rachel
+
+export default async function speak(text) {
   try {
-    const response = await axios.post(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
-      { text },
-      {
-        headers: {
-          "xi-api-key": ELEVEN_API_KEY,
-          "Content-Type": "application/json"
-        },
-        responseType: "arraybuffer"
-      }
-    );
-    return response.data;
+    const audioBuffer = await elevenlabs.textToSpeech.convert(VOICE_ID, {
+      text,
+      modelId: 'eleven_multilingual_v2',
+      outputFormat: 'mp3_44100_128',
+    });
+
+    return Buffer.from(await audioBuffer.arrayBuffer());
   } catch (err) {
-    // Debug detalhado do erro
-    if (err.response) {
-      console.error("❌ Erro ao gerar áudio (resposta da API):", JSON.stringify(err.response.data, null, 2));
-    } else {
-      console.error("❌ Erro ao gerar áudio:", err.message);
-    }
+    console.error('❌ Erro ao gerar áudio:', err);
     return null;
   }
 }
 
-// Export correto para ES Modules
-export default speak;
 
