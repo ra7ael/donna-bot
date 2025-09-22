@@ -6,7 +6,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "postinstall": "npm install @elevenlabs/elevenlabs-js"
   },
   "author": "Rafael Neves",
   "license": "MIT",
@@ -20,7 +21,7 @@
     "luxon": "^3.4.0",
     "openai": "^4.8.0",
     "form-data": "^4.0.0",
-    "@elevenlabs/elevenlabs-js": "^1.50.1"
+    "@elevenlabs/elevenlabs-js": "^0.3.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
