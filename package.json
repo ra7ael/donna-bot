@@ -6,8 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "postinstall": "npm install @elevenlabs/elevenlabs-js"
+    "dev": "nodemon src/server.js"
   },
   "author": "Rafael Neves",
   "license": "MIT",
