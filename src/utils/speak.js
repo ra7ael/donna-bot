@@ -1,31 +1,32 @@
 // src/utils/speak.js
-import fs from "fs";
-import path from "path";
-import OpenAI from "openai";
-import dotenv from "dotenv";
+import axios from 'axios';
+import dotenv from 'dotenv';
 
 dotenv.config();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function speakMessage(text, userId) {
+const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
+const VOICE_ID = process.env.DEFAULT_VOICE_ID || "pNInz6obpgDQGcFmaJgB"; // voz feminina padrão
+
+async function speak(text) {
   try {
-    const outputDir = "./tmp";
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
-
-    const filePath = path.join(outputDir, `reply_${userId}.mp3`);
-
-    const mp3 = await openai.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice: "alloy", // 🔊 voz feminina padrão
-      input: text,
-    });
-
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    fs.writeFileSync(filePath, buffer);
-
-    return filePath;
+    const response = await axios.post(
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
+      { text },
+      {
+        headers: {
+          "xi-api-key": ELEVEN_API_KEY,
+          "Content-Type": "application/json"
+        },
+        responseType: "arraybuffer"
+      }
+    );
+    return response.data;
   } catch (err) {
-    console.error("❌ Erro ao gerar fala:", err.response?.data || err);
+    console.error("❌ Erro ao gerar áudio:", err.response?.data || err);
     return null;
   }
 }
+
+// Export correto para ES Modules
+export default speak;
+
