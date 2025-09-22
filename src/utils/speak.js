@@ -1,28 +1,30 @@
-import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
-import dotenv from 'dotenv';
+// src/utils/speak.js
+import axios from 'axios';
 
-dotenv.config();
-
-const elevenlabs = new ElevenLabsClient({
-  apiKey: process.env.ELEVEN_API_KEY, // chave do ElevenLabs
-});
-
-const VOICE_ID = process.env.DEFAULT_VOICE_ID || 'IwYczQpZ9cL8cSLltfoT'; // Rachel
-
-export default async function speak(text) {
+/**
+ * Gera áudio usando Coqui TTS
+ * @param {string} text - Texto a ser convertido em fala
+ * @param {string} voice - Nome da voz (opcional)
+ * @returns {Buffer|null} - Buffer de áudio MP3
+ */
+export default async function speak(text, voice = 'alloy') {
   try {
-    const audioData = await elevenlabs.textToSpeech.convert(VOICE_ID, {
-      text,
-      modelId: 'eleven_multilingual_v2',
-      outputFormat: 'mp3_44100_128',
-    });
+    // URL do seu servidor Coqui TTS
+    const TTS_SERVER_URL = process.env.COQUI_TTS_URL || 'http://localhost:5005/api/tts';
 
-    // Se retornar ArrayBuffer, transforma em Buffer
-    const buffer = audioData instanceof ArrayBuffer ? Buffer.from(audioData) : Buffer.from(await audioData.arrayBuffer());
+    const response = await axios.post(
+      TTS_SERVER_URL,
+      {
+        text,
+        voice,           // Voz que você quer usar
+        format: 'mp3'    // Saída em mp3
+      },
+      { responseType: 'arraybuffer' } // Receber como buffer
+    );
 
-    return buffer;
+    return Buffer.from(response.data);
   } catch (err) {
-    console.error('❌ Erro ao gerar áudio:', err);
+    console.error('❌ Erro ao gerar áudio Coqui TTS:', err.message || err);
     return null;
   }
 }
