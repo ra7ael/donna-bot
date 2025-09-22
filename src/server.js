@@ -1,3 +1,4 @@
+// src/server.js
 import express from 'express';
 import { MongoClient } from 'mongodb';
 import bodyParser from 'body-parser';
@@ -7,10 +8,10 @@ import FormData from 'form-data';
 import mongoose from "mongoose";
 import { startReminderCron } from "./cron/reminders.js";
 import SemanticMemory from "./models/semanticMemory.js";
-import { getWeather } from "./utils/weather.js";
-import { speak } from "./utils/speak.js";
+import { getWeather } from "./utils/weather.js"; // função de clima
 import OpenAI from "openai";
 import { DateTime } from 'luxon';
+import speak from "./utils/speak.js"; // import ajustado
 
 dotenv.config();
 
@@ -68,11 +69,16 @@ async function sendMessage(to, message) {
 
 async function sendAudio(to, audioBuffer) {
   try {
-    const base64Audio = Buffer.from(audioBuffer).toString('base64');
+    const formData = new FormData();
+    formData.append('messaging_product', 'whatsapp');
+    formData.append('to', to);
+    formData.append('type', 'audio');
+    formData.append('audio', audioBuffer, { filename: 'audio.mp3' });
+
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
-      { messaging_product: "whatsapp", to, audio: { data: base64Audio, mime_type: "audio/mpeg" } },
-      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+      formData,
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, ...formData.getHeaders() } }
     );
     console.log('📤 Áudio enviado');
   } catch (err) {
@@ -159,13 +165,16 @@ app.post('/webhook', async (req, res) => {
     if (!allowedNumbers.includes(from)) return res.sendStatus(200);
 
     let body;
-    let isAudioReply = false;
+    let isAudioResponse = false; // flag para decidir envio em áudio
 
-    if (messageObj.type === "text") body = messageObj.text?.body;
-    else if (messageObj.type === "audio") {
+    if (messageObj.type === "text") {
+      body = messageObj.text?.body;
+    } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = await transcribeAudio(audioBuffer);
-      isAudioReply = true;
+      if (audioBuffer) {
+        body = await transcribeAudio(audioBuffer);
+        isAudioResponse = true; // vamos responder em áudio
+      }
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
       return res.sendStatus(200);
@@ -185,19 +194,23 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // Histórico de memória semântica
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
+    // ===== Sistema GPT =====
     const systemMessage = {
       role: "system",
       content: `Você é a Donna, assistente pessoal do usuário. Sempre chame o usuário pelo nome se souber. Responda de forma objetiva, curta e direta. Não repita apresentações.`
     };
 
+    // ===== Comandos especiais: hora, data, clima =====
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
 
-    if (/que horas são\??/i.test(body)) reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
-    else if (/qual a data( de hoje)?\??/i.test(body)) {
+    if (/que horas são\??/i.test(body)) {
+      reply = `🕒 Agora são ${now.toFormat('HH:mm')}`;
+    } else if (/qual a data( de hoje)?\??/i.test(body)) {
       const weekday = now.toFormat('cccc');
       reply = `📅 Hoje é ${weekday}, ${now.toFormat('dd/MM/yyyy')}`;
     } else if (/tempo|clima|previsão/i.test(body)) {
@@ -217,26 +230,23 @@ app.post('/webhook', async (req, res) => {
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
     }
 
-    // ===== Gerar áudio se necessário =====
-    let replyAudio = null;
-    if (isAudioReply || /^fala\s/i.test(body)) {
-      if (/^fala\s/i.test(body)) reply = reply.replace(/^fala\s/i, "").trim();
-      replyAudio = await speak(reply);
-      reply = null; // não enviar texto se enviar áudio
-    }
-
+    // Salvar histórico
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
-      resposta: reply || "[áudio enviado]",
+      resposta: reply,
       timestamp: new Date()
     });
-
     await saveMemory(from, "user", body);
-    await saveMemory(from, "assistant", reply || "[áudio enviado]");
+    await saveMemory(from, "assistant", reply);
 
-    if (reply) await sendMessage(from, reply);
-    if (replyAudio) await sendAudio(from, replyAudio);
+    // ===== Enviar resposta =====
+    if (isAudioResponse) {
+      const audioData = await speak(reply);
+      if (audioData) await sendAudio(from, audioData);
+    } else {
+      await sendMessage(from, reply);
+    }
 
   } catch (err) {
     console.error('❌ Erro ao processar webhook:', err);
@@ -258,4 +268,3 @@ app.post('/webhook', async (req, res) => {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
 })();
-
