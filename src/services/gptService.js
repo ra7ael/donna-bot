@@ -3,9 +3,40 @@ require("dotenv").config();
 
 const Conversation = require("../models/Conversation");
 
-// Lista de números autorizados (se quiser reforçar controle)
+// Lista de números autorizados
 const authorizedNumbers = ["554195194485"];
 
+// ---------------- Cache ----------------
+const cache = new Map();
+function getCached(prompt) { return cache.get(prompt); }
+function setCached(prompt, resposta) { cache.set(prompt, resposta); }
+
+// ---------------- Dataset ----------------
+const fs = require("fs");
+const path = require("path");
+const datasetPath = path.join(__dirname, "../dataset/dataset.jsonl");
+const dataset = fs.readFileSync(datasetPath, "utf8")
+  .split("\n")
+  .filter(Boolean)
+  .map(line => JSON.parse(line));
+
+function buscarRespostaDataset(mensagem) {
+  for (const entry of dataset) {
+    const userMsg = entry.messages.find(m => m.role === "user");
+    if (userMsg && mensagem.toLowerCase().includes(userMsg.content.toLowerCase())) {
+      const assistantMsg = entry.messages.find(m => m.role === "assistant");
+      return assistantMsg ? assistantMsg.content : null;
+    }
+  }
+  return null;
+}
+
+// ---------------- Modelo Econômico ----------------
+const economicalModel = "gpt-4o-mini"; // ou gpt-3.5-turbo
+const MAX_TOKENS = 300;
+const TEMPERATURE = 0.7;
+
+// ---------------- Função principal ----------------
 async function getGPTResponse(userMessage, imageUrl = null, userId, phoneNumber) {
   // Verifica se o número é autorizado
   if (phoneNumber && !authorizedNumbers.includes(phoneNumber)) {
@@ -17,11 +48,12 @@ async function getGPTResponse(userMessage, imageUrl = null, userId, phoneNumber)
     // Buscar histórico do usuário
     const history = await Conversation.find({ from: userId }).sort({ createdAt: 1 });
 
+    // Monta mensagens do chat
     const messages = [
       {
         role: "system",
         content: `
-Você é Rafa, assistente executiva perspicaz, elegante e humanizada.
+Você é Donna, assistente executiva perspicaz, elegante e humanizada.
 - Ajuda em administração, legislação, RH e negócios.
 - Poliglota: responda no idioma da mensagem do usuário.
 - Dá dicas estratégicas e conselhos.
@@ -31,7 +63,6 @@ Você é Rafa, assistente executiva perspicaz, elegante e humanizada.
       },
     ];
 
-    // Adiciona histórico do usuário e assistente
     history.forEach(h => {
       messages.push({
         role: h.role === "assistant" ? "assistant" : "user",
@@ -39,64 +70,54 @@ Você é Rafa, assistente executiva perspicaz, elegante e humanizada.
       });
     });
 
-    // Adiciona nova mensagem do usuário
     let userContent = userMessage || "";
     if (imageUrl) userContent += `\n📷 Imagem recebida: ${imageUrl}`;
     messages.push({ role: "user", content: userContent });
 
-    // Modelos
-    const fineTuneModel = process.env.FINE_TUNED_MODEL_ID || "ft:gpt-4o-mini-2024-07-18:personal:donna-assistentepessoal:CGdyamnQ";
-    const fallbackModel = "gpt-3.5-turbo";
+    // 1️⃣ Checa cache
+    const cached = getCached(userContent);
+    if (cached) return cached;
 
+    // 2️⃣ Checa dataset local
+    const datasetAnswer = buscarRespostaDataset(userContent);
+    if (datasetAnswer) {
+      setCached(userContent, datasetAnswer);
+      return datasetAnswer;
+    }
+
+    // 3️⃣ Chamada ao modelo econômico
     try {
-      // Chamada para modelo fine-tuned
-      console.log("📌 Tentando modelo fine-tuned:", fineTuneModel);
       const response = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
-          model: fineTuneModel,
+          model: economicalModel,
           messages,
-          max_tokens: 500,
-          temperature: 0.8,
+          max_tokens: MAX_TOKENS,
+          temperature: TEMPERATURE,
         },
         {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+          timeout: 10000, // 10s timeout para não travar
         }
       );
 
-      const content = response.data.choices?.[0]?.message?.content?.trim();
-      return content || "Desculpe, não consegui gerar uma resposta.";
+      const answer = response.data.choices?.[0]?.message?.content?.trim()
+        || "Desculpe, não consegui gerar uma resposta.";
 
-    } catch (fineTuneError) {
-      console.error("⚠️ Erro no fine-tune:", fineTuneError.response?.data || fineTuneError.message);
+      setCached(userContent, answer);
+      return answer;
 
-      // Fallback automático
-      console.log("📌 Usando modelo fallback:", fallbackModel);
-      const fallbackResponse = await axios.post(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          model: fallbackModel,
-          messages,
-          max_tokens: 100,
-          temperature: 0.8,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+    } catch (modelError) {
+      console.error("⚠️ Erro GPT econômico:", modelError.message || modelError);
 
-      const fallbackContent = fallbackResponse.data.choices?.[0]?.message?.content?.trim();
-      return fallbackContent || "Desculpe, tive um problema para responder agora.";
+      // 4️⃣ Fallback seguro
+      const fallbackAnswer = "Desculpe, não consegui responder agora. Tente novamente mais tarde.";
+      setCached(userContent, fallbackAnswer);
+      return fallbackAnswer;
     }
 
   } catch (error) {
-    console.error("❌ Erro geral no GPT:", error.response?.data || error.message);
+    console.error("❌ Erro geral no GPT:", error.message || error);
     return "Desculpe, tive um problema para responder agora.";
   }
 }
