@@ -6,11 +6,10 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
 import mongoose from "mongoose";
+import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
-import OpenAI from "openai";
-import { DateTime } from 'luxon';
-import speak from "./utils/speak.js"; // agora usando Coqui TTS
+import speak from "./utils/speak.js"; // TTS (opcional)
 import { downloadMedia } from './utils/downloadMedia.js';
 
 dotenv.config();
@@ -27,7 +26,7 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
 let db;
 
-// ===== Conectar ao MongoDB =====
+// ===== Conectar MongoDB (histórico e usuários) =====
 async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
@@ -39,7 +38,7 @@ async function connectDB() {
 }
 connectDB();
 
-// ===== Funções auxiliares =====
+// ===== Funções GPT =====
 async function askGPT(prompt, history = []) {
   try {
     const response = await axios.post(
@@ -54,7 +53,9 @@ async function askGPT(prompt, history = []) {
   }
 }
 
+// ===== Funções WhatsApp =====
 async function sendMessage(to, message) {
+  if (!message) return;
   try {
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
@@ -68,6 +69,7 @@ async function sendMessage(to, message) {
 }
 
 async function sendAudio(to, audioBuffer) {
+  if (!audioBuffer) return;
   try {
     const formData = new FormData();
     formData.append('messaging_product', 'whatsapp');
@@ -117,6 +119,26 @@ async function saveMemory(number, role, content) {
   });
 }
 
+// ===== Função de transcrição =====
+async function transcribeAudio(audioBuffer) {
+  try {
+    const form = new FormData();
+    form.append('file', audioBuffer, { filename: 'audio.ogg' });
+    form.append('model', 'whisper-1');
+
+    const res = await axios.post(
+      'https://api.openai.com/v1/audio/transcriptions',
+      form,
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...form.getHeaders() } }
+    );
+
+    return res.data?.text || "";
+  } catch (err) {
+    console.error("❌ Erro na transcrição:", err.response?.data || err.message);
+    return "";
+  }
+}
+
 // ===== Webhook endpoint =====
 app.post('/webhook', async (req, res) => {
   try {
@@ -127,9 +149,10 @@ app.post('/webhook', async (req, res) => {
     const allowedNumbers = ['554195194485', '554199833283','554196820681'];
     if (!allowedNumbers.includes(from)) return res.sendStatus(200);
 
-    let body;
+    let body = "";
     let isAudioResponse = false;
 
+    // ===== Texto ou áudio =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body;
       if (body.toLowerCase().startsWith("fala ")) {
@@ -140,19 +163,19 @@ app.post('/webhook', async (req, res) => {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) {
         body = await transcribeAudio(audioBuffer);
-        isAudioResponse = true;
+        isAudioResponse = false; // só transcreve
       }
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
       return res.sendStatus(200);
     }
 
-    if (!body) return res.sendStatus(200);
+    if (!body?.trim()) return res.sendStatus(200);
 
     // ===== Recuperar nome do usuário =====
     let userName = await getUserName(from);
 
-    // ===== Captura de nome =====
+    // ===== Captura nome =====
     const nameMatch = body.match(/meu nome é (\w+)/i);
     if (nameMatch) {
       userName = nameMatch[1];
@@ -201,7 +224,7 @@ app.post('/webhook', async (req, res) => {
 
     // ===== Enviar resposta =====
     if (isAudioResponse) {
-      const audioData = await speak(reply); // SDK ElevenLabs
+      const audioData = await speak(reply); // TTS opcional
       if (audioData) await sendAudio(from, audioData);
     } else {
       await sendMessage(from, reply);
@@ -219,9 +242,7 @@ app.post('/webhook', async (req, res) => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
-
     startReminderCron();
-
     app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
