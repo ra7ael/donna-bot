@@ -162,10 +162,8 @@ app.post('/webhook', async (req, res) => {
       }
     } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) {
-        body = await transcribeAudio(audioBuffer);
-        isAudioResponse = false; // só transcreve
-      }
+      if (audioBuffer) body = await transcribeAudio(audioBuffer);
+      isAudioResponse = false;
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
       return res.sendStatus(200);
@@ -173,10 +171,8 @@ app.post('/webhook', async (req, res) => {
 
     if (!body?.trim()) return res.sendStatus(200);
 
-    // ===== Recuperar nome do usuário =====
+    // ===== Captura nome do usuário =====
     let userName = await getUserName(from);
-
-    // ===== Captura nome =====
     const nameMatch = body.match(/meu nome é (\w+)/i);
     if (nameMatch) {
       userName = nameMatch[1];
@@ -185,17 +181,23 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Histórico de memória semântica
+    // ===== Histórico de memória semântica =====
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
-    // Sistema GPT
     const systemMessage = {
       role: "system",
-      content: `Você é a Donna, assistente pessoal do usuário. Sempre chame o usuário pelo nome se souber. Responda de forma objetiva, curta e direta.`
+      content: `
+            Você é a Donna, assistente pessoal do usuário. 
+      - Use o nome do usuário quando souber. 
+      - Responda de forma objetiva, clara, direta e amigável. 
+      - Priorize respostas curtas, práticas e fáceis de entender. 
+      - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa. 
+      - Não invente informações; se não souber, admita de forma educada. 
+      - Adapte seu tom para ser acolhedora e prestativa, sem excesso de formalidade.'
     };
 
-    // Comandos especiais
+    // ===== Comandos especiais =====
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
 
@@ -213,7 +215,7 @@ app.post('/webhook', async (req, res) => {
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
     }
 
-    // Salvar histórico
+    // ===== Salvar histórico =====
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
@@ -225,7 +227,7 @@ app.post('/webhook', async (req, res) => {
 
     // ===== Enviar resposta =====
     if (isAudioResponse) {
-      const audioData = await speak(reply); // TTS opcional
+      const audioData = await speak(reply);
       if (audioData) await sendAudio(from, audioData);
     } else {
       await sendMessage(from, reply);
@@ -243,7 +245,9 @@ app.post('/webhook', async (req, res) => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
-    startReminderCron();
+
+    startReminderCron(); // inicia cron de lembretes
+
     app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
