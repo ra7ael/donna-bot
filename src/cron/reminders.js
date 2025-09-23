@@ -43,7 +43,7 @@ async function sendWhatsAppReminder(reminder) {
 
 // ===== Função para iniciar cron de lembretes =====
 export function startReminderCron() {
-  // Roda a cada minuto
+  // Executa a cada minuto
   cron.schedule("* * * * *", async () => {
     try {
       if (mongoose.connection.readyState !== 1) {
@@ -59,11 +59,13 @@ export function startReminderCron() {
       const reminders = await Reminder.find({
         date: { $gte: oneMinuteAgo, $lte: nowDate },
         sent: { $ne: true },
-      });
+      }).sort({ date: 1 }); // Ordena pelo horário do lembrete
 
       for (const r of reminders) {
         await sendWhatsAppReminder(r);
-        await Reminder.findByIdAndUpdate(r._id, { sent: true });
+        // Marca como enviado
+        r.sent = true;
+        await r.save();
       }
     } catch (err) {
       console.error("❌ Erro no cron job de lembretes:", err);
@@ -72,4 +74,3 @@ export function startReminderCron() {
 
   console.log("⏰ Cron de lembretes iniciado...");
 }
-
