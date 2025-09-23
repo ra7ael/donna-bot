@@ -1,20 +1,10 @@
 // src/cron/reminders.js
 import cron from "node-cron";
-import { DateTime } from "luxon";
-import { MongoClient } from "mongodb";
+import mongoose from "mongoose";
 import axios from "axios";
+import { DateTime } from "luxon";
 
-const MONGO_URI = process.env.MONGO_URI;
-let db;
-
-// Conecta ao Mongo
-async function connectDB() {
-  const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-  db = client.db();
-}
-connectDB();
-
-// Envia lembrete WhatsApp
+// ===== Função para enviar lembrete WhatsApp =====
 async function sendWhatsAppReminder(reminder) {
   if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return;
 
@@ -41,18 +31,21 @@ async function sendWhatsAppReminder(reminder) {
   }
 }
 
-// Cron que roda a cada minuto
+// ===== Cron para verificar lembretes a cada minuto =====
 export function startReminderCron() {
   cron.schedule("* * * * *", async () => {
     try {
-      if (!db) return;
+      if (mongoose.connection.readyState !== 1) {
+        console.log("❌ Mongo não conectado. Cron aguardando...");
+        return;
+      }
 
       const now = DateTime.now().setZone("America/Sao_Paulo");
       const today = now.toFormat("yyyy-MM-dd");
       const currentTime = now.toFormat("HH:mm");
 
-      // Busca lembretes de hoje que ainda não foram enviados e que já passaram do horário
-      const events = await db.collection("agenda").find({
+      // Busca lembretes na coleção 'donna' que ainda não foram enviados e já passaram do horário
+      const events = await mongoose.connection.db.collection("donna").find({
         data: today,
         hora: { $lte: currentTime },
         sent: false
@@ -60,7 +53,10 @@ export function startReminderCron() {
 
       for (const ev of events) {
         await sendWhatsAppReminder(ev);
-        await db.collection("agenda").updateOne({ _id: ev._id }, { $set: { sent: true } });
+        await mongoose.connection.db.collection("donna").updateOne(
+          { _id: ev._id },
+          { $set: { sent: true } }
+        );
       }
     } catch (err) {
       console.error("❌ Erro no cron de lembretes:", err);
