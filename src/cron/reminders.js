@@ -4,7 +4,6 @@ import mongoose from "mongoose";
 import axios from "axios";
 import { DateTime } from "luxon";
 
-// ===== Função para enviar lembrete WhatsApp =====
 async function sendWhatsAppReminder(reminder) {
   if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return;
 
@@ -31,7 +30,6 @@ async function sendWhatsAppReminder(reminder) {
   }
 }
 
-// ===== Cron para verificar lembretes a cada minuto =====
 export function startReminderCron() {
   cron.schedule("* * * * *", async () => {
     try {
@@ -44,7 +42,6 @@ export function startReminderCron() {
       const today = now.toFormat("yyyy-MM-dd");
       const currentTime = now.toFormat("HH:mm");
 
-      // Busca lembretes na coleção 'donna' que ainda não foram enviados e já passaram do horário
       const events = await mongoose.connection.db.collection("donna").find({
         data: today,
         hora: { $lte: currentTime },
