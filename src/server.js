@@ -143,16 +143,22 @@ async function transcribeAudio(audioBuffer) {
 
 // ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
-  await db.collection('agenda').insertOne({
+  await db.collection('donna').insertOne({
     numero: number,
     titulo: title,
     descricao: description || title,
-    data,        // formato yyyy-MM-dd
-    hora: time,  // formato HH:mm
-    sent: false, // campo novo: ainda não enviado
+    data,       // yyyy-MM-dd
+    hora: time, // HH:mm
+    sent: false,
     timestamp: new Date()
   });
 }
+
+async function getTodayEvents(number) {
+  const today = DateTime.now().toFormat('yyyy-MM-dd');
+  return await db.collection('donna').find({ numero, data: today }).sort({ hora: 1 }).toArray();
+}
+
 
 async function getTodayEvents(number) {
   const today = DateTime.now().toFormat('yyyy-MM-dd');
