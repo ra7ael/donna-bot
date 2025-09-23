@@ -13,38 +13,21 @@ import Reminder from '../models/Reminder.js';
 import Conversation from '../models/Conversation.js';
 import { saveMemory, getRelevantMemory } from '../utils/memory.js';
 import { getWeather } from '../utils/weather.js';
+import { sendSplitWhatsApp } from '../utils/splitMessage.js'; // ✅ Import do split
 
 const router = express.Router();
+
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Lista de usuários autorizados
+// ===== Lista de usuários autorizados =====
 const authorizedUsers = [process.env.MY_NUMBER.replace('+', '')];
 
-// ================= Função de envio com limite =================
-async function sendWhatsApp(to, text) {
-  if (!text) return;
-  // Trunca mensagens acima de 400 caracteres
-  const CHUNK_SIZE = 400;
-  for (let i = 0; i < text.length; i += CHUNK_SIZE) {
-    const chunk = text.substring(i, i + CHUNK_SIZE);
-    try {
-      await axios.post(
-        `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
-        { messaging_product: "whatsapp", to, text: { body: chunk } },
-        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-      );
-      console.log("📤 Mensagem enviada:", chunk);
-    } catch (err) {
-      console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err.message);
-    }
-  }
-}
-
-// ================= GET webhook =================
+// ===== GET webhook (verificação) =====
 router.get('/', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
+
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('✅ Webhook verificado com sucesso!');
     return res.status(200).send(challenge);
@@ -53,7 +36,7 @@ router.get('/', (req, res) => {
   res.sendStatus(403);
 });
 
-// ================= POST webhook =================
+// ===== POST webhook (receber mensagens) =====
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
@@ -64,7 +47,11 @@ router.post('/', async (req, res) => {
 
     const from = entry.from;
     console.log("Número recebido do WhatsApp:", from);
-    if (!authorizedUsers.includes(from)) return res.sendStatus(200);
+
+    if (!authorizedUsers.includes(from)) {
+      console.log("❌ Usuário não autorizado:", from);
+      return res.sendStatus(200);
+    }
 
     let userMessage = "";
     let mediaUrl = null;
@@ -72,7 +59,6 @@ router.post('/', async (req, res) => {
     // ===== Processar mensagens =====
     if (entry.type === 'text') {
       userMessage = entry.text?.body || "";
-
     } else if (entry.type === 'audio') {
       try {
         const mediaId = entry.audio.id;
@@ -102,7 +88,6 @@ router.post('/', async (req, res) => {
       } finally {
         try { fs.unlinkSync('/tmp/audio.ogg'); } catch(e) {}
       }
-
     } else if (entry.type === 'image') {
       try {
         const mediaId = entry.image.id;
@@ -117,13 +102,13 @@ router.post('/', async (req, res) => {
         userMessage = "❌ Não consegui processar sua imagem.";
       }
     } else {
-      await sendWhatsApp(from, "❌ Tipo de mensagem não suportado. Envie texto ou áudio.");
+      await sendSplitWhatsApp(from, "❌ Tipo de mensagem não suportado. Envie texto ou áudio.", PHONE_ID, WHATSAPP_TOKEN);
       return res.sendStatus(200);
     }
 
     if (!userMessage?.trim()) return res.sendStatus(200);
 
-    // ===== Salvar histórico e memória =====
+    // ===== Salvar no histórico =====
     await Conversation.create({ from, role: 'user', content: userMessage });
     await saveMemory(from, 'user', userMessage);
 
@@ -133,7 +118,7 @@ router.post('/', async (req, res) => {
 
     let responseText = "";
 
-    // ===== Comandos especiais: hora, data e clima =====
+    // ===== Comandos especiais =====
     if (/que horas são\??/i.test(userMessage)) {
       responseText = `🕒 Agora são ${currentTime}`;
     } else if (/qual a data( de hoje)?\??/i.test(userMessage)) {
@@ -145,8 +130,9 @@ router.post('/', async (req, res) => {
       // ===== Lembretes =====
       const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
       if (lembreteRegex.test(userMessage)) {
-        const [_, text, __, dateStr] = userMessage.match(lembreteRegex);
-        const date = new Date(dateStr);
+        const match = userMessage.match(lembreteRegex);
+        const text = match[1];
+        const date = new Date(match[3]);
 
         if (isNaN(date)) {
           responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
@@ -155,7 +141,7 @@ router.post('/', async (req, res) => {
           responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
         }
       } else {
-        // ===== Histórico e memória relevantes =====
+        // ===== Histórico e memória =====
         const history = await Conversation.find({ from }).sort({ createdAt: 1 });
         const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`).join("\n");
 
@@ -184,8 +170,8 @@ Mensagem do usuário: "${userMessage}"`,
     await saveMemory(from, 'assistant', responseText);
     await Message.create({ from, body: userMessage, response: responseText });
 
-    // ===== Enviar resposta com limite =====
-    await sendWhatsApp(from, responseText);
+    // ===== Enviar mensagem dividida =====
+    await sendSplitWhatsApp(from, responseText, PHONE_ID, WHATSAPP_TOKEN);
 
     res.sendStatus(200);
 
@@ -200,7 +186,7 @@ cron.schedule('* * * * *', async () => {
   const now = new Date();
   const reminders = await Reminder.find({ date: { $lte: now } });
   for (const r of reminders) {
-    await sendWhatsApp(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString('pt-BR')})`);
+    await sendSplitWhatsApp(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString('pt-BR')})`, PHONE_ID, WHATSAPP_TOKEN);
     await Reminder.findByIdAndDelete(r._id);
   }
 });
