@@ -147,9 +147,9 @@ async function addEvent(number, title, description, date, time) {
     numero: number,
     titulo: title,
     descricao: description || title,
-    data,
-    hora: time,
-    sent: false,
+    data,        // formato yyyy-MM-dd
+    hora: time,  // formato HH:mm
+    sent: false, // campo novo: ainda não enviado
     timestamp: new Date()
   });
 }
