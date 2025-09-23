@@ -10,8 +10,9 @@ import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
-import speak from "./utils/speak.js"; // TTS (opcional)
+import speak from "./utils/speak.js"; // TTS opcional
 import { downloadMedia } from './utils/downloadMedia.js';
+import cron from 'node-cron';
 
 dotenv.config();
 
@@ -27,12 +28,12 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
 let db;
 
-// ===== Conectar MongoDB (histórico e usuários) =====
+// ===== Conectar MongoDB (histórico, usuários, agenda) =====
 async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db();
-    console.log('✅ Conectado ao MongoDB (histórico e usuários)');
+    console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
   } catch (err) {
     console.error('❌ Erro ao conectar ao MongoDB:', err);
   }
@@ -140,6 +141,23 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
+// ===== Funções de Agenda =====
+async function addEvent(number, title, description, date, time) {
+  await db.collection('agenda').insertOne({
+    numero: number,
+    titulo: title,
+    descricao: description || title,
+    data,
+    hora: time,
+    timestamp: new Date()
+  });
+}
+
+async function getTodayEvents(number) {
+  const today = DateTime.now().toFormat('yyyy-MM-dd');
+  return await db.collection('agenda').find({ numero, data: today }).sort({ hora: 1 }).toArray();
+}
+
 // ===== Webhook endpoint =====
 app.post('/webhook', async (req, res) => {
   try {
@@ -188,13 +206,14 @@ app.post('/webhook', async (req, res) => {
     const systemMessage = {
       role: "system",
       content: `
-            Você é a Donna, assistente pessoal do usuário. 
-      - Use o nome do usuário quando souber. 
-      - Responda de forma objetiva, clara, direta e amigável. 
-      - Priorize respostas curtas, práticas e fáceis de entender. 
-      - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa. 
-      - Não invente informações; se não souber, admita de forma educada. 
-      - Adapte seu tom para ser acolhedora e prestativa, sem excesso de formalidade.'
+        Você é a Donna, assistente pessoal do usuário. 
+        - Use o nome do usuário quando souber. 
+        - Responda de forma objetiva, clara, direta e amigável. 
+        - Priorize respostas curtas, práticas e fáceis de entender. 
+        - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa. 
+        - Não invente informações; se não souber, admita de forma educada. 
+        - Adapte seu tom para ser acolhedora e prestativa.
+      `
     };
 
     // ===== Comandos especiais =====
@@ -210,6 +229,23 @@ app.post('/webhook', async (req, res) => {
       const matchCity = body.match(/em\s+([a-z\s]+)/i);
       const city = matchCity ? matchCity[1].trim() : "Curitiba";
       reply = await getWeather(city, "hoje");
+    } else if (/lembrete|evento|agenda/i.test(body)) {
+      const match = body.match(/lembrete de (.+) às (\d{1,2}:\d{2})/i);
+      if (match) {
+        const title = match[1];
+        const time = match[2];
+        const date = DateTime.now().toFormat('yyyy-MM-dd');
+        await addEvent(from, title, title, date, time);
+        reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
+      } else if (/mostrar agenda|meus lembretes/i.test(body)) {
+        const events = await getTodayEvents(from);
+        if (events.length === 0) reply = "📭 Você não tem nenhum evento para hoje.";
+        else {
+          reply = "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
+        }
+      } else {
+        reply = "Para criar um lembrete, diga: 'Lembre-me de [tarefa] às [hora]' ou 'mostrar agenda'";
+      }
     } else {
       const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
@@ -240,13 +276,24 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
+// ===== Cron job para lembretes automáticos =====
+cron.schedule('* * * * *', async () => {
+  const now = DateTime.now().setZone('America/Sao_Paulo').toFormat('HH:mm');
+  const today = DateTime.now().toFormat('yyyy-MM-dd');
+
+  const events = await db.collection('agenda').find({ data: today, hora: now }).toArray();
+  for (const ev of events) {
+    await sendMessage(ev.numero, `⏰ Lembrete: ${ev.titulo}`);
+  }
+});
+
 // ===== Conexão Mongoose + cron + servidor =====
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
 
-    startReminderCron(); // inicia cron de lembretes
+    startReminderCron(); // inicia cron de lembretes adicionais, se houver
 
     app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   } catch (err) {
