@@ -158,19 +158,9 @@ export async function chat(req, res) {
           .join("\n");
 
         // ===== Chamada GPT =====
-        responseText = await getGPTResponse(
-          `Hora e data atuais: ${currentTime} do dia ${currentDate}.
-Histórico recente:
-${conversationContext}
-
-Histórico de memória relevante:
-${memoryContext}
-
-Mensagem do usuário: "${userMessage}"`,
-          mediaUrl,
-          from,
-          from
-        );
+    import { getDonnaResponse } from '../services/getDonnaResponse.js';
+    
+    responseText = await getDonnaResponse(userMessage, from);
       }
     }
 
