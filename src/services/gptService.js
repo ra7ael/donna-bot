@@ -103,9 +103,12 @@ Você é Donna, assistente executiva perspicaz, elegante e humanizada.
 
       const answer = response.data.choices?.[0]?.message?.content?.trim()
         || "Desculpe, não consegui gerar uma resposta.";
-
-      setCached(userContent, answer);
-      return answer;
+      
+      // Limita a 150 caracteres
+      const limitedAnswer = answer.length > 150 ? answer.slice(0, 150) : answer;
+      
+      setCached(userContent, limitedAnswer);
+      return limitedAnswer;
 
     } catch (modelError) {
       console.error("⚠️ Erro GPT econômico:", modelError.message || modelError);
