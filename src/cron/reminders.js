@@ -1,4 +1,3 @@
-// src/cron/reminders.js
 import cron from "node-cron";
 import mongoose from "mongoose";
 import axios from "axios";
@@ -42,16 +41,16 @@ export function startReminderCron() {
       const today = now.toFormat("yyyy-MM-dd");
       const currentTime = now.toFormat("HH:mm");
 
-      const events = await mongoose.connection.db.collection("donna").find({
+      const reminders = await mongoose.connection.db.collection("donna").find({
         data: today,
         hora: { $lte: currentTime },
         sent: false
       }).toArray();
 
-      for (const ev of events) {
-        await sendWhatsAppReminder(ev);
+      for (const r of reminders) {
+        await sendWhatsAppReminder(r);
         await mongoose.connection.db.collection("donna").updateOne(
-          { _id: ev._id },
+          { _id: r._id },
           { $set: { sent: true } }
         );
       }
