@@ -12,23 +12,39 @@ import Message from '../models/Message.js';
 import Reminder from '../models/Reminder.js';
 import Conversation from '../models/Conversation.js';
 import { saveMemory, getRelevantMemory } from '../utils/memory.js';
-import { getWeather } from '../utils/weather.js'; // ✅ Import do clima
+import { getWeather } from '../utils/weather.js';
 
 const router = express.Router();
-
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// ===== Lista de usuários autorizados =====
-const authorizedUsers = [
-  process.env.MY_NUMBER.replace('+', ''),
-];
+// Lista de usuários autorizados
+const authorizedUsers = [process.env.MY_NUMBER.replace('+', '')];
 
-// ===== GET webhook (verificação) =====
+// ================= Função de envio com limite =================
+async function sendWhatsApp(to, text) {
+  if (!text) return;
+  // Trunca mensagens acima de 400 caracteres
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+    const chunk = text.substring(i, i + CHUNK_SIZE);
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
+        { messaging_product: "whatsapp", to, text: { body: chunk } },
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
+      console.log("📤 Mensagem enviada:", chunk);
+    } catch (err) {
+      console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err.message);
+    }
+  }
+}
+
+// ================= GET webhook =================
 router.get('/', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
-
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('✅ Webhook verificado com sucesso!');
     return res.status(200).send(challenge);
@@ -37,22 +53,7 @@ router.get('/', (req, res) => {
   res.sendStatus(403);
 });
 
-// ===== Função para enviar WhatsApp =====
-async function sendWhatsApp(to, text) {
-  if (!text) return;
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
-      { messaging_product: "whatsapp", to, text: { body: text } },
-      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-    );
-    console.log("📤 Mensagem enviada:", text);
-  } catch (err) {
-    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err.message);
-  }
-}
-
-// ===== POST webhook (receber mensagens) =====
+// ================= POST webhook =================
 router.post('/', async (req, res) => {
   try {
     const body = req.body;
@@ -63,11 +64,7 @@ router.post('/', async (req, res) => {
 
     const from = entry.from;
     console.log("Número recebido do WhatsApp:", from);
-
-    if (!authorizedUsers.includes(from)) {
-      console.log("❌ Usuário não autorizado:", from);
-      return res.sendStatus(200);
-    }
+    if (!authorizedUsers.includes(from)) return res.sendStatus(200);
 
     let userMessage = "";
     let mediaUrl = null;
@@ -115,23 +112,18 @@ router.post('/', async (req, res) => {
         );
         mediaUrl = mediaRes.data.url;
         userMessage = "📷 Imagem recebida. Analisando...";
-
       } catch (err) {
         console.error("❌ Erro no processamento de imagem:", err.response?.data || err.message);
         userMessage = "❌ Não consegui processar sua imagem.";
       }
-
     } else {
       await sendWhatsApp(from, "❌ Tipo de mensagem não suportado. Envie texto ou áudio.");
       return res.sendStatus(200);
     }
 
-    if (!userMessage?.trim()) {
-      console.log("Mensagem sem conteúdo válido, ignorando.");
-      return res.sendStatus(200);
-    }
+    if (!userMessage?.trim()) return res.sendStatus(200);
 
-    // ===== Salvar no histórico =====
+    // ===== Salvar histórico e memória =====
     await Conversation.create({ from, role: 'user', content: userMessage });
     await saveMemory(from, 'user', userMessage);
 
@@ -147,16 +139,13 @@ router.post('/', async (req, res) => {
     } else if (/qual a data( de hoje)?\??/i.test(userMessage)) {
       responseText = `📅 Hoje é ${currentDate}`;
     } else if (/como está o tempo em (.+)\??/i.test(userMessage)) {
-      const cityMatch = userMessage.match(/como está o tempo em (.+)\??/i);
-      const city = cityMatch[1];
+      const city = userMessage.match(/como está o tempo em (.+)\??/i)[1];
       responseText = await getWeather(city);
     } else {
       // ===== Lembretes =====
       const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
       if (lembreteRegex.test(userMessage)) {
-        const match = userMessage.match(lembreteRegex);
-        const text = match[1];
-        const dateStr = match[3];
+        const [_, text, __, dateStr] = userMessage.match(lembreteRegex);
         const date = new Date(dateStr);
 
         if (isNaN(date)) {
@@ -165,20 +154,13 @@ router.post('/', async (req, res) => {
           await Reminder.create({ from, text, date });
           responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
         }
-
       } else {
-        // ===== Histórico curto e memória =====
+        // ===== Histórico e memória relevantes =====
         const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-        const conversationContext = history
-          .filter(h => h.content)
-          .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
-          .join("\n");
+        const conversationContext = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`).join("\n");
 
         const relevantMemories = await getRelevantMemory(from, userMessage, 5);
-        const memoryContext = relevantMemories
-          .filter(m => m.content)
-          .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
-          .join("\n");
+        const memoryContext = relevantMemories.map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`).join("\n");
 
         // ===== Chamada GPT =====
         responseText = await getGPTResponse(
@@ -197,10 +179,12 @@ Mensagem do usuário: "${userMessage}"`,
       }
     }
 
+    // ===== Salvar resposta =====
     await Conversation.create({ from, role: 'assistant', content: responseText });
     await saveMemory(from, 'assistant', responseText);
     await Message.create({ from, body: userMessage, response: responseText });
 
+    // ===== Enviar resposta com limite =====
     await sendWhatsApp(from, responseText);
 
     res.sendStatus(200);
