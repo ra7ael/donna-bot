@@ -231,21 +231,23 @@ app.post('/webhook', async (req, res) => {
       reply = await getWeather(city, "hoje");
     } else if (/lembrete|evento|agenda/i.test(body)) {
       const match = body.match(/lembrete de (.+) às (\d{1,2}:\d{2})/i);
-      if (match) {
-        const title = match[1];
-        const time = match[2];
-        const date = DateTime.now().toFormat('yyyy-MM-dd');
-        await addEvent(from, title, title, date, time);
-        reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
-      } else if (/mostrar agenda|meus lembretes/i.test(body)) {
-        const events = await getTodayEvents(from);
-        if (events.length === 0) reply = "📭 Você não tem nenhum evento para hoje.";
-        else {
-          reply = "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
-        }
-      } else {
-        reply = "Para criar um lembrete, diga: 'Lembre-me de [tarefa] às [hora]' ou 'mostrar agenda'";
+if (match) {
+  const title = match[1];
+  const time = match[2];
+  const date = DateTime.now().toFormat('yyyy-MM-dd');
+  await addEvent(from, title, title, date, time);
+      reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
+    } else if (/mostrar agenda|meus lembretes/i.test(body)) {
+      const events = await getTodayEvents(from);
+      if (events.length === 0) reply = "📭 Você não tem nenhum evento para hoje.";
+      else {
+        reply = "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
       }
+    } else {
+      // ===== Caso não seja lembrete, passa para GPT =====
+      const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
+      reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
+    }
     } else {
       const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
