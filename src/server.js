@@ -149,6 +149,7 @@ async function addEvent(number, title, description, date, time) {
     descricao: description || title,
     data,
     hora: time,
+    sent: false,
     timestamp: new Date()
   });
 }
