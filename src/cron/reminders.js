@@ -1,11 +1,20 @@
 // src/cron/reminders.js
 import cron from "node-cron";
-import mongoose from "mongoose";
-import Reminder from "../models/Reminder.js";
-import axios from "axios";
 import { DateTime } from "luxon";
+import { MongoClient } from "mongodb";
+import axios from "axios";
 
-// ===== Função para enviar lembrete WhatsApp =====
+const MONGO_URI = process.env.MONGO_URI;
+let db;
+
+// Conecta ao Mongo
+async function connectDB() {
+  const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
+  db = client.db();
+}
+connectDB();
+
+// Envia lembrete WhatsApp
 async function sendWhatsAppReminder(reminder) {
   if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return;
 
@@ -14,11 +23,9 @@ async function sendWhatsAppReminder(reminder) {
       `https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_ID}/messages`,
       {
         messaging_product: "whatsapp",
-        to: reminder.from,
+        to: reminder.numero,
         text: {
-          body: `⏰ Lembrete: ${reminder.text} (agendado para ${DateTime.fromJSDate(reminder.date)
-            .setZone("America/Sao_Paulo")
-            .toFormat("dd/MM/yyyy HH:mm")})`,
+          body: `⏰ Lembrete: ${reminder.titulo} (agendado para ${reminder.data} ${reminder.hora})`,
         },
       },
       {
@@ -28,47 +35,35 @@ async function sendWhatsAppReminder(reminder) {
         },
       }
     );
-    console.log(
-      `✅ Lembrete enviado para ${reminder.from}: "${reminder.text}" às ${DateTime.now()
-        .setZone("America/Sao_Paulo")
-        .toFormat("HH:mm:ss")}`
-    );
+    console.log(`✅ Lembrete enviado para ${reminder.numero}: "${reminder.titulo}"`);
   } catch (err) {
-    console.error(
-      "❌ Erro ao enviar lembrete WhatsApp:",
-      err.response?.data || err.message
-    );
+    console.error("❌ Erro ao enviar lembrete WhatsApp:", err.response?.data || err.message);
   }
 }
 
-// ===== Função para iniciar cron de lembretes =====
+// Cron que roda a cada minuto
 export function startReminderCron() {
-  // Executa a cada minuto
   cron.schedule("* * * * *", async () => {
     try {
-      if (mongoose.connection.readyState !== 1) {
-        console.log("❌ Mongo não conectado. Cron aguardando...");
-        return;
-      }
+      if (!db) return;
 
       const now = DateTime.now().setZone("America/Sao_Paulo");
-      const oneMinuteAgo = now.minus({ minutes: 1 }).toJSDate();
-      const nowDate = now.toJSDate();
+      const today = now.toFormat("yyyy-MM-dd");
+      const currentTime = now.toFormat("HH:mm");
 
-      // Busca apenas lembretes entre um minuto atrás e agora que ainda não foram enviados
-      const reminders = await Reminder.find({
-        date: { $gte: oneMinuteAgo, $lte: nowDate },
-        sent: { $ne: true },
-      }).sort({ date: 1 }); // Ordena pelo horário do lembrete
+      // Busca lembretes de hoje que ainda não foram enviados e que já passaram do horário
+      const events = await db.collection("agenda").find({
+        data: today,
+        hora: { $lte: currentTime },
+        sent: false
+      }).toArray();
 
-      for (const r of reminders) {
-        await sendWhatsAppReminder(r);
-        // Marca como enviado
-        r.sent = true;
-        await r.save();
+      for (const ev of events) {
+        await sendWhatsAppReminder(ev);
+        await db.collection("agenda").updateOne({ _id: ev._id }, { $set: { sent: true } });
       }
     } catch (err) {
-      console.error("❌ Erro no cron job de lembretes:", err);
+      console.error("❌ Erro no cron de lembretes:", err);
     }
   });
 
