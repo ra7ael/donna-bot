@@ -211,9 +211,6 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-
-    }
-
     // 🔓 AUTORIZADO → fluxo completo GPT
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
