@@ -153,17 +153,12 @@ async function addEvent(number, title, description, date, time) {
     timestamp: new Date()
   });
 }
-
-async function getTodayEvents(number) {
-  const today = DateTime.now().toFormat('yyyy-MM-dd');
-  return await db.collection('donna').find({ numero, data: today }).sort({ hora: 1 }).toArray();
+  
+  async function getTodayEvents(number) {
+    const today = DateTime.now().toFormat('yyyy-MM-dd');
+    return await db.collection('donna').find({ numero, data: today }).sort({ hora: 1 }).toArray();
 }
 
-
-async function getTodayEvents(number) {
-  const today = DateTime.now().toFormat('yyyy-MM-dd');
-  return await db.collection('agenda').find({ numero, data: today }).sort({ hora: 1 }).toArray();
-}
 
 // ===== Webhook endpoint =====
 app.post('/webhook', async (req, res) => {
@@ -290,7 +285,7 @@ cron.schedule('* * * * *', async () => {
   const now = DateTime.now().setZone('America/Sao_Paulo').toFormat('HH:mm');
   const today = DateTime.now().toFormat('yyyy-MM-dd');
 
-  const events = await db.collection('agenda').find({ data: today, hora: now }).toArray();
+  const events = await db.collection('donna').find({ data: today, hora: now }).toArray();
   for (const ev of events) {
     await sendMessage(ev.numero, `⏰ Lembrete: ${ev.titulo}`);
   }
