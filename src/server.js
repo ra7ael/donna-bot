@@ -14,7 +14,7 @@ import speak from "./utils/speak.js"; // TTS opcional
 import { downloadMedia } from './utils/downloadMedia.js';
 import cron from 'node-cron';
 import { responderFAQ } from "./utils/faqHandler.js";
-import Usuarios from "./models/Usuarios.js"; // sua coleção de usuários
+import { numerosAutorizados } from "./config/autorizados.js";
 
 dotenv.config();
 
