@@ -147,7 +147,7 @@ async function addEvent(number, title, description, date, time) {
     numero: number,
     titulo: title,
     descricao: description || title,
-    data,       // yyyy-MM-dd
+    date,       // yyyy-MM-dd
     hora: time, // HH:mm
     sent: false,
     timestamp: new Date()
