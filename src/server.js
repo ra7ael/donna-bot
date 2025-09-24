@@ -45,14 +45,25 @@ connectDB();
 // ===== Funções GPT =====
 async function askGPT(prompt, history = []) {
   try {
+    // Garante que não há mensagens nulas/vazias
+    const safeMessages = history
+      .map(m => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : ""
+      }))
+      .filter(m => m.content.trim() !== "");
+
+    safeMessages.push({ role: "user", content: prompt || "" });
+
     const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      { model: 'gpt-5-mini', messages: history.concat({ role: 'user', content: prompt || "" }) },
-      { headers: { Authorization: Bearer ${GPT_API_KEY}, 'Content-Type': 'application/json' } }
+      "https://api.openai.com/v1/chat/completions",
+      { model: "gpt-5-mini", messages: safeMessages },
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
     );
+
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
-    console.error('❌ Erro GPT:', err.response?.data || err);
+    console.error("❌ Erro GPT:", err.response?.data || err);
     return "Hmm… ainda estou pensando!";
   }
 }
@@ -62,13 +73,13 @@ async function sendMessage(to, message) {
   if (!message) return;
   try {
     await axios.post(
-      https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages,
+      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
       { messaging_product: "whatsapp", to, text: { body: message } },
-      { headers: { Authorization: Bearer ${WHATSAPP_TOKEN}, 'Content-Type': 'application/json' } }
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
     );
-    console.log('📤 Mensagem enviada:', message);
+    console.log("📤 Mensagem enviada:", message);
   } catch (err) {
-    console.error('❌ Erro ao enviar WhatsApp:', err.response?.data || err);
+    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
   }
 }
 
@@ -76,30 +87,30 @@ async function sendAudio(to, audioBuffer) {
   if (!audioBuffer) return;
   try {
     const formData = new FormData();
-    formData.append('messaging_product', 'whatsapp');
-    formData.append('to', to);
-    formData.append('type', 'audio');
-    formData.append('audio', audioBuffer, { filename: 'audio.mp3' });
+    formData.append("messaging_product", "whatsapp");
+    formData.append("to", to);
+    formData.append("type", "audio");
+    formData.append("audio", audioBuffer, { filename: "audio.mp3" });
 
     await axios.post(
-      https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages,
+      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
       formData,
-      { headers: { Authorization: Bearer ${WHATSAPP_TOKEN}, ...formData.getHeaders() } }
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, ...formData.getHeaders() } }
     );
-    console.log('📤 Áudio enviado');
+    console.log("📤 Áudio enviado");
   } catch (err) {
-    console.error('❌ Erro ao enviar áudio:', err.response?.data || err);
+    console.error("❌ Erro ao enviar áudio:", err.response?.data || err);
   }
 }
 
 // ===== Usuários e memória =====
 async function getUserName(number) {
-  const doc = await db.collection('users').findOne({ numero: number });
+  const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
 }
 
 async function setUserName(number, name) {
-  await db.collection('users').updateOne(
+  await db.collection("users").updateOne(
     { numero: number },
     { $set: { nome: name } },
     { upsert: true }
@@ -107,7 +118,7 @@ async function setUserName(number, name) {
 }
 
 async function getUserMemory(number, limit = 5) {
-  return await db.collection('semanticMemory')
+  return await db.collection("semanticMemory")
     .find({ numero: number })
     .sort({ timestamp: -1 })
     .limit(limit)
@@ -116,7 +127,7 @@ async function getUserMemory(number, limit = 5) {
 
 async function saveMemory(number, role, content) {
   if (!content || !content.trim()) return; // evita null ou vazio
-  await db.collection('semanticMemory').insertOne({
+  await db.collection("semanticMemory").insertOne({
     numero: number,
     role,
     content,
@@ -128,13 +139,13 @@ async function saveMemory(number, role, content) {
 async function transcribeAudio(audioBuffer) {
   try {
     const form = new FormData();
-    form.append('file', audioBuffer, { filename: 'audio.ogg' });
-    form.append('model', 'whisper-1');
+    form.append("file", audioBuffer, { filename: "audio.ogg" });
+    form.append("model", "whisper-1");
 
     const res = await axios.post(
-      'https://api.openai.com/v1/audio/transcriptions',
+      "https://api.openai.com/v1/audio/transcriptions",
       form,
-      { headers: { Authorization: Bearer ${GPT_API_KEY}, ...form.getHeaders() } }
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...form.getHeaders() } }
     );
 
     return res.data?.text || "";
@@ -146,7 +157,7 @@ async function transcribeAudio(audioBuffer) {
 
 // ===== Agenda =====
 async function addEvent(number, title, description, date, time) {
-  await db.collection('donna').insertOne({
+  await db.collection("donna").insertOne({
     numero: number,
     titulo: title,
     descricao: description || title,
@@ -158,12 +169,12 @@ async function addEvent(number, title, description, date, time) {
 }
 
 async function getTodayEvents(number) {
-  const today = DateTime.now().toFormat('yyyy-MM-dd');
-  return await db.collection('donna').find({ numero, data: today }).sort({ hora: 1 }).toArray();
+  const today = DateTime.now().toFormat("yyyy-MM-dd");
+  return await db.collection("donna").find({ numero, data: today }).sort({ hora: 1 }).toArray();
 }
 
 // ===== Webhook =====
-app.post('/webhook', async (req, res) => {
+app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
@@ -202,7 +213,7 @@ app.post('/webhook', async (req, res) => {
     if (nameMatch) {
       userName = nameMatch[1];
       await setUserName(from, userName);
-      await sendMessage(from, Ótimo! Agora vou te chamar de ${userName} 😊);
+      await sendMessage(from, `Ótimo! Agora vou te chamar de ${userName} 😊`);
       return res.sendStatus(200);
     }
 
@@ -225,13 +236,13 @@ app.post('/webhook', async (req, res) => {
     };
 
     let reply;
-    const now = DateTime.now().setZone('America/Sao_Paulo');
+    const now = DateTime.now().setZone("America/Sao_Paulo");
 
     if (/que horas são\??/i.test(promptBody)) {
-      reply = 🕒 Agora são ${now.toFormat('HH:mm')};
+      reply = `🕒 Agora são ${now.toFormat("HH:mm")}`;
     } else if (/qual a data( de hoje)?\??/i.test(promptBody)) {
-      const weekday = now.toFormat('cccc');
-      reply = 📅 Hoje é ${weekday}, ${now.toFormat('dd/MM/yyyy')};
+      const weekday = now.toFormat("cccc");
+      reply = `📅 Hoje é ${weekday}, ${now.toFormat("dd/MM/yyyy")}`;
     } else if (/tempo|clima|previsão/i.test(promptBody)) {
       const matchCity = promptBody.match(/em\s+([a-z\s]+)/i);
       const city = matchCity ? matchCity[1].trim() : "Curitiba";
@@ -241,21 +252,21 @@ app.post('/webhook', async (req, res) => {
       if (match) {
         const title = match[1];
         const time = match[2];
-        const date = DateTime.now().toFormat('yyyy-MM-dd');
+        const date = DateTime.now().toFormat("yyyy-MM-dd");
         await addEvent(from, title, title, date, time);
-        reply = ✅ Lembrete "${title}" criado para hoje às ${time};
+        reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
       } else if (/mostrar agenda|meus lembretes/i.test(promptBody)) {
         const events = await getTodayEvents(from);
         reply = events.length === 0
           ? "📭 Você não tem nenhum evento para hoje."
-          : "📅 Seus eventos de hoje:\n" + events.map(e => - ${e.hora}: ${e.titulo}).join("\n");
+          : "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
       }
     } else {
-      const personalizedPrompt = userName ? O usuário se chama ${userName}. ${promptBody} : promptBody;
+      const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${promptBody}` : promptBody;
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
     }
 
-    await db.collection('historico').insertOne({
+    await db.collection("historico").insertOne({
       numero: from,
       mensagem: promptBody,
       resposta: reply,
@@ -272,20 +283,20 @@ app.post('/webhook', async (req, res) => {
     }
 
   } catch (err) {
-    console.error('❌ Erro ao processar webhook:', err);
+    console.error("❌ Erro ao processar webhook:", err);
   }
 
   res.sendStatus(200);
 });
 
 // ===== Cron job =====
-cron.schedule('* * * * *', async () => {
-  const now = DateTime.now().setZone('America/Sao_Paulo').toFormat('HH:mm');
-  const today = DateTime.now().toFormat('yyyy-MM-dd');
+cron.schedule("* * * * *", async () => {
+  const now = DateTime.now().setZone("America/Sao_Paulo").toFormat("HH:mm");
+  const today = DateTime.now().toFormat("yyyy-MM-dd");
 
-  const events = await db.collection('donna').find({ data: today, hora: now }).toArray();
+  const events = await db.collection("donna").find({ data: today, hora: now }).toArray();
   for (const ev of events) {
-    await sendMessage(ev.numero, ⏰ Lembrete: ${ev.titulo});
+    await sendMessage(ev.numero, `⏰ Lembrete: ${ev.titulo}`);
   }
 });
 
@@ -297,7 +308,7 @@ cron.schedule('* * * * *', async () => {
 
     startReminderCron();
 
-    app.listen(PORT, () => console.log(Servidor rodando na porta ${PORT}));
+    app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
