@@ -202,12 +202,15 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
 
+    // 🔒 NÃO AUTORIZADO → apenas FAQ
     if (!numerosAutorizados.includes(from)) {
       const faqReply = await responderFAQ(promptBody);
-      await sendMessage(from, faqReply);
+      const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
+      await sendMessage(from, respostaFinal);
       return res.sendStatus(200);
     }
 
+    // 🔓 AUTORIZADO → fluxo completo GPT
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
     if (nameMatch) {
