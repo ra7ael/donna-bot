@@ -213,7 +213,7 @@ app.post("/webhook", async (req, res) => {
       const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
       await sendMessage(from, respostaFinal);
       return res.sendStatus(200);
-    });
+    }
 
     }
 
