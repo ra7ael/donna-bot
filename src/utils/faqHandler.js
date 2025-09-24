@@ -1,37 +1,41 @@
-import fs from "fs";
-import path from "path";
+// utils/faqHandler.js
+import fs from 'fs';
+import path from 'path';
+import { askGPT } from '../server.js'; // ou onde você tem a função askGPT
 
-// Carregar todos os arquivos de FAQ da pasta
-function carregarFAQs() {
-  const faqDir = path.resolve("./src/faq");
-  const arquivos = fs.readdirSync(faqDir);
+// Carrega os arquivos JSON do FAQ
+const geralFAQ = JSON.parse(fs.readFileSync(path.resolve('faq/geral.json')));
+const rhFAQ = JSON.parse(fs.readFileSync(path.resolve('faq/rh.json')));
 
-  let baseFAQ = {};
+const allFAQ = { ...geralFAQ, ...rhFAQ };
 
-  for (const arquivo of arquivos) {
-    if (arquivo.endsWith(".json")) {
-      const filePath = path.join(faqDir, arquivo);
-      const conteudo = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-      baseFAQ = { ...baseFAQ, ...conteudo };
-    }
+// Função que busca resposta do FAQ e humaniza
+export async function responderFAQ(userQuestion, userName = "") {
+  // Normaliza a pergunta (sem acento, minúscula)
+  const questionKey = userQuestion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // Procura correspondência exata ou próxima no FAQ
+  let answer = Object.entries(allFAQ).find(([key, _]) =>
+    questionKey.includes(key.toLowerCase())
+  )?.[1];
+
+  if (!answer) {
+    // Se não achar, resposta padrão
+    return "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
   }
 
-  return baseFAQ;
-}
+  // Humaniza a resposta usando GPT
+  const prompt = `
+Você é uma assistente simpática. Responda de forma amigável, curta e clara, 
+como se estivesse falando diretamente com o usuário${userName ? ` chamado ${userName}` : ""}.
+Não invente informações, use apenas esta resposta: "${answer}".
+`;
 
-const faqBase = carregarFAQs();
-
-/**
- * Responde mensagens de usuários não autorizados
- * @param {string} mensagem - Texto do usuário
- * @returns {string|null} Resposta do FAQ ou null se não encontrado
- */
-export function responderFAQ(mensagem) {
-  const chave = mensagem.toLowerCase().trim();
-
-  if (faqBase[chave]) {
-    return faqBase[chave];
+  try {
+    const humanized = await askGPT(prompt);
+    return humanized;
+  } catch (err) {
+    console.error("❌ Erro ao humanizar FAQ:", err);
+    return answer; // fallback
   }
-
-  return null;
 }
