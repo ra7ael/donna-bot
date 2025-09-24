@@ -204,16 +204,13 @@ app.post("/webhook", async (req, res) => {
 
        // 🔒 NÃO AUTORIZADO → apenas FAQ
     if (!numerosAutorizados.includes(from)) {
-      // Pega o nome do usuário, se existir
       let userName = await getUserName(from);
-      
-      // Responde usando o FAQ humanizado
       const faqReply = await responderFAQ(promptBody, userName);
-      
       const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
       await sendMessage(from, respostaFinal);
       return res.sendStatus(200);
     }
+
 
     }
 
