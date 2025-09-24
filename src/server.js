@@ -13,6 +13,8 @@ import { getWeather } from "./utils/weather.js";
 import speak from "./utils/speak.js"; // TTS opcional
 import { downloadMedia } from './utils/downloadMedia.js';
 import cron from 'node-cron';
+import { responderFAQ } from "./utils/faqHandler.js";
+import Usuarios from "./models/Usuarios.js"; // sua coleção de usuários
 
 dotenv.config();
 
