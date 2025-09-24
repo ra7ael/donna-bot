@@ -30,7 +30,7 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
 let db;
 
-// ===== Conectar MongoDB (histórico, usuários, agenda) =====
+// ===== Conectar MongoDB =====
 async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
@@ -57,7 +57,7 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// ===== Funções WhatsApp =====
+// ===== WhatsApp =====
 async function sendMessage(to, message) {
   if (!message) return;
   try {
@@ -92,7 +92,7 @@ async function sendAudio(to, audioBuffer) {
   }
 }
 
-// ===== Funções de usuários e memória =====
+// ===== Usuários e memória =====
 async function getUserName(number) {
   const doc = await db.collection('users').findOne({ numero: number });
   return doc?.nome || null;
@@ -123,7 +123,7 @@ async function saveMemory(number, role, content) {
   });
 }
 
-// ===== Função de transcrição =====
+// ===== Transcrição =====
 async function transcribeAudio(audioBuffer) {
   try {
     const form = new FormData();
@@ -143,39 +143,36 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
-// ===== Funções de Agenda =====
+// ===== Agenda =====
 async function addEvent(number, title, description, date, time) {
   await db.collection('donna').insertOne({
     numero: number,
     titulo: title,
     descricao: description || title,
-    date,       // yyyy-MM-dd
-    hora: time, // HH:mm
+    date,
+    hora: time,
     sent: false,
     timestamp: new Date()
   });
 }
-  
-  async function getTodayEvents(number) {
-    const today = DateTime.now().toFormat('yyyy-MM-dd');
-    return await db.collection('donna').find({ numero, data: today }).sort({ hora: 1 }).toArray();
+
+async function getTodayEvents(number) {
+  const today = DateTime.now().toFormat('yyyy-MM-dd');
+  return await db.collection('donna').find({ numero, data: today }).sort({ hora: 1 }).toArray();
 }
 
-
-// ===== Webhook endpoint =====
+// ===== Webhook =====
 app.post('/webhook', async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
 
     const from = messageObj.from;
-    const allowedNumbers = ['554195194485', '554199833283','554196820681'];
-    if (!allowedNumbers.includes(from)) return res.sendStatus(200);
 
     let body = "";
     let isAudioResponse = false;
 
-    // ===== Texto ou áudio =====
+    // Texto ou áudio
     if (messageObj.type === "text") {
       body = messageObj.text?.body;
       if (body.toLowerCase().startsWith("fala ")) {
@@ -193,7 +190,14 @@ app.post('/webhook', async (req, res) => {
 
     if (!body?.trim()) return res.sendStatus(200);
 
-    // ===== Captura nome do usuário =====
+    // 🔹 Se NÃO for autorizado → responde só com FAQ
+    if (!numerosAutorizados.includes(from)) {
+      const faqReply = await responderFAQ(body);
+      await sendMessage(from, faqReply);
+      return res.sendStatus(200);
+    }
+
+    // 🔹 Se for autorizado → segue fluxo normal
     let userName = await getUserName(from);
     const nameMatch = body.match(/meu nome é (\w+)/i);
     if (nameMatch) {
@@ -203,7 +207,6 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // ===== Histórico de memória semântica =====
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse().map(m => ({ role: m.role, content: m.content }));
 
@@ -213,14 +216,13 @@ app.post('/webhook', async (req, res) => {
         Você é a Donna, assistente pessoal do usuário. 
         - Use o nome do usuário quando souber. 
         - Responda de forma objetiva, clara, direta e amigável. 
-        - Priorize respostas curtas, práticas e fáceis de entender. 
+        - Priorize respostas curtas e práticas. 
         - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa. 
         - Não invente informações; se não souber, admita de forma educada. 
         - Adapte seu tom para ser acolhedora e prestativa.
       `
     };
 
-    // ===== Comandos especiais =====
     let reply;
     const now = DateTime.now().setZone('America/Sao_Paulo');
 
@@ -235,29 +237,23 @@ app.post('/webhook', async (req, res) => {
       reply = await getWeather(city, "hoje");
     } else if (/lembrete|evento|agenda/i.test(body)) {
       const match = body.match(/lembrete de (.+) às (\d{1,2}:\d{2})/i);
-if (match) {
-  const title = match[1];
-  const time = match[2];
-  const date = DateTime.now().toFormat('yyyy-MM-dd');
-  await addEvent(from, title, title, date, time);
-      reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
-    } else if (/mostrar agenda|meus lembretes/i.test(body)) {
-      const events = await getTodayEvents(from);
-      if (events.length === 0) reply = "📭 Você não tem nenhum evento para hoje.";
-      else {
-        reply = "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
+      if (match) {
+        const title = match[1];
+        const time = match[2];
+        const date = DateTime.now().toFormat('yyyy-MM-dd');
+        await addEvent(from, title, title, date, time);
+        reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
+      } else if (/mostrar agenda|meus lembretes/i.test(body)) {
+        const events = await getTodayEvents(from);
+        reply = events.length === 0
+          ? "📭 Você não tem nenhum evento para hoje."
+          : "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
       }
-    } else {
-      // ===== Caso não seja lembrete, passa para GPT =====
-      const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
-      reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
-    }
     } else {
       const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${body}` : body;
       reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
     }
 
-    // ===== Salvar histórico =====
     await db.collection('historico').insertOne({
       numero: from,
       mensagem: body,
@@ -267,7 +263,6 @@ if (match) {
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    // ===== Enviar resposta =====
     if (isAudioResponse) {
       const audioData = await speak(reply);
       if (audioData) await sendAudio(from, audioData);
@@ -282,7 +277,7 @@ if (match) {
   res.sendStatus(200);
 });
 
-// ===== Cron job para lembretes automáticos =====
+// ===== Cron job =====
 cron.schedule('* * * * *', async () => {
   const now = DateTime.now().setZone('America/Sao_Paulo').toFormat('HH:mm');
   const today = DateTime.now().toFormat('yyyy-MM-dd');
@@ -293,13 +288,13 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-// ===== Conexão Mongoose + cron + servidor =====
+// ===== Start =====
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
 
-    startReminderCron(); // inicia cron de lembretes adicionais, se houver
+    startReminderCron();
 
     app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   } catch (err) {
