@@ -317,3 +317,5 @@ cron.schedule("* * * * *", async () => {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
   }
 })();
+
+export { askGPT };
