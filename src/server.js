@@ -204,13 +204,10 @@ app.post("/webhook", async (req, res) => {
 
 // 🔒 NÃO AUTORIZADO → apenas FAQ
 if (!numerosAutorizados.includes(from)) {
-  // Checa se já existe histórico do número
-  const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
-
   const normalizedMsg = promptBody.trim().toLowerCase();
 
-  if (userHistory.length === 0 && ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
-    // Primeira mensagem → envia menu de boas-vindas
+  // Sempre que digitar uma saudação ou "menu", retorna o menu
+  if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
     const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
 Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
 
@@ -225,15 +222,28 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
     await sendMessage(from, menuMsg);
 
-    // Salva primeira interação no histórico
-    await db.collection("historico").insertOne({
-      numero: from,
-      primeiraMensagem: promptBody,
-      data: new Date()
-    });
+    // Se for a primeira mensagem, salva no histórico
+    const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
+    if (userHistory.length === 0) {
+      await db.collection("historico").insertOne({
+        numero: from,
+        primeiraMensagem: promptBody,
+        data: new Date()
+      });
+    }
 
     return res.sendStatus(200);
   }
+
+  // Caso não seja uma saudação/menu → processa FAQ normalmente
+  const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
+  let userName = await getUserName(from);
+  const faqReply = await responderFAQ(promptBody, userName);
+  const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
+  await sendMessage(from, respostaFinal);
+  return res.sendStatus(200);
+}
+
 
   // Já tem histórico → processa FAQ normalmente
   let userName = await getUserName(from);
