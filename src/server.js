@@ -224,7 +224,7 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
 ❗ Digite a palavra exata (ex: HOLERITE) e te enviaremos a instrução automaticamente.`;
 
-    await sendMessage(from, welcomeMsg);
+    await sendMessage(from, menuMsg);
 
     // Salva primeira interação no histórico
     await db.collection("historico").insertOne({
