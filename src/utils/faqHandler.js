@@ -1,4 +1,3 @@
-// utils/faqHandler.js
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,18 +17,20 @@ const allFAQ = { ...geralFAQ, ...rhFAQ };
 export async function responderFAQ(userQuestion, userName = "") {
   const questionKey = userQuestion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+  // Procura correspondência no FAQ
   let answer = Object.entries(allFAQ).find(([key, _]) =>
     questionKey.includes(key.toLowerCase())
   )?.[1];
 
+  // Se não encontrar, cria uma resposta genérica para GPT humanizar
   if (!answer) {
-    return "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
+    answer = `O usuário perguntou: "${userQuestion}". Não tenho uma resposta exata no FAQ, mas posso tentar ajudar.`;
   }
 
   const prompt = `
 Você é uma assistente simpática. Responda de forma amigável, curta e clara, 
 como se estivesse falando diretamente com o usuário${userName ? ` chamado ${userName}` : ""}.
-Não invente informações, use apenas esta resposta: "${answer}".
+Não invente informações que não existam, mas use a referência: "${answer}".
 `;
 
   try {
@@ -37,6 +38,7 @@ Não invente informações, use apenas esta resposta: "${answer}".
     return humanized;
   } catch (err) {
     console.error("❌ Erro ao humanizar FAQ:", err);
-    return answer;
+    return answer; // fallback amigável
   }
 }
+
