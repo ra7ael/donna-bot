@@ -202,14 +202,43 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
 
-       // 🔒 NÃO AUTORIZADO → apenas FAQ
-    if (!numerosAutorizados.includes(from)) {
-      let userName = await getUserName(from);
-      const faqReply = await responderFAQ(promptBody, userName);
-      const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
-      await sendMessage(from, respostaFinal);
-      return res.sendStatus(200);
-    }
+// 🔒 NÃO AUTORIZADO → apenas FAQ
+if (!numerosAutorizados.includes(from)) {
+  // Checa se já existe histórico do número
+  const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
+
+  if (userHistory.length === 0) {
+    // Primeira mensagem → envia boas-vindas
+    const welcomeMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
+Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
+🏢 EMPRESA - ainda vou criar a descrição
+🏦 BANCO – Cadastro ou alteração de dados bancários  
+💸 PAGAMENTO - Salário, datas ou descontos  
+🎁 BENEFICIOS – VT, VR e outros  
+🕓 FOLHA PONTO – Dúvidas sobre marcação e correções.  
+📄 HOLERITE – Acesso ao contracheque  
+❗ Digite a palavra exata (ex: HOLERITE) e te enviaremos a instrução automaticamente.`;
+
+    await sendMessage(from, welcomeMsg);
+
+    // Salva primeira interação no histórico
+    await db.collection("historico").insertOne({
+      numero: from,
+      primeiraMensagem: promptBody,
+      data: new Date()
+    });
+
+    return res.sendStatus(200);
+  }
+
+  // Já tem histórico → processa FAQ normalmente
+  let userName = await getUserName(from);
+  const faqReply = await responderFAQ(promptBody, userName);
+  const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
+  await sendMessage(from, respostaFinal);
+  return res.sendStatus(200);
+}
+
     
     // 🔓 AUTORIZADO → fluxo completo GPT
     let userName = await getUserName(from);
