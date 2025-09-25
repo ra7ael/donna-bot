@@ -1331,7 +1331,6 @@
     "fechamento_do_ponto": "25",
     "metodo_ponto": "CLIENTE"
   },
-[
   {
     "nome": "NOVA FIBRA",
     "data_de_pagamento": "",
@@ -1660,5 +1659,5 @@
     "data_adiantamento": "",
     "fechamento_do_ponto": "15",
     "metodo_ponto": "FOLHA PONTO"
-  },
+  }
 ]
