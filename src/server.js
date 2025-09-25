@@ -45,7 +45,6 @@ connectDB();
 // ===== Funções GPT =====
 async function askGPT(prompt, history = []) {
   try {
-    // Garante que não há mensagens nulas/vazias
     const safeMessages = history
       .map(m => ({
         role: m.role,
@@ -70,7 +69,9 @@ async function askGPT(prompt, history = []) {
 
 // ===== WhatsApp =====
 async function sendMessage(to, message) {
-  if (!message) return;
+  // força message como string
+  message = message ? String(message) : "⚠️ Mensagem vazia";
+
   try {
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
@@ -126,7 +127,7 @@ async function getUserMemory(number, limit = 5) {
 }
 
 async function saveMemory(number, role, content) {
-  if (!content || !content.trim()) return; // evita null ou vazio
+  if (!content || !content.trim()) return; 
   await db.collection("semanticMemory").insertOne({
     numero: number,
     role,
@@ -201,11 +202,9 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
 
-    // 🔒 NÃO AUTORIZADO → apenas FAQ
     if (!numerosAutorizados.includes(from)) {
       const normalizedMsg = promptBody.trim().toLowerCase();
 
-      // Sempre que digitar uma saudação ou "menu", retorna o menu
       if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
         const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
 Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
@@ -221,7 +220,6 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
         await sendMessage(from, menuMsg);
 
-        // Se for a primeira mensagem, salva no histórico
         const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
         if (userHistory.length === 0) {
           await db.collection("historico").insertOne({
@@ -234,7 +232,6 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
         return res.sendStatus(200);
       }
 
-      // Caso não seja uma saudação/menu → processa FAQ normalmente
       const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
       let userName = await getUserName(from);
       const faqReply = await responderFAQ(promptBody, userName);
@@ -243,7 +240,6 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
       return res.sendStatus(200);
     }
 
-    // 🔓 AUTORIZADO → fluxo completo GPT
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
     if (nameMatch) {
@@ -320,14 +316,12 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
   } catch (err) {
     console.error("❌ Erro ao processar webhook:", err);
-    return res.sendStatus(500); // adicionado para garantir resposta em caso de erro
+    return res.sendStatus(500); 
   }
 
   res.sendStatus(200);
 });
 
-
-// ===== Cron job =====
 cron.schedule("* * * * *", async () => {
   const now = DateTime.now().setZone("America/Sao_Paulo").toFormat("HH:mm");
   const today = DateTime.now().toFormat("yyyy-MM-dd");
@@ -338,7 +332,6 @@ cron.schedule("* * * * *", async () => {
   }
 });
 
-// ===== Start =====
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
