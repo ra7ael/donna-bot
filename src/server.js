@@ -46,12 +46,8 @@ connectDB();
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
-      .map(m => ({
-        role: m.role,
-        content: typeof m.content === "string" ? m.content : ""
-      }))
+      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
       .filter(m => m.content.trim() !== "");
-
     safeMessages.push({ role: "user", content: prompt || "" });
 
     const response = await axios.post(
@@ -69,16 +65,17 @@ async function askGPT(prompt, history = []) {
 
 // ===== WhatsApp =====
 async function sendMessage(to, message) {
-  // força message como string
-  message = message ? String(message) : "⚠️ Mensagem vazia";
-
+  if (!message) return;
   try {
+    // Garantir que message seja string
+    const textBody = typeof message === "string" ? message : JSON.stringify(message);
+
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
-      { messaging_product: "whatsapp", to, text: { body: message } },
+      { messaging_product: "whatsapp", to, text: { body: textBody } },
       { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
     );
-    console.log("📤 Mensagem enviada:", message);
+    console.log("📤 Mensagem enviada:", textBody);
   } catch (err) {
     console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
   }
@@ -127,7 +124,7 @@ async function getUserMemory(number, limit = 5) {
 }
 
 async function saveMemory(number, role, content) {
-  if (!content || !content.trim()) return; 
+  if (!content || !content.trim()) return;
   await db.collection("semanticMemory").insertOne({
     numero: number,
     role,
@@ -180,7 +177,6 @@ app.post("/webhook", async (req, res) => {
     if (!messageObj) return res.sendStatus(200);
 
     const from = messageObj.from;
-
     let body = "";
     let isAudioResponse = false;
 
@@ -202,6 +198,7 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
 
+    // 🔒 NÃO AUTORIZADO → apenas FAQ
     if (!numerosAutorizados.includes(from)) {
       const normalizedMsg = promptBody.trim().toLowerCase();
 
@@ -232,14 +229,22 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
         return res.sendStatus(200);
       }
 
-      const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
-      let userName = await getUserName(from);
-      const faqReply = await responderFAQ(promptBody, userName);
+      // Processa FAQ
+      const userName = await getUserName(from);
+      let faqReply = await responderFAQ(promptBody, userName);
+
+      // Garante que seja string
+      if (faqReply && typeof faqReply !== "string") {
+        if (faqReply.texto) faqReply = faqReply.texto;
+        else faqReply = JSON.stringify(faqReply);
+      }
+
       const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
       await sendMessage(from, respostaFinal);
       return res.sendStatus(200);
     }
 
+    // 🔓 AUTORIZADO → fluxo GPT
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
     if (nameMatch) {
@@ -316,12 +321,13 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
   } catch (err) {
     console.error("❌ Erro ao processar webhook:", err);
-    return res.sendStatus(500); 
+    return res.sendStatus(500);
   }
 
   res.sendStatus(200);
 });
 
+// ===== Cron job =====
 cron.schedule("* * * * *", async () => {
   const now = DateTime.now().setZone("America/Sao_Paulo").toFormat("HH:mm");
   const today = DateTime.now().toFormat("yyyy-MM-dd");
@@ -332,6 +338,7 @@ cron.schedule("* * * * *", async () => {
   }
 });
 
+// ===== Start =====
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
