@@ -207,11 +207,10 @@ if (!numerosAutorizados.includes(from)) {
   // Checa se já existe histórico do número
   const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
 
-  if (userHistory.length === 0) {
-    // Primeira mensagem → envia boas-vindas
-    // Detecta se é a primeira mensagem
   const normalizedMsg = promptBody.trim().toLowerCase();
-  if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
+
+  if (userHistory.length === 0 && ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
+    // Primeira mensagem → envia menu de boas-vindas
     const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
 Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
 
@@ -225,9 +224,6 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 ❗ Digite a palavra exata (ex: HOLERITE) e te enviaremos a instrução automaticamente.`;
 
     await sendMessage(from, menuMsg);
-
-    }
-  }
 
     // Salva primeira interação no histórico
     await db.collection("historico").insertOne({
