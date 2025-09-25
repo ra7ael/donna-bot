@@ -475,7 +475,6 @@
     "fechamento_do_ponto": "16",
     "metodo_ponto": "CLIENTE"
   },
-    [
   {
     "nome": "ITAHUM - PONTA PORA",
     "data_de_pagamento": "31",
@@ -735,7 +734,6 @@
     "fechamento_do_ponto": "31",
     "metodo_ponto": "CARTÃO PONTO MANUAL"
   },
-    [
   {
     "nome": "POLLI FERTILIZANTES",
     "data_de_pagamento": "5º DIA UTIL",
