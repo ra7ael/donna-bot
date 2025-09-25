@@ -209,14 +209,19 @@ if (!numerosAutorizados.includes(from)) {
 
   if (userHistory.length === 0) {
     // Primeira mensagem → envia boas-vindas
-    const welcomeMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
+    // Detecta se é a primeira mensagem
+  const normalizedMsg = promptBody.trim().toLowerCase();
+  if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
+    const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
 Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
-🏢 EMPRESA - ainda vou criar a descrição
+
+🏢 EMPRESA – (em breve descrição)  
 🏦 BANCO – Cadastro ou alteração de dados bancários  
-💸 PAGAMENTO - Salário, datas ou descontos  
+💸 PAGAMENTO – Salário, datas ou descontos  
 🎁 BENEFICIOS – VT, VR e outros  
-🕓 FOLHA PONTO – Dúvidas sobre marcação e correções.  
+🕓 FOLHA PONTO – Dúvidas sobre marcação e correções  
 📄 HOLERITE – Acesso ao contracheque  
+
 ❗ Digite a palavra exata (ex: HOLERITE) e te enviaremos a instrução automaticamente.`;
 
     await sendMessage(from, welcomeMsg);
