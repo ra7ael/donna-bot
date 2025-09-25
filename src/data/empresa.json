@@ -299,8 +299,7 @@
     "data_adiantamento": "SIM - DIA 15 - 40%",
     "fechamento_do_ponto": "20",
     "metodo_ponto": "CARTÃO PONTO MANUAL"
-  }
-[
+  },
   {
     "nome": "COPASUL (TAKEHARA)",
     "data_de_pagamento": "5º DIA UTIL",
@@ -336,7 +335,6 @@
     "fechamento_do_ponto": "20",
     "metodo_ponto": "CARTÃO PONTO MANUAL"
   },
-  [
   {
     "nome": "CPE DO BRASIL",
     "data_de_pagamento": "DIA 5",
@@ -618,7 +616,6 @@
     "fechamento_do_ponto": "26",
     "metodo_ponto": "CLIENTE"
   },
-  [
   {
     "nome": "METALURGICA STORI EIRELI (IMES)",
     "data_de_pagamento": "ESTAGIO",
@@ -844,7 +841,6 @@
     "fechamento_do_ponto": "ESTAGIO",
     "metodo_ponto": "ESTAGIO"
   },
-  [
   {
     "nome": "SERDIA ELETRONICA INDUSTRIAL LTDA",
     "data_de_pagamento": "ESTAGIO",
@@ -985,8 +981,6 @@
     "fechamento_do_ponto": "10",
     "metodo_ponto": "CARTÃO PONTO MANUAL"
   },
-
-[
   {
     "nome": "AMCOR (PINHAIS)",
     "data_de_pagamento": "30",
@@ -1127,8 +1121,7 @@
     "fechamento_do_ponto": "15",
     "metodo_ponto": "CLIENTE"
   },
-
-  [
+      
   {
     "nome": "FORREST BRASIL TECNOLOGIA LTDA",
     "data_de_pagamento": "5º DIA UTIL",
@@ -1544,7 +1537,6 @@
     "fechamento_do_ponto": "15",
     "metodo_ponto": "FOLHA PONTO"
   },
-[
   {
     "nome": "TRURIUM FABRICACOES E COMERCIO DE ARTIGOS ESPORTIVOS LTDA -",
     "data_de_pagamento": "5º D",
