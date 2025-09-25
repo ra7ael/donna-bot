@@ -173,7 +173,6 @@ async function getTodayEvents(number) {
   return await db.collection("donna").find({ numero, data: today }).sort({ hora: 1 }).toArray();
 }
 
-// ===== Webhook =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -202,13 +201,13 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
 
-// 🔒 NÃO AUTORIZADO → apenas FAQ
-if (!numerosAutorizados.includes(from)) {
-  const normalizedMsg = promptBody.trim().toLowerCase();
+    // 🔒 NÃO AUTORIZADO → apenas FAQ
+    if (!numerosAutorizados.includes(from)) {
+      const normalizedMsg = promptBody.trim().toLowerCase();
 
-  // Sempre que digitar uma saudação ou "menu", retorna o menu
-  if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
-    const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
+      // Sempre que digitar uma saudação ou "menu", retorna o menu
+      if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
+        const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
 Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
 
 🏢 EMPRESA – (em breve descrição)  
@@ -220,40 +219,30 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
 ❗ Digite a palavra exata (ex: HOLERITE) e te enviaremos a instrução automaticamente.`;
 
-    await sendMessage(from, menuMsg);
+        await sendMessage(from, menuMsg);
 
-    // Se for a primeira mensagem, salva no histórico
-    const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
-    if (userHistory.length === 0) {
-      await db.collection("historico").insertOne({
-        numero: from,
-        primeiraMensagem: promptBody,
-        data: new Date()
-      });
+        // Se for a primeira mensagem, salva no histórico
+        const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
+        if (userHistory.length === 0) {
+          await db.collection("historico").insertOne({
+            numero: from,
+            primeiraMensagem: promptBody,
+            data: new Date()
+          });
+        }
+
+        return res.sendStatus(200);
+      }
+
+      // Caso não seja uma saudação/menu → processa FAQ normalmente
+      const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
+      let userName = await getUserName(from);
+      const faqReply = await responderFAQ(promptBody, userName);
+      const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
+      await sendMessage(from, respostaFinal);
+      return res.sendStatus(200);
     }
 
-    return res.sendStatus(200);
-  }
-
-  // Caso não seja uma saudação/menu → processa FAQ normalmente
-  const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
-  let userName = await getUserName(from);
-  const faqReply = await responderFAQ(promptBody, userName);
-  const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
-  await sendMessage(from, respostaFinal);
-  return res.sendStatus(200);
-}
-
-
-  // Já tem histórico → processa FAQ normalmente
-  let userName = await getUserName(from);
-  const faqReply = await responderFAQ(promptBody, userName);
-  const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
-  await sendMessage(from, respostaFinal);
-  return res.sendStatus(200);
-}
-
-    
     // 🔓 AUTORIZADO → fluxo completo GPT
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
@@ -331,10 +320,12 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
   } catch (err) {
     console.error("❌ Erro ao processar webhook:", err);
+    return res.sendStatus(500); // adicionado para garantir resposta em caso de erro
   }
 
   res.sendStatus(200);
 });
+
 
 // ===== Cron job =====
 cron.schedule("* * * * *", async () => {
