@@ -1,18 +1,22 @@
 // utils/faqHandler.js
 import fs from 'fs';
 import path from 'path';
-import { askGPT } from '../server.js'; // ou onde você tem a função askGPT
+import { askGPT } from '../server.js'; // já exportaremos essa função do server
 
-// Carrega os arquivos JSON do FAQ
-const geralFAQ = JSON.parse(fs.readFileSync(path.resolve('faq/geral.json')));
-const rhFAQ = JSON.parse(fs.readFileSync(path.resolve('faq/rh.json')));
+// Corrige os caminhos relativos dos JSONs
+const geralFAQ = JSON.parse(fs.readFileSync(path.resolve('faq/geral.json'), 'utf8'));
+const rhFAQ = JSON.parse(fs.readFileSync(path.resolve('faq/rh.json'), 'utf8'));
 
+// Junta todos os FAQs
 const allFAQ = { ...geralFAQ, ...rhFAQ };
 
 // Função que busca resposta do FAQ e humaniza
 export async function responderFAQ(userQuestion, userName = "") {
   // Normaliza a pergunta (sem acento, minúscula)
-  const questionKey = userQuestion.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const questionKey = userQuestion
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
   // Procura correspondência exata ou próxima no FAQ
   let answer = Object.entries(allFAQ).find(([key, _]) =>
@@ -39,3 +43,4 @@ Não invente informações, use apenas esta resposta: "${answer}".
     return answer; // fallback
   }
 }
+
