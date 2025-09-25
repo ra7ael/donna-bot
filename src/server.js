@@ -226,6 +226,9 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
 
     await sendMessage(from, menuMsg);
 
+    }
+  }
+
     // Salva primeira interação no histórico
     await db.collection("historico").insertOne({
       numero: from,
