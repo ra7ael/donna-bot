@@ -80,13 +80,11 @@ async function sendMessage(to, message) {
   if (typeof message === "string") {
     textBody = message;
   } else if (typeof message === "object") {
-    // tenta pegar resposta ou texto
     if (message.resposta && typeof message.resposta === "string") {
       textBody = message.resposta;
     } else if (message.texto && typeof message.texto === "string") {
       textBody = message.texto;
     } else {
-      // fallback: converte objeto para string legível
       textBody = JSON.stringify(message, null, 2);
     }
   } else {
@@ -104,7 +102,6 @@ async function sendMessage(to, message) {
     console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
   }
 }
-
 
 async function sendAudio(to, audioBuffer) {
   if (!audioBuffer) return;
@@ -224,25 +221,26 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
 
-    // ===== FLUXO EMPRESA =====
-    if (promptBody.toUpperCase() === "EMPRESA") {
-      const userDoc = await db.collection("users").findOne({ numero: from });
-      if (userDoc?.nome) {
-        userStates[from] = { step: "PEDIR_EMPRESA", nome: userDoc.nome };
-        await sendMessage(from, "Digite o NOME da empresa em que você trabalha:");
-      } else {
-        userStates[from] = { step: "PEDIR_NOME" };
+    const state = userStates[from] || {};
+
+    // ===== FLUXO PALAVRAS-CHAVE =====
+    const keywords = ["EMPRESA", "BANCO", "PAGAMENTO", "BENEFICIOS", "FOLHA PONTO", "HOLERITE"];
+    if (keywords.includes(promptBody.toUpperCase())) {
+      if (!state.nome) {
+        userStates[from] = { step: "PEDIR_NOME", key: promptBody.toUpperCase() };
         await sendMessage(from, "Por favor, digite seu NOME completo:");
+      } else {
+        userStates[from].step = "PEDIR_EMPRESA";
+        userStates[from].key = promptBody.toUpperCase();
+        await sendMessage(from, "Digite o NOME da empresa em que você trabalha:");
       }
       return res.sendStatus(200);
     }
 
-    const state = userStates[from] || {};
-
     if (state.step === "PEDIR_NOME") {
       userStates[from].nome = promptBody;
-      userStates[from].step = "PEDIR_EMPRESA";
       await setUserName(from, promptBody);
+      userStates[from].step = "PEDIR_EMPRESA";
       await sendMessage(from, "Agora digite o NOME da empresa em que você trabalha:");
       return res.sendStatus(200);
     }
@@ -263,12 +261,44 @@ app.post("/webhook", async (req, res) => {
         userStates[from].empresa = empresa.nome;
         userStates[from].step = null;
 
-        const { nome } = userStates[from];
+        const { nome, key } = userStates[from];
         const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresa;
 
-        await sendMessage(from,
-          `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-        );
+        switch (key) {
+          case "EMPRESA":
+            await sendMessage(from,
+              `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+            );
+            break;
+          case "BANCO":
+            await sendMessage(from,
+              `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresa.nome}, envie os dados para o número 41 99833-3283 - Rafael`
+            );
+            break;
+          case "PAGAMENTO":
+            await sendMessage(from,
+              `💸 Datas de pagamento da empresa ${empresa.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
+            );
+            break;
+          case "BENEFICIOS":
+            await sendMessage(from,
+              `🎁 Benefícios da empresa ${empresa.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
+            );
+            break;
+          case "FOLHA PONTO":
+            await sendMessage(from,
+              `🕓 Informações da folha de ponto da empresa ${empresa.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+            );
+            break;
+          case "HOLERITE":
+            await sendMessage(from,
+              `📄 O holerite da empresa ${empresa.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`
+            );
+            break;
+          default:
+            await sendMessage(from, `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}`);
+        }
+
         return res.sendStatus(200);
       }
 
@@ -296,12 +326,44 @@ app.post("/webhook", async (req, res) => {
       userStates[from].empresa = empresaEscolhida.nome;
       userStates[from].step = null;
 
-      const { nome } = userStates[from];
+      const { nome, key } = userStates[from];
       const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEscolhida;
 
-      await sendMessage(from,
-        `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-      );
+      switch (key) {
+        case "EMPRESA":
+          await sendMessage(from,
+            `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+          );
+          break;
+        case "BANCO":
+          await sendMessage(from,
+            `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresaEscolhida.nome}, envie os dados para o número 41 99833-3283 - Rafael`
+          );
+          break;
+        case "PAGAMENTO":
+          await sendMessage(from,
+            `💸 Datas de pagamento da empresa ${empresaEscolhida.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
+          );
+          break;
+        case "BENEFICIOS":
+          await sendMessage(from,
+            `🎁 Benefícios da empresa ${empresaEscolhida.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
+          );
+          break;
+        case "FOLHA PONTO":
+          await sendMessage(from,
+            `🕓 Informações da folha de ponto da empresa ${empresaEscolhida.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+          );
+          break;
+        case "HOLERITE":
+          await sendMessage(from,
+            `📄 O holerite da empresa ${empresaEscolhida.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`
+          );
+          break;
+        default:
+          await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
+      }
+
       return res.sendStatus(200);
     }
 
@@ -454,3 +516,4 @@ cron.schedule("* * * * *", async () => {
 })();
 
 export { askGPT };
+
