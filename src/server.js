@@ -74,19 +74,17 @@ async function askGPT(prompt, history = []) {
 
 // ===== WhatsApp =====
 async function sendMessage(to, message) {
-  if (!message) return;
   try {
-    let textBody;
-    if (typeof message === "string") {
+    let textBody = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente."; // fallback seguro
+
+    if (typeof message === "string" && message.trim() !== "") {
       textBody = message;
-    } else if (typeof message === "object") {
-      if (message.resposta && typeof message.resposta === "string") {
+    } else if (message && typeof message === "object") {
+      if (typeof message.resposta === "string" && message.resposta.trim() !== "") {
         textBody = message.resposta;
-      } else {
-        textBody = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
+      } else if (typeof message.texto === "string" && message.texto.trim() !== "") {
+        textBody = message.texto;
       }
-    } else {
-      textBody = String(message);
     }
 
     await axios.post(
