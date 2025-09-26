@@ -72,32 +72,39 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// ===== WhatsApp =====
 async function sendMessage(to, message) {
-  try {
-    let textBody = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente."; // fallback seguro
+  if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
 
-    if (typeof message === "string" && message.trim() !== "") {
-      textBody = message;
-    } else if (message && typeof message === "object") {
-      if (typeof message.resposta === "string" && message.resposta.trim() !== "") {
-        textBody = message.resposta;
-      } else if (typeof message.texto === "string" && message.texto.trim() !== "") {
-        textBody = message.texto;
-      }
+  let textBody = "";
+
+  if (typeof message === "string") {
+    textBody = message;
+  } else if (typeof message === "object") {
+    // tenta pegar resposta ou texto
+    if (message.resposta && typeof message.resposta === "string") {
+      textBody = message.resposta;
+    } else if (message.texto && typeof message.texto === "string") {
+      textBody = message.texto;
+    } else {
+      // fallback: converte objeto para string legível
+      textBody = JSON.stringify(message, null, 2);
     }
+  } else {
+    textBody = String(message);
+  }
 
+  try {
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
       { messaging_product: "whatsapp", to, text: { body: textBody } },
       { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
     );
-
     console.log("📤 Mensagem enviada:", textBody);
   } catch (err) {
     console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
   }
 }
+
 
 async function sendAudio(to, audioBuffer) {
   if (!audioBuffer) return;
