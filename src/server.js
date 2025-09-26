@@ -219,7 +219,12 @@ app.post("/webhook", async (req, res) => {
     }
 
     const promptBody = (body || "").trim();
-    if (!promptBody) return res.sendStatus(200);
+
+// ⚠️ Bloquear entradas inválidas ou letras soltas
+if (!promptBody || promptBody.length < 2) {
+  await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
+  return res.sendStatus(200);
+}
 
     const state = userStates[from] || {};
 
