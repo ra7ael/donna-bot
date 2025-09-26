@@ -1,79 +1,87 @@
-// src/server.js
-import express from 'express';
-import OpenAI from "openai";
+import express from "express";
+import dotenv from "dotenv";
+import bodyParser from "body-parser";
 import mongoose from "mongoose";
-import bodyParser from 'body-parser';
-import axios from 'axios';
-import dotenv from 'dotenv';
-import FormData from 'form-data';
-import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
-import { getWeather } from "./utils/weather.js";
-import speak from "./utils/speak.js";
-import { downloadMedia } from './utils/downloadMedia.js';
-import cron from 'node-cron';
 import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
+import { askGPT } from "./utils/gpt.js"; // import do novo módulo
 import fs from "fs";
 import path from "path";
-import { askGPT } from "./utils/gpt.js";
-
+import axios from "axios";
+import FormData from "form-data";
+import { DateTime } from "luxon";
+import { downloadMedia } from "./utils/downloadMedia.js";
+import speak from "./utils/speak.js"; // TTS opcional
 
 dotenv.config();
 
 const app = express();
 app.use(bodyParser.json());
-
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
-const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-const openai = new OpenAI({ apiKey: GPT_API_KEY });
-
-// ===== Conectar MongoDB com Mongoose =====
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log("✅ Conectado ao MongoDB com Mongoose"))
-.catch(err => console.error("❌ Erro ao conectar MongoDB:", err));
-
-// ===== Definir Models =====
-import { Schema } from 'mongoose';
-
-const userSchema = new Schema({
-  numero: String,
-  nome: String
-});
-const User = mongoose.model("User", userSchema);
-
-const memorySchema = new Schema({
-  numero: String,
-  role: String,
-  content: String,
-  timestamp: { type: Date, default: Date.now }
-});
-const SemanticMemory = mongoose.model("SemanticMemory", memorySchema);
-
-const eventSchema = new Schema({
-  numero: String,
-  titulo: String,
-  descricao: String,
-  data: String,
-  hora: String,
-  sent: { type: Boolean, default: false },
-  timestamp: { type: Date, default: Date.now }
-});
-const DonnaEvent = mongoose.model("DonnaEvent", eventSchema);
-
-// Caminho absoluto para garantir que funcione no Render
+// ===== Caminho absoluto para empresas =====
 const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 
 // ===== Armazena estado dos usuários =====
 const userStates = {};
+
+// ===== Conectar MongoDB com Mongoose =====
+async function connectDB() {
+  try {
+    await mongoose.connect(MONGO_URI);
+    console.log("✅ Conectado ao MongoDB (histórico, usuários, agenda)");
+    // inicia cron somente após a conexão
+    startReminderCron();
+  } catch (err) {
+    console.error("❌ Erro ao conectar ao MongoDB:", err);
+  }
+}
+connectDB();
+
+// ===== Funções de envio =====
+async function sendMessage(to, message) {
+  if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
+
+  let textBody = typeof message === "string"
+    ? message
+    : message.resposta || message.texto || JSON.stringify(message, null, 2);
+
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
+      { messaging_product: "whatsapp", to, text: { body: textBody } },
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
+    );
+    console.log("📤 Mensagem enviada:", textBody);
+  } catch (err) {
+    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
+  }
+}
+
+async function sendAudio(to, audioBuffer) {
+  if (!audioBuffer) return;
+  try {
+    const formData = new FormData();
+    formData.append("messaging_product", "whatsapp");
+    formData.append("to", to);
+    formData.append("type", "audio");
+    formData.append("audio", audioBuffer, { filename: "audio.mp3" });
+
+    await axios.post(
+      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
+      formData,
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, ...formData.getHeaders() } }
+    );
+    console.log("📤 Áudio enviado");
+  } catch (err) {
+    console.error("❌ Erro ao enviar áudio:", err.response?.data || err);
+  }
+}
 
 // ===== Funções GPT =====
 async function askGPT(prompt, history = []) {
