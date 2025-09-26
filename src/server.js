@@ -269,6 +269,17 @@ if (state.step === "PEDIR_EMPRESA") {
     return res.sendStatus(200);
   }
 
+  // ✨ Nova parte: mais de uma empresa compatível
+  const listaEmpresas = empresasEncontradas.map((e, i) => `${i + 1}. ${e.nome}`).join("\n");
+  userStates[from].step = "ESCOLHER_EMPRESA";
+  userStates[from].empresasCompat = empresasEncontradas;
+
+  await sendMessage(from,
+    `⚠️ Encontrei mais de uma empresa compatível:\n${listaEmpresas}\nDigite o número correspondente à sua empresa.`
+  );
+  return res.sendStatus(200);
+}
+
   // Mais de uma empresa encontrada → lista opções
   userStates[from].empresasOpcoes = empresasEncontradas;
   userStates[from].step = "ESCOLHER_EMPRESA";
