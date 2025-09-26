@@ -47,6 +47,7 @@ connectDB();
 // Caminho absoluto para garantir que funcione no Render
 const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
+
 // ===== Armazena estado dos usuários =====
 const userStates = {};
 
@@ -188,7 +189,7 @@ async function addEvent(number, title, description, date, time) {
 
 async function getTodayEvents(number) {
   const today = DateTime.now().toFormat("yyyy-MM-dd");
-  return await db.collection("donna").find({ numero, data: today }).sort({ hora: 1 }).toArray();
+  return await db.collection("donna").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
 // ===== Webhook =====
@@ -219,43 +220,87 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
 
-    // ===== FLUXO EMPRESA =====
-    if (promptBody.toUpperCase() === "EMPRESA") {
-      userStates[from] = { step: "PEDIR_NOME" };
-      await sendMessage(from, "Por favor, digite seu NOME completo:");
-      return res.sendStatus(200);
-    }
+   // ===== FLUXO EMPRESA =====
+if (promptBody.toUpperCase() === "EMPRESA") {
+  const userDoc = await db.collection("users").findOne({ numero: from });
+  if (userDoc?.nome) {
+    userStates[from] = { step: "PEDIR_EMPRESA", nome: userDoc.nome };
+    await sendMessage(from, "Digite o NOME da empresa em que você trabalha:");
+  } else {
+    userStates[from] = { step: "PEDIR_NOME" };
+    await sendMessage(from, "Por favor, digite seu NOME completo:");
+  }
+  return res.sendStatus(200);
+}
 
-    const state = userStates[from] || {};
+const state = userStates[from] || {};
 
-    if (state.step === "PEDIR_NOME") {
-      userStates[from].nome = promptBody;
-      userStates[from].step = "PEDIR_EMPRESA";
-      await sendMessage(from, "Agora digite o NOME da empresa em que você trabalha:");
-      return res.sendStatus(200);
-    }
+if (state.step === "PEDIR_NOME") {
+  userStates[from].nome = promptBody;
+  userStates[from].step = "PEDIR_EMPRESA";
+  await setUserName(from, promptBody);
+  await sendMessage(from, "Agora digite o NOME da empresa em que você trabalha:");
+  return res.sendStatus(200);
+}
 
-    if (state.step === "PEDIR_EMPRESA") {
-      const empresaInput = promptBody.toUpperCase();
-      const empresaEncontrada = empresas.find(e => e.nome.toUpperCase() === empresaInput);
+if (state.step === "PEDIR_EMPRESA") {
+  const empresaInput = promptBody.toUpperCase();
+  const empresasEncontradas = empresas.filter(e =>
+    e.nome.toUpperCase().includes(empresaInput)
+  );
 
-      if (!empresaEncontrada) {
-        await sendMessage(from, "❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.");
-        return res.sendStatus(200);
-      }
+  if (empresasEncontradas.length === 0) {
+    await sendMessage(from, "❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.");
+    return res.sendStatus(200);
+  }
 
-      userStates[from].empresa = empresaEncontrada.nome;
-      userStates[from].step = null; // finaliza fluxo
+  if (empresasEncontradas.length === 1) {
+    // Só uma empresa achada → segue normal
+    const empresa = empresasEncontradas[0];
+    userStates[from].empresa = empresa.nome;
+    userStates[from].step = null;
 
-      const { nome } = userStates[from];
-      const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEncontrada;
+    const { nome } = userStates[from];
+    const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresa;
 
-      await sendMessage(from,
-        `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresaEncontrada.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-      );
+    await sendMessage(from,
+      `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+    );
+    return res.sendStatus(200);
+  }
 
-      return res.sendStatus(200);
-    }
+  // Mais de uma empresa encontrada → lista opções
+  userStates[from].empresasOpcoes = empresasEncontradas;
+  userStates[from].step = "ESCOLHER_EMPRESA";
+
+  const lista = empresasEncontradas.map((e, i) => `${i + 1}. ${e.nome}`).join("\n");
+  await sendMessage(from,
+    `🔎 Encontramos mais de uma empresa com esse nome:\n\n${lista}\n\nDigite apenas o número correspondente à sua empresa.`
+  );
+  return res.sendStatus(200);
+}
+
+if (state.step === "ESCOLHER_EMPRESA") {
+  const escolha = parseInt(promptBody, 10);
+  const opcoes = state.empresasOpcoes || [];
+
+  if (!escolha || escolha < 1 || escolha > opcoes.length) {
+    await sendMessage(from, "❌ Opção inválida. Digite apenas o número da empresa listado.");
+    return res.sendStatus(200);
+  }
+
+  const empresaEscolhida = opcoes[escolha - 1];
+  userStates[from].empresa = empresaEscolhida.nome;
+  userStates[from].step = null;
+
+  const { nome } = userStates[from];
+  const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEscolhida;
+
+  await sendMessage(from,
+    `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+  );
+  return res.sendStatus(200);
+}
 
     // 🔒 NÃO AUTORIZADO → apenas FAQ
     if (!numerosAutorizados.includes(from)) {
