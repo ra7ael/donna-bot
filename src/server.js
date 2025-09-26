@@ -269,40 +269,38 @@ if (!promptBody || promptBody.length < 2) {
         const { nome, key } = userStates[from];
         const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresa;
 
-        switch (key) {
-          case "EMPRESA":
-            await sendMessage(from,
-              `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-            );
-            break;
-          case "BANCO":
-            await sendMessage(from,
-              `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresa.nome}, envie os dados para o número 41 99833-3283 - Rafael`
-            );
-            break;
-          case "PAGAMENTO":
-            await sendMessage(from,
-              `💸 Datas de pagamento da empresa ${empresa.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
-            );
-            break;
-          case "BENEFICIOS":
-            await sendMessage(from,
-              `🎁 Benefícios da empresa ${empresa.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
-            );
-            break;
-          case "FOLHA PONTO":
-            await sendMessage(from,
-              `🕓 Informações da folha de ponto da empresa ${empresa.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-            );
-            break;
-          case "HOLERITE":
-            await sendMessage(from,
-              `📄 O holerite da empresa ${empresa.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`
-            );
-            break;
-          default:
-            await sendMessage(from, `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}`);
-        }
+       if (empresa) {
+  switch (userStates[from].key) {
+    case "EMPRESA":
+      reply = `🏢 Informações da empresa ${empresa.nome}:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`;
+      break;
+
+    case "BANCO":
+      reply = `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresa.nome}, envie os dados para o número 41 99833-3283 - Rafael`;
+      break;
+
+    case "PAGAMENTO":
+      reply = `💸 Datas de pagamento da empresa ${empresa.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`;
+      break;
+
+    case "BENEFICIOS":
+      reply = `🎁 Benefícios da empresa ${empresa.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`;
+      break;
+
+    case "FOLHA PONTO":
+      reply = `🕓 Informações da folha de ponto da empresa ${empresa.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`;
+      break;
+
+    case "HOLERITE":
+      reply = `📄 O holerite da empresa ${empresa.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`;
+      break;
+
+    default:
+      reply = `❌ Serviço não reconhecido para a empresa ${empresa.nome}.`;
+  }
+} else {
+  reply = `❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.`;
+}
 
         return res.sendStatus(200);
       }
