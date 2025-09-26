@@ -44,8 +44,13 @@ async function connectDB() {
 connectDB();
 
 // ===== Carrega JSON de empresas =====
-const empresas = JSON.parse(fs.readFileSync("./empresa.json", "utf8"));
 
+import fs from 'fs';
+import path from 'path';
+
+// Caminho absoluto para garantir que funcione no Render
+const empresasPath = path.resolve("./src/data/empresa.json");
+const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 // ===== Armazena estado dos usuários =====
 const userStates = {};
 
