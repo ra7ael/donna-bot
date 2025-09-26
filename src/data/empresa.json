@@ -1,11 +1,4 @@
-  [{
-    "nome": "CCM MAQ",
-    "data_de_pagamento": "5º DIA UTIL",
-    "data_adiantamento": "",
-    "fechamento_do_ponto": "20",
-    "metodo_ponto": "CARTÃO PONTO MANUAL"
-  }
-     {
+  [ {
     "nome": "A FORMULA FARMACIA DE MANIPULACAO LTDA",
     "data_de_pagamento": "ESTAGIO",
     "data_adiantamento": "ESTAGIO",
