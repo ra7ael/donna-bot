@@ -460,3 +460,4 @@ app.post("/webhook", async (req, res) => {
 // ===== Start cron e servidor =====
 startReminderCron(db); // lembretes
 app.listen(PORT, () => console.log(`🚀 Server rodando na porta ${PORT}`));
+export {};
