@@ -1,16 +1,15 @@
 // src/server.js
 import express from 'express';
 import OpenAI from "openai";
-import { MongoClient } from 'mongodb';
+import mongoose from "mongoose";
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
-import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
-import speak from "./utils/speak.js"; // TTS opcional
+import speak from "./utils/speak.js";
 import { downloadMedia } from './utils/downloadMedia.js';
 import cron from 'node-cron';
 import { responderFAQ } from "./utils/faqHandler.js";
@@ -30,19 +29,42 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
-let db;
 
-// ===== Conectar MongoDB =====
-async function connectDB() {
-  try {
-    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-    db = client.db();
-    console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
-  } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB:', err);
-  }
-}
-connectDB();
+// ===== Conectar MongoDB com Mongoose =====
+mongoose.connect(MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log("✅ Conectado ao MongoDB com Mongoose"))
+.catch(err => console.error("❌ Erro ao conectar MongoDB:", err));
+
+// ===== Definir Models =====
+import { Schema } from 'mongoose';
+
+const userSchema = new Schema({
+  numero: String,
+  nome: String
+});
+const User = mongoose.model("User", userSchema);
+
+const memorySchema = new Schema({
+  numero: String,
+  role: String,
+  content: String,
+  timestamp: { type: Date, default: Date.now }
+});
+const SemanticMemory = mongoose.model("SemanticMemory", memorySchema);
+
+const eventSchema = new Schema({
+  numero: String,
+  titulo: String,
+  descricao: String,
+  data: String,
+  hora: String,
+  sent: { type: Boolean, default: false },
+  timestamp: { type: Date, default: Date.now }
+});
+const DonnaEvent = mongoose.model("DonnaEvent", eventSchema);
 
 // Caminho absoluto para garantir que funcione no Render
 const empresasPath = path.resolve("./src/data/empresa.json");
@@ -71,6 +93,43 @@ async function askGPT(prompt, history = []) {
     return "Hmm… ainda estou pensando!";
   }
 }
+
+// ===== Funções usuários e memória com Mongoose =====
+async function getUserName(number) {
+  const doc = await User.findOne({ numero: number });
+  return doc?.nome || null;
+}
+
+async function setUserName(number, name) {
+  await User.updateOne({ numero: number }, { nome: name }, { upsert: true });
+}
+
+async function getUserMemory(number, limit = 5) {
+  return await SemanticMemory.find({ numero: number })
+    .sort({ timestamp: -1 })
+    .limit(limit)
+    .lean();
+}
+
+async function saveMemory(number, role, content) {
+  if (!content || !content.trim()) return;
+  await SemanticMemory.create({ numero: number, role, content });
+}
+
+// ===== Funções agenda com Mongoose =====
+async function addEvent(number, title, description, date, time) {
+  await DonnaEvent.create({
+    numero: number,
+    titulo: title,
+    descricao: description || title,
+    data: date,
+    hora: time
+  });
+}
+
+async function getTodayEvents(number) {
+  const today = DateTime.now().toFormat("yyyy-MM-dd");
+  return await DonnaEvent.find({ numero: number, data: today }).sort({ hora: 1 }).lean();
 
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
