@@ -67,8 +67,17 @@ async function askGPT(prompt, history = []) {
 async function sendMessage(to, message) {
   if (!message) return;
   try {
-    // Garantir que message seja string
-    const textBody = typeof message === "string" ? message : JSON.stringify(message);
+    // 🔒 Garante que message seja sempre string válida
+    let textBody = "";
+    if (typeof message === "string") {
+      textBody = message;
+    } else if (typeof message === "object") {
+      if (message.resposta) textBody = String(message.resposta);
+      else if (message.texto) textBody = String(message.texto);
+      else textBody = JSON.stringify(message);
+    } else {
+      textBody = String(message);
+    }
 
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
