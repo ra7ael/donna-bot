@@ -219,13 +219,13 @@ app.post("/webhook", async (req, res) => {
     }
 
     const promptBody = (body || "").trim();
-    const state = userStates[from] || {};  // inicializa state primeiro
+    const state = userStates[from] || {};
 
-// ⚠️ Bloquear entradas inválidas ou letras soltas
-if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
-  await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
-  return res.sendStatus(200);
-}
+    // ⚠️ Bloquear entradas inválidas ou letras soltas
+    if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
+      await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
+      return res.sendStatus(200);
+    }
 
     // ===== FLUXO PALAVRAS-CHAVE =====
     const keywords = ["EMPRESA", "BANCO", "PAGAMENTO", "BENEFICIOS", "FOLHA PONTO", "HOLERITE"];
@@ -250,282 +250,152 @@ if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA")
     }
 
     // ===== PEDIR EMPRESA =====
-if (state.step === "PEDIR_EMPRESA") {
-  const empresaInput = promptBody.toUpperCase();
-  const empresasEncontradas = empresas.filter(e =>
-    e.nome.toUpperCase().includes(empresaInput)
-  );
+    if (state.step === "PEDIR_EMPRESA") {
+      const empresaInput = promptBody.toUpperCase();
+      const empresasEncontradas = empresas.filter(e => e.nome.toUpperCase().includes(empresaInput));
 
-  if (empresasEncontradas.length === 0) {
-    await sendMessage(from, "❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.");
-    return res.sendStatus(200);
-  }
+      if (empresasEncontradas.length === 0) {
+        await sendMessage(from, "❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.");
+        return res.sendStatus(200);
+      }
 
-  if (empresasEncontradas.length === 1) {
-    // Apenas uma empresa encontrada
-    const empresa = empresasEncontradas[0];
-    userStates[from].empresa = empresa.nome;
-    userStates[from].step = null;
+      if (empresasEncontradas.length === 1) {
+        const empresa = empresasEncontradas[0];
+        userStates[from].empresa = empresa.nome;
+        userStates[from].step = null;
 
-    const { nome, key } = userStates[from];
-    const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresa;
+        const { nome, key } = userStates[from];
+        const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresa;
 
-    switch (key) {
-      case "EMPRESA":
-        await sendMessage(from,
-          `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-        );
-        break;
-      case "BANCO":
-        await sendMessage(from,
-          `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresa.nome}, envie os dados para o número 41 99833-3283 - Rafael`
-        );
-        break;
-      case "PAGAMENTO":
-        await sendMessage(from,
-          `💸 Datas de pagamento da empresa ${empresa.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
-        );
-        break;
-      case "BENEFICIOS":
-        await sendMessage(from,
-          `🎁 Benefícios da empresa ${empresa.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
-        );
-        break;
-      case "FOLHA PONTO":
-        await sendMessage(from,
-          `🕓 Informações da folha de ponto da empresa ${empresa.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-        );
-        break;
-      case "HOLERITE":
-        await sendMessage(from,
-          `📄 O holerite da empresa ${empresa.nome} estará disponível na data de pagamento (${data_de_pagamento || "Não informado"}) no aplicativo Wiipo. Basta se cadastrar para conferir.`
-        );
-        break;
-      default:
-        await sendMessage(from, `❌ Palavra-chave inválida. Digite uma das opções do menu.`);
-    }
-
-    return res.sendStatus(200);
-  }
-
-  // Mais de uma empresa encontrada → lista opções
-  userStates[from].empresasOpcoes = empresasEncontradas;
-  userStates[from].step = "ESCOLHER_EMPRESA";
-
-  let listaMsg = "🔎 Encontramos mais de uma empresa correspondente:\n";
-  empresasEncontradas.forEach((e, i) => {
-    listaMsg += `${i + 1}. ${e.nome}\n`;
-  });
-  listaMsg += "\nDigite apenas o número da empresa desejada.";
-
-  await sendMessage(from, listaMsg);
-  return res.sendStatus(200);
-}
-
-// ===== ESCOLHER EMPRESA =====
-if (state.step === "ESCOLHER_EMPRESA") {
-  const escolha = parseInt(promptBody.trim(), 10);
-  const opcoes = state.empresasOpcoes || [];
-
-  if (isNaN(escolha) || escolha < 1 || escolha > opcoes.length) {
-    await sendMessage(from, "❌ Opção inválida. Digite apenas o número da empresa listado.");
-    return res.sendStatus(200);
-  }
-
-  const empresaEscolhida = opcoes[escolha - 1];
-  userStates[from].empresa = empresaEscolhida.nome;
-  userStates[from].step = null;
-  delete userStates[from].empresasOpcoes; // limpa a lista após escolha
-
-  const { nome, key } = state;
-  const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEscolhida;
-
-  switch (key) {
-    case "EMPRESA":
-      await sendMessage(from,
-        `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-      );
-      break;
-    case "BANCO":
-      await sendMessage(from,
-        `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresaEscolhida.nome}, envie os dados para o número 41 99833-3283 - Rafael`
-      );
-      break;
-    case "PAGAMENTO":
-      await sendMessage(from,
-        `💸 Datas de pagamento da empresa ${empresaEscolhida.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
-      );
-      break;
-    case "BENEFICIOS":
-      await sendMessage(from,
-        `🎁 Benefícios da empresa ${empresaEscolhida.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
-      );
-      break;
-    case "FOLHA PONTO":
-      await sendMessage(from,
-        `🕓 Informações da folha de ponto da empresa ${empresaEscolhida.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-      );
-      break;
-    case "HOLERITE":
-      await sendMessage(from,
-        `📄 O holerite da empresa ${empresaEscolhida.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`
-      );
-      break;
-    default:
-      await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
-  }
-
-  return res.sendStatus(200);
-}
-
-
-    // 🔒 NÃO AUTORIZADO → apenas FAQ
-    if (!numerosAutorizados.includes(from)) {
-      const normalizedMsg = promptBody.trim().toLowerCase();
-      if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
-        const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos.  
-Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
-
-🏢 EMPRESA – (em breve descrição)  
-🏦 BANCO – Cadastro ou alteração de dados bancários  
-💸 PAGAMENTO – Salário, datas ou descontos  
-🎁 BENEFICIOS – VT, VR e outros  
-🕓 FOLHA PONTO – Dúvidas sobre marcação e correções  
-📄 HOLERITE – Acesso ao contracheque  
-
-❗ Digite a palavra exata (ex: HOLERITE) e te enviaremos a instrução automaticamente.`;
-        await sendMessage(from, menuMsg);
-
-        const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
-        if (userHistory.length === 0) {
-          await db.collection("historico").insertOne({
-            numero: from,
-            primeiraMensagem: promptBody,
-            data: new Date()
-          });
+        switch (key) {
+          case "EMPRESA":
+            await sendMessage(from,
+              `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+            );
+            break;
+          case "BANCO":
+            await sendMessage(from,
+              `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresa.nome}, envie os dados para o número 41 99833-3283 - Rafael`
+            );
+            break;
+          case "PAGAMENTO":
+            await sendMessage(from,
+              `💸 Datas de pagamento da empresa ${empresa.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
+            );
+            break;
+          case "BENEFICIOS":
+            await sendMessage(from,
+              `🎁 Benefícios da empresa ${empresa.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
+            );
+            break;
+          case "FOLHA PONTO":
+            await sendMessage(from,
+              `🕓 Informações da folha de ponto da empresa ${empresa.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+            );
+            break;
+          case "HOLERITE":
+            await sendMessage(from,
+              `📄 O holerite da empresa ${empresa.nome} estará disponível na data de pagamento (${data_de_pagamento || "Não informado"}) no aplicativo Wiipo. Basta se cadastrar para conferir.`
+            );
+            break;
+          default:
+            await sendMessage(from, `❌ Palavra-chave inválida. Digite uma das opções do menu.`);
         }
 
         return res.sendStatus(200);
       }
 
-      let faqReply = await responderFAQ(promptBody, await getUserName(from));
-      if (faqReply && typeof faqReply !== "string") {
-        if (faqReply.texto) faqReply = faqReply.texto;
-        else faqReply = JSON.stringify(faqReply);
-      }
+      // Mais de uma empresa encontrada → lista opções
+      userStates[from].empresasOpcoes = empresasEncontradas;
+      userStates[from].step = "ESCOLHER_EMPRESA";
 
-      const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
-      await sendMessage(from, respostaFinal);
+      let listaMsg = "🔎 Encontramos mais de uma empresa correspondente:\n";
+      empresasEncontradas.forEach((e, i) => {
+        listaMsg += `${i + 1}. ${e.nome}\n`;
+      });
+      listaMsg += "\nDigite apenas o número da empresa desejada.";
+
+      await sendMessage(from, listaMsg);
       return res.sendStatus(200);
     }
 
-    // 🔓 AUTORIZADO → fluxo GPT
-    let userName = await getUserName(from);
-    const nameMatch = promptBody.match(/meu nome é (\w+)/i);
-    if (nameMatch) {
-      userName = nameMatch[1];
-      await setUserName(from, userName);
-      await sendMessage(from, `Ótimo! Agora vou te chamar de ${userName} 😊`);
+    // ===== ESCOLHER EMPRESA =====
+    if (state.step === "ESCOLHER_EMPRESA") {
+      const escolha = parseInt(promptBody.trim(), 10);
+      const opcoes = state.empresasOpcoes || [];
+
+      if (isNaN(escolha) || escolha < 1 || escolha > opcoes.length) {
+        await sendMessage(from, "❌ Opção inválida. Digite apenas o número da empresa listado.");
+        return res.sendStatus(200);
+      }
+
+      const empresaEscolhida = opcoes[escolha - 1];
+      userStates[from].empresa = empresaEscolhida.nome;
+      userStates[from].step = null;
+      delete userStates[from].empresasOpcoes;
+
+      const { nome, key } = state;
+      const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEscolhida;
+
+      switch (key) {
+        case "EMPRESA":
+          await sendMessage(from,
+            `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+          );
+          break;
+        case "BANCO":
+          await sendMessage(from,
+            `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresaEscolhida.nome}, envie os dados para o número 41 99833-3283 - Rafael`
+          );
+          break;
+        case "PAGAMENTO":
+          await sendMessage(from,
+            `💸 Datas de pagamento da empresa ${empresaEscolhida.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
+          );
+          break;
+        case "BENEFICIOS":
+          await sendMessage(from,
+            `🎁 Benefícios da empresa ${empresaEscolhida.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
+          );
+          break;
+        case "FOLHA PONTO":
+          await sendMessage(from,
+            `🕓 Informações da folha de ponto da empresa ${empresaEscolhida.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+          );
+          break;
+        case "HOLERITE":
+          await sendMessage(from,
+            `📄 O holerite da empresa ${empresaEscolhida.nome} estará disponível na data de pagamento (${data_de_pagamento || "Não informado"}) no aplicativo Wiipo. Basta se cadastrar para conferir.`
+          );
+          break;
+        default:
+          await sendMessage(from, `❌ Palavra-chave inválida. Digite uma das opções do menu.`);
+      }
+
       return res.sendStatus(200);
     }
 
-    const memories = await getUserMemory(from, 6);
-    const chatHistory = memories.reverse()
-      .map(m => ({ role: m.role, content: m.content || "" }))
-      .filter(m => m.content.trim() !== "");
-
-    const systemMessage = {
-      role: "system",
-      content: `
-        Você é a Donna, assistente pessoal do usuário. 
-        - Use o nome do usuário quando souber. 
-        - Responda de forma objetiva, clara, direta e amigável. 
-        - Priorize respostas curtas e práticas. 
-        - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa. 
-        - Não invente informações; se não souber, admita de forma educada. 
-        - Adapte seu tom para ser acolhedora e prestativa.
-      `
-    };
-
-    let reply;
-    const now = DateTime.now().setZone("America/Sao_Paulo");
-
-    if (/que horas são\??/i.test(promptBody)) {
-      reply = `🕒 Agora são ${now.toFormat("HH:mm")}`;
-    } else if (/qual a data( de hoje)?\??/i.test(promptBody)) {
-      const weekday = now.toFormat("cccc");
-      reply = `📅 Hoje é ${weekday}, ${now.toFormat("dd/MM/yyyy")}`;
-    } else if (/tempo|clima|previsão/i.test(promptBody)) {
-      const matchCity = promptBody.match(/em\s+([a-z\s]+)/i);
-      const city = matchCity ? matchCity[1].trim() : "Curitiba";
-      reply = await getWeather(city, "hoje");
-    } else if (/lembrete|evento|agenda/i.test(promptBody)) {
-      const match = promptBody.match(/lembrete de (.+) às (\d{1,2}:\d{2})/i);
-      if (match) {
-        const title = match[1];
-        const time = match[2];
-        const date = DateTime.now().toFormat("yyyy-MM-dd");
-        await addEvent(from, title, title, date, time);
-        reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
-      } else if (/mostrar agenda|meus lembretes/i.test(promptBody)) {
-        const events = await getTodayEvents(from);
-        reply = events.length === 0
-          ? "📭 Você não tem nenhum evento para hoje."
-          : "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
-      }
-    } else {
-      const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${promptBody}` : promptBody;
-      reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
+    // ===== Responder FAQ geral =====
+    const faqReply = await responderFAQ(promptBody);
+    if (faqReply) {
+      await sendMessage(from, faqReply);
+      return res.sendStatus(200);
     }
 
-    await db.collection("historico").insertOne({
-      numero: from,
-      mensagem: promptBody,
-      resposta: reply,
-      timestamp: new Date()
-    });
+    // ===== Mensagem padrão GPT =====
+    const memory = await getUserMemory(from, 5);
+    const gptResponse = await askGPT(promptBody, memory.map(m => ({ role: m.role, content: m.content })));
+    await sendMessage(from, gptResponse);
     await saveMemory(from, "user", promptBody);
-    await saveMemory(from, "assistant", reply);
-
-    if (isAudioResponse) {
-      const audioData = await speak(reply);
-      if (audioData) await sendAudio(from, audioData);
-    } else {
-      await sendMessage(from, reply);
-    }
+    await saveMemory(from, "assistant", gptResponse);
 
     return res.sendStatus(200);
-
   } catch (err) {
-    console.error("❌ Erro ao processar webhook:", err);
+    console.error("❌ Erro webhook:", err);
     return res.sendStatus(500);
   }
 });
 
-// ===== Cron job =====
-cron.schedule("* * * * *", async () => {
-  const now = DateTime.now().setZone("America/Sao_Paulo").toFormat("HH:mm");
-  const today = DateTime.now().toFormat("yyyy-MM-dd");
-
-  const events = await db.collection("donna").find({ data: today, hora: now }).toArray();
-  for (const ev of events) {
-    await sendMessage(ev.numero, `⏰ Lembrete: ${ev.titulo}`);
-  }
-});
-
-// ===== Start =====
-(async () => {
-  try {
-    await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-    console.log("✅ Conectado ao MongoDB (reminders)");
-
-    startReminderCron();
-
-    app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
-  } catch (err) {
-    console.error("❌ Erro ao conectar ao MongoDB:", err);
-  }
-})();
-
-export { askGPT };
-
+// ===== Start cron e servidor =====
+startReminderCron(db); // lembretes
+app.listen(PORT, () => console.log(`🚀 Server rodando na porta ${PORT}`));
