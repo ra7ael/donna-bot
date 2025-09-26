@@ -16,6 +16,8 @@ import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
 import path from "path";
+import { askGPT } from "./utils/gpt.js";
+
 
 dotenv.config();
 
@@ -458,5 +460,3 @@ app.post("/webhook", async (req, res) => {
 // ===== Start cron e servidor =====
 startReminderCron(db); // lembretes
 app.listen(PORT, () => console.log(`🚀 Server rodando na porta ${PORT}`));
-export { askGPT };
-
