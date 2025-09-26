@@ -219,14 +219,13 @@ app.post("/webhook", async (req, res) => {
     }
 
     const promptBody = (body || "").trim();
+    const state = userStates[from] || {};  // inicializa state primeiro
 
 // ⚠️ Bloquear entradas inválidas ou letras soltas
 if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
   await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
   return res.sendStatus(200);
 }
-
-    const state = userStates[from] || {};
 
     // ===== FLUXO PALAVRAS-CHAVE =====
     const keywords = ["EMPRESA", "BANCO", "PAGAMENTO", "BENEFICIOS", "FOLHA PONTO", "HOLERITE"];
