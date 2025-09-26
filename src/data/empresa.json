@@ -375,5 +375,237 @@
     "data_adiantamento": "SIM - DIA 15 - 40%",
     "fechamento_do_ponto": "24",
     "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+    {
+    "nome": "FIBRACEM TELEINFORMATICA LTDA",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "FLUXO COMERCIO ELETRONICO EIRELI",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "25",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "FNC SISTEMAS DE SEGURANCA LTDA EPP",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "25",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "FORREST BRASIL TECNOLOGIA LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "ESTAGIO",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "ESTAGIO"
+  },
+  {
+    "nome": "GAM - GENESIO A MENDES E CIA LTDA",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "SE - SECULUM"
+  },
+  {
+    "nome": "GLOBOAVES SAO PAULO AGROAVICOLA LTDA EM RECUPERACAO JUDICIAL",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "21",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "HIEX EMPREENDIMENTOS IMOBILIARIOS LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "HMD SUITS TELECOMUNICACOES LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "ICONE",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "IMPRESS DECOR BRASIL",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "16",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "IMPRESS DECOR BRASIL - FILIAL",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "16",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "INCEPA",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": "SECULLUM"
+  },
+  {
+    "nome": "INTERPRINT DO BRASIL INDUSTRIA DE PAPEIS DECORATIVOS LTDA",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "16",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "INYLBRA TAPETES E VELUDOS LTDA",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "16",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "ITAHUM - PONTA PORA",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "ITAHUM - DOURADOS",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "ITAHUM EXPORT COMERCIO DE CEREAIS LTDA",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "JSL SA",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "15",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "JSL SA",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "15",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "JUMBO ATACADISTA",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "MASTER PISOS - (COMPENSADOS IMPERIO LTDA)",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "21",
+    "metodo_ponto": "SE - SECULUM"
+  },
+  {
+    "nome": "KASY TELECOM LTDA",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "NÃO TEM",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "KURASHIKI",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "LA VIOLETERA",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "SE - PONTO +"
+  },
+  {
+    "nome": "LUX DATA",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "LEVAPAN DO BRASIL IND COM IMP E EXP DE PROD ALIM LTDA",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "26",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "CRISTAL ENGENHARIA - (M ANCAY E A ANCAY LTDA)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "MEDEIRAS EULIDE",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CRACHA COM QR CODE"
+  },
+  {
+    "nome": "MAKLEN CONTACT CENTER ASSESSORIA LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "ESTAGIO"
+  },
+  {
+    "nome": "MECANOTECNICA DO BRASIL IND E COM LTDA",
+    "data_de_pagamento": "5",
+    "data_adiantamento": "20",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "MECO MADEIRAS",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": ""
+  },
+  {
+    "nome": "MELT'CO FRANCHISING BRASIL LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "ESTAGIO"
+  },
+  {
+    "nome": "METALSA CAMPO LARGO IND E COM DE CHASSIS LTDA",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "31",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
   }
+    
   ]
