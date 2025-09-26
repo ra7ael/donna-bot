@@ -15,6 +15,7 @@ import { downloadMedia } from './utils/downloadMedia.js';
 import cron from 'node-cron';
 import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
+import fs from "fs";
 
 dotenv.config();
 
@@ -41,6 +42,12 @@ async function connectDB() {
   }
 }
 connectDB();
+
+// ===== Carrega JSON de empresas =====
+const empresas = JSON.parse(fs.readFileSync("./empresa.json", "utf8"));
+
+// ===== Armazena estado dos usuários =====
+const userStates = {};
 
 // ===== Funções GPT =====
 async function askGPT(prompt, history = []) {
@@ -72,15 +79,13 @@ async function sendMessage(to, message) {
     if (typeof message === "string") {
       textBody = message;
     } else if (typeof message === "object") {
-      // se tiver resposta → usa
       if (message.resposta && typeof message.resposta === "string") {
         textBody = message.resposta;
       } else {
-        // fallback amigável
         textBody = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
       }
     } else {
-      textBody = String(message); // último fallback
+      textBody = String(message);
     }
 
     await axios.post(
@@ -94,8 +99,6 @@ async function sendMessage(to, message) {
     console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
   }
 }
-
-
 
 async function sendAudio(to, audioBuffer) {
   if (!audioBuffer) return;
@@ -187,6 +190,7 @@ async function getTodayEvents(number) {
   return await db.collection("donna").find({ numero, data: today }).sort({ hora: 1 }).toArray();
 }
 
+// ===== Webhook =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -213,6 +217,44 @@ app.post("/webhook", async (req, res) => {
 
     const promptBody = (body || "").trim();
     if (!promptBody) return res.sendStatus(200);
+
+    // ===== FLUXO EMPRESA =====
+    if (promptBody.toUpperCase() === "EMPRESA") {
+      userStates[from] = { step: "PEDIR_NOME" };
+      await sendMessage(from, "Por favor, digite seu NOME completo:");
+      return res.sendStatus(200);
+    }
+
+    const state = userStates[from] || {};
+
+    if (state.step === "PEDIR_NOME") {
+      userStates[from].nome = promptBody;
+      userStates[from].step = "PEDIR_EMPRESA";
+      await sendMessage(from, "Agora digite o NOME da empresa em que você trabalha:");
+      return res.sendStatus(200);
+    }
+
+    if (state.step === "PEDIR_EMPRESA") {
+      const empresaInput = promptBody.toUpperCase();
+      const empresaEncontrada = empresas.find(e => e.nome.toUpperCase() === empresaInput);
+
+      if (!empresaEncontrada) {
+        await sendMessage(from, "❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.");
+        return res.sendStatus(200);
+      }
+
+      userStates[from].empresa = empresaEncontrada.nome;
+      userStates[from].step = null; // finaliza fluxo
+
+      const { nome } = userStates[from];
+      const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEncontrada;
+
+      await sendMessage(from,
+        `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresaEncontrada.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+      );
+
+      return res.sendStatus(200);
+    }
 
     // 🔒 NÃO AUTORIZADO → apenas FAQ
     if (!numerosAutorizados.includes(from)) {
@@ -245,11 +287,8 @@ Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja fal
         return res.sendStatus(200);
       }
 
-      // Processa FAQ
-      const userName = await getUserName(from);
-      let faqReply = await responderFAQ(promptBody, userName);
+      let faqReply = await responderFAQ(promptBody, await getUserName(from));
 
-      // Garante que seja string
       if (faqReply && typeof faqReply !== "string") {
         if (faqReply.texto) faqReply = faqReply.texto;
         else faqReply = JSON.stringify(faqReply);
