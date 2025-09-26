@@ -314,67 +314,57 @@ switch (key) {
       }
 
       // Mais de uma empresa encontrada → lista opções
-      userStates[from].empresasOpcoes = empresasEncontradas;
-      userStates[from].step = "ESCOLHER_EMPRESA";
+   if (userStates[from].step === "ESCOLHER_EMPRESA") {
+  const escolha = parseInt(promptBody.trim(), 10);
+  const opcoes = userStates[from].empresasOpcoes || [];
 
-      const lista = empresasEncontradas.map((e, i) => `${i + 1}. ${e.nome}`).join("\n");
+  if (isNaN(escolha) || escolha < 1 || escolha > opcoes.length) {
+    await sendMessage(from, "❌ Opção inválida. Digite apenas o número da empresa listado.");
+    return res.sendStatus(200);
+  }
+
+  const empresaEscolhida = opcoes[escolha - 1];
+  userStates[from].empresa = empresaEscolhida.nome;
+  userStates[from].step = null;
+  delete userStates[from].empresasOpcoes; // limpa a lista após escolha
+
+  const { nome, key } = userStates[from];
+  const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEscolhida;
+
+  switch (key) {
+    case "EMPRESA":
       await sendMessage(from,
-        `🔎 Encontramos mais de uma empresa com esse nome:\n\n${lista}\n\nDigite apenas o número correspondente à sua empresa.`
+        `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
       );
-      return res.sendStatus(200);
-    }
-
-    if (state.step === "ESCOLHER_EMPRESA") {
-      const escolha = parseInt(promptBody, 10);
-      const opcoes = state.empresasOpcoes || [];
-
-      if (!escolha || escolha < 1 || escolha > opcoes.length) {
-        await sendMessage(from, "❌ Opção inválida. Digite apenas o número da empresa listado.");
-        return res.sendStatus(200);
-      }
-
-      const empresaEscolhida = opcoes[escolha - 1];
-      userStates[from].empresa = empresaEscolhida.nome;
-      userStates[from].step = null;
-
-      const { nome, key } = userStates[from];
-      const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEscolhida;
-
-      switch (key) {
-        case "EMPRESA":
-          await sendMessage(from,
-            `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-          );
-          break;
-        case "BANCO":
-          await sendMessage(from,
-            `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresaEscolhida.nome}, envie os dados para o número 41 99833-3283 - Rafael`
-          );
-          break;
-        case "PAGAMENTO":
-          await sendMessage(from,
-            `💸 Datas de pagamento da empresa ${empresaEscolhida.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
-          );
-          break;
-        case "BENEFICIOS":
-          await sendMessage(from,
-            `🎁 Benefícios da empresa ${empresaEscolhida.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
-          );
-          break;
-        case "FOLHA PONTO":
-          await sendMessage(from,
-            `🕓 Informações da folha de ponto da empresa ${empresaEscolhida.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
-          );
-          break;
-        case "HOLERITE":
-          await sendMessage(from,
-            `📄 O holerite da empresa ${empresaEscolhida.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`
-          );
-          break;
-        default:
-          await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
-      }
-
+      break;
+    case "BANCO":
+      await sendMessage(from,
+        `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresaEscolhida.nome}, envie os dados para o número 41 99833-3283 - Rafael`
+      );
+      break;
+    case "PAGAMENTO":
+      await sendMessage(from,
+        `💸 Datas de pagamento da empresa ${empresaEscolhida.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`
+      );
+      break;
+    case "BENEFICIOS":
+      await sendMessage(from,
+        `🎁 Benefícios da empresa ${empresaEscolhida.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`
+      );
+      break;
+    case "FOLHA PONTO":
+      await sendMessage(from,
+        `🕓 Informações da folha de ponto da empresa ${empresaEscolhida.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`
+      );
+      break;
+    case "HOLERITE":
+      await sendMessage(from,
+        `📄 O holerite da empresa ${empresaEscolhida.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`
+      );
+      break;
+    default:
+      await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
+  }
       return res.sendStatus(200);
     }
 
