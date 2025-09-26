@@ -5,4 +5,382 @@
     "fechamento_do_ponto": "20",
     "metodo_ponto": "CARTÃO PONTO MANUAL"
   }
+     {
+    "nome": "A FORMULA FARMACIA DE MANIPULACAO LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "ESTAGIO",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "ESTAGIO"
+  },
+  {
+    "nome": "ABREUTUR VIAGENS E TURISMO LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "ANJUM BRAS",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM DIA 20",
+    "fechamento_do_ponto": "15",
+    "metodo_ponto": "SECULLUM"
+  },
+  {
+    "nome": "ALUMICOLOR",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": ""
+  },
+  {
+    "nome": "ANACONDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM DIA 20",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "ATIVA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": ""
+  },
+  {
+    "nome": "ART TECNOLOGY",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "15",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "AGROCETE",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "SECULLUM"
+  },
+  {
+    "nome": "AGRORIO IRRIGACAO REPRESENTACAO COMERCIAL LTDA",
+    "data_de_pagamento": "5º D",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "ANNORA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "20",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "BANRISUL",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "15",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "BAOMARC SOLUCOES AUTOMOTIVAS BRASIL LTDA",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "25",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "BARBIERI DO BRASIL INDUSTRIA E COMERCIO DE PERFIS LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "25",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "BIMARA INDUSTRIA E COMERCIO DE PRODUTOS PLASTICOS LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "BIESSE",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": ""
+  },
+  {
+    "nome": "BIESSE",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": ""
+  },
+  {
+    "nome": "BIO GRASS BIOTECNOLOGIA EM SEMENTES IMPORTADORA E EXPORTADOR",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "SECULLUM"
+  },
+  {
+    "nome": "BIOMA INDUSTRIA COMERCIO E DISTRIBUICAO - EIRELI",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "24",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "BOBIPAR COMERCIO DE CARRETEIS DE MADEIRA LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "BPRO ENGENHARIA TECNOLOGIA E INOVACAO LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "ESTAGIO",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "ESTAGIO"
+  },
+  {
+    "nome": "BRASLIFT EQUIPAMENTOS E LOGISTICA LTDA",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "22",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "BRASLOG LOGISTICA LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "BR FERTIL",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "BRASLOG LOGISTICA LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "BRILHANT RESINAS LTDA",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": ""
+  },
+  {
+    "nome": "BRISA CONSULTORIA E INFORM LTDA",
+    "data_de_pagamento": "ESTAGIO",
+    "data_adiantamento": "ESTAGIO",
+    "fechamento_do_ponto": "ESTAGIO",
+    "metodo_ponto": "ESTAGIO"
+  },
+  {
+    "nome": "COLUMBIA SUPERTORK",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "",
+    "metodo_ponto": ""
+  },
+  {
+    "nome": "CCM MAQ",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "CCM",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "CIMED (PALHOCA)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "CAVO (CIC)",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "25",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "CIRCUIBRAS IND COM DE CIRC IMP PROFISSIONAIS LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "COLORFIX ITAMASTER IND MASTERBATCHES LTD",
+    "data_de_pagamento": "31",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "COMPLASER",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "20",
+    "fechamento_do_ponto": "5",
+    "metodo_ponto": "SECULLUM"
+  },
+  {
+    "nome": "COPASUL (AEROPORTO)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "COPASUL (AMANDINA)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "COPASUL (ITAQUIRAI)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "COPASUL (MARACAJU)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "COPASUL (TAKEHARA)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "COPO INDUSTRIA DE POLIURETANO DO BRASIL LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "CORBION (FILIAL)",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "COSTA FERRO",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "CORBION PRODUTOS RENOVAVEIS LTDA",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  }
+    {
+    "nome": "COPASUL (TAKEHARA)",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "COPO INDUSTRIA DE POLIURETANO DO BRASIL LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "NÃO TEM"
+  },
+  {
+    "nome": "CORBION (FILIAL)",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "COSTA FERRO",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "CORBION PRODUTOS RENOVAVEIS LTDA",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "CPE DO BRASIL",
+    "data_de_pagamento": "DIA 5",
+    "data_adiantamento": "20",
+    "fechamento_do_ponto": "20",
+    "metodo_ponto": "SECULLUM - APP"
+  },
+  {
+    "nome": "CRIOS INDUSTRIAL LTDA",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "SIM - DIA 20 - 40%",
+    "fechamento_do_ponto": "31",
+    "metodo_ponto": "CLIENTE"
+  },
+  {
+    "nome": "DIAM",
+    "data_de_pagamento": "",
+    "data_adiantamento": "",
+    "fechamento_do_ponto": "18",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  },
+  {
+    "nome": "EMITELI",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "21",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "EMITELI (PATO BRANCO)",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "21",
+    "metodo_ponto": "FOLHA PONTO"
+  },
+  {
+    "nome": "ENOMA ENG DE OBRAS E M AMBIENTE LTDA",
+    "data_de_pagamento": "30",
+    "data_adiantamento": "SIM - DIA 15 - 40%",
+    "fechamento_do_ponto": "24",
+    "metodo_ponto": "CARTÃO PONTO MANUAL"
+  }
   ]
