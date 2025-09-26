@@ -63,20 +63,17 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// ===== WhatsApp =====
 async function sendMessage(to, message) {
   if (!message) return;
   try {
-    // 🔒 Garante que message seja sempre string válida
-    let textBody = "";
+    let textBody;
+
     if (typeof message === "string") {
       textBody = message;
-    } else if (typeof message === "object") {
-      if (message.resposta) textBody = String(message.resposta);
-      else if (message.texto) textBody = String(message.texto);
-      else textBody = JSON.stringify(message);
+    } else if (typeof message === "object" && message.resposta) {
+      textBody = message.resposta; // usa apenas o campo de resposta
     } else {
-      textBody = String(message);
+      textBody = JSON.stringify(message);
     }
 
     await axios.post(
@@ -89,6 +86,7 @@ async function sendMessage(to, message) {
     console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
   }
 }
+
 
 async function sendAudio(to, audioBuffer) {
   if (!audioBuffer) return;
