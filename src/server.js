@@ -16,6 +16,7 @@ import cron from 'node-cron';
 import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
@@ -42,11 +43,6 @@ async function connectDB() {
   }
 }
 connectDB();
-
-// ===== Carrega JSON de empresas =====
-
-import fs from 'fs';
-import path from 'path';
 
 // Caminho absoluto para garantir que funcione no Render
 const empresasPath = path.resolve("./src/data/empresa.json");
