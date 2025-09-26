@@ -645,8 +645,8 @@
   },
   {
     "nome": "NODUSOJA",
-    "data_de_pagamento": "",
-    "data_adiantamento": "",
+    "data_de_pagamento": "5º DIA UTIL",
+    "data_adiantamento": "NÃO TEM",
     "fechamento_do_ponto": "",
     "metodo_ponto": ""
   },
@@ -1246,7 +1246,6 @@
     "fechamento_do_ponto": "25",
     "metodo_ponto": "CARTÃO PONTO MANUAL"
   },
-    [
   {
     "nome": "MASTER PRINT IMPRESSOS SA INDUSCON",
     "data_de_pagamento": "5º DIA UTIL",
