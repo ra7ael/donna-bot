@@ -221,7 +221,7 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
 
 // ⚠️ Bloquear entradas inválidas ou letras soltas
-if (!promptBody || promptBody.length < 2) {
+if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
   await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
   return res.sendStatus(200);
 }
