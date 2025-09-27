@@ -445,23 +445,16 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ===== Cron job =====
-cron.schedule("* * * * *", async () => {
-  const now = DateTime.now().setZone("America/Sao_Paulo").toFormat("HH:mm");
-  const today = DateTime.now().toFormat("yyyy-MM-dd");
-  const events = await db.collection("donna").find({ data: today, hora: now }).toArray();
-  for (const ev of events) {
-    await sendMessage(ev.numero, `⏰ Lembrete: ${ev.titulo}`);
-  }
-});
+import { startReminderCron } from "./cron/reminders.js";
 
-// ===== Start =====
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
 
-    startReminderCron(sendMessage);
+    // Inicia cron corretamente
+    startReminderCron();  // não precisa passar sendMessage se reminders.js já importa
+
     app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
