@@ -18,6 +18,8 @@ import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
 import path from "path";
+import { startReminderCron } from "./cron/reminders.js";
+
 
 dotenv.config();
 
@@ -445,7 +447,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-import { startReminderCron } from "./cron/reminders.js";
+//cron job//
 
 (async () => {
   try {
