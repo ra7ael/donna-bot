@@ -461,7 +461,7 @@ cron.schedule("* * * * *", async () => {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
 
-    startReminderCron();
+    startReminderCron(sendMessage);
     app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
   } catch (err) {
     console.error("❌ Erro ao conectar ao MongoDB:", err);
