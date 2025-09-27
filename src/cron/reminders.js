@@ -1,35 +1,14 @@
+// src/cron/reminders.js
 import cron from "node-cron";
 import mongoose from "mongoose";
 import axios from "axios";
 import { DateTime } from "luxon";
 
-async function sendWhatsAppReminder(reminder) {
-  if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return;
-
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: reminder.numero,
-        text: {
-          body: `⏰ Lembrete: ${reminder.titulo} (agendado para ${reminder.data} ${reminder.hora})`,
-        },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    console.log(`✅ Lembrete enviado para ${reminder.numero}: "${reminder.titulo}"`);
-  } catch (err) {
-    console.error("❌ Erro ao enviar lembrete WhatsApp:", err.response?.data || err.message);
-  }
-}
-
-export function startReminderCron() {
+/**
+ * Inicia o cron de lembretes usando a função sendMessage do server.js
+ * @param {function} sendMessage - função que envia mensagem WhatsApp
+ */
+export function startReminderCron(sendMessage) {
   cron.schedule("* * * * *", async () => {
     try {
       if (mongoose.connection.readyState !== 1) {
@@ -41,19 +20,33 @@ export function startReminderCron() {
       const today = now.toFormat("yyyy-MM-dd");
       const currentTime = now.toFormat("HH:mm");
 
+      // Buscar lembretes ainda não enviados até a hora atual
       const reminders = await mongoose.connection.db.collection("donna").find({
         data: today,
         hora: { $lte: currentTime },
         sent: false
       }).toArray();
 
+      if (reminders.length === 0) {
+        console.log(`⏰ Nenhum lembrete para enviar às ${currentTime}`);
+        return;
+      }
+
+      console.log(`⏰ Enviando ${reminders.length} lembrete(s) às ${currentTime}`);
+
       for (const r of reminders) {
-        await sendWhatsAppReminder(r);
+        // Usa sendMessage do server.js (respeita histórico e logs)
+        await sendMessage(r.numero, `⏰ Lembrete: ${r.titulo} (agendado para ${r.data} ${r.hora})`);
+
+        // Marca como enviado
         await mongoose.connection.db.collection("donna").updateOne(
           { _id: r._id },
           { $set: { sent: true } }
         );
+
+        console.log(`✅ Lembrete enviado para ${r.numero}: "${r.titulo}"`);
       }
+
     } catch (err) {
       console.error("❌ Erro no cron de lembretes:", err);
     }
