@@ -47,7 +47,14 @@ async function connectDB() {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db();
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
-
+    
+   // Só inicia o cron depois que o DB estiver conectado
+    startReminderCron(db);
+  } catch (err) {
+    console.error('❌ Erro ao conectar ao MongoDB:', err.message);
+  }
+}
+connectDB();
 
 const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
@@ -351,12 +358,6 @@ app.post("/webhook", async (req, res) => {
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
 // ===== Inicialização de cron jobs =====
- // Só inicia o cron depois que o DB estiver conectado
-    startReminderCron(db);
-  } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB:', err.message);
-  }
-}
-connectDB();
+
 
 export { askGPT };
