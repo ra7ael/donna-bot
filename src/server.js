@@ -210,7 +210,7 @@ app.post("/webhook", async (req, res) => {
     } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
-      isAudioResponse = false;
+      isAudioResponse = true; // aqui você pode escolher se quer sempre áudio
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
       return res.sendStatus(200);
@@ -219,21 +219,9 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     const state = userStates[from] || {};
 
-    // ⚠️ Bloquear entradas inválidas ou letras soltas
+    // ⚠️ Bloquear entradas inválidas
     if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
       await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
-      return res.sendStatus(200);
-    }
-
-    // ===== COMANDO FALA =====
-    if (isAudioResponse) {
-      try {
-        const audioBuffer = await falar(promptBody); // retorna Buffer
-        await sendAudio(from, audioBuffer);
-      } catch (err) {
-        console.error("Erro ao gerar áudio:", err);
-        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
-      }
       return res.sendStatus(200);
     }
 
@@ -251,6 +239,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // ===== PEDIR NOME =====
     if (state.step === "PEDIR_NOME") {
       userStates[from].nome = promptBody;
       await setUserName(from, promptBody);
@@ -312,7 +301,6 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-
     // ===== ESCOLHER EMPRESA =====
     if (state.step === "ESCOLHER_EMPRESA") {
       const escolha = parseInt(promptBody.trim(), 10);
@@ -353,39 +341,6 @@ app.post("/webhook", async (req, res) => {
         default:
           await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
       }
-      return res.sendStatus(200);
-    }
-
-    
-
-    // 🔒 NÃO AUTORIZADO → apenas FAQ
-    if (!numerosAutorizados.includes(from)) {
-      const normalizedMsg = promptBody.trim().toLowerCase();
-      if (["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "menu"].includes(normalizedMsg)) {
-        const menuMsg = `Olá! 👋 Seja bem-vindo(a) a Sé Recursos Humanos. Para facilitar seu atendimento, digite a PALAVRA-CHAVE do assunto que deseja falar:
-🏢 EMPRESA – (em breve descrição)
-🏦 BANCO – Cadastro ou alteração de dados bancários
-💸 PAGAMENTO – Salário, datas ou descontos
-🎁 BENEFICIOS – VT, VR e outros
-🕓 FOLHA PONTO – Dúvidas sobre marcação e correções
-📄 HOLERITE – Acesso ao contracheque
-❗ Digite a palavra exata (ex: HOLERITE) e te enviaremos a instrução automaticamente.`;
-        await sendMessage(from, menuMsg);
-        const userHistory = await db.collection("historico").find({ numero: from }).limit(1).toArray();
-        if (userHistory.length === 0) {
-          await db.collection("historico").insertOne({ numero: from, primeiraMensagem: promptBody, data: new Date() });
-        }
-        return res.sendStatus(200);
-      }
-
-      let faqReply = await responderFAQ(promptBody, await getUserName(from));
-      if (faqReply && typeof faqReply !== "string") {
-        if (faqReply.texto) faqReply = faqReply.texto;
-        else faqReply = JSON.stringify(faqReply);
-      }
-
-      const respostaFinal = faqReply || "❓ Só consigo responder perguntas do FAQ (benefícios, férias, folha, horário, endereço, contato).";
-      await sendMessage(from, respostaFinal);
       return res.sendStatus(200);
     }
 
@@ -448,9 +403,15 @@ app.post("/webhook", async (req, res) => {
     await saveMemory(from, "user", promptBody);
     await saveMemory(from, "assistant", reply);
 
+    // ===== RESPOSTA FINAL =====
     if (isAudioResponse) {
-      const audioData = await speak(reply);
-      if (audioData) await sendAudio(from, audioData);
+      try {
+        const audioBuffer = await falar(reply); // TTS OpenAI
+        await sendAudio(from, audioBuffer);
+      } catch (err) {
+        console.error("❌ Erro ao gerar áudio:", err);
+        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
+      }
     } else {
       await sendMessage(from, reply);
     }
