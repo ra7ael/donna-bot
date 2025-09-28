@@ -18,7 +18,6 @@ import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
 import path from "path";
-import { startReminderCron } from "./cron/reminders.js";
 
 
 dotenv.config();
