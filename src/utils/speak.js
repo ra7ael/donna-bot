@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import axios from "axios";
 import OpenAI from "openai";
+import { askGPT } from '../server.js';
 
 // Inicializa OpenAI
 const openai = new OpenAI({
