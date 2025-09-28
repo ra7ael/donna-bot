@@ -192,7 +192,6 @@ async function getTodayEvents(number) {
 }
 
 // ===== Webhook =====
-// ===== Webhook =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -229,9 +228,8 @@ app.post("/webhook", async (req, res) => {
     // ===== COMANDO FALA =====
     if (isAudioResponse) {
       try {
-        const caminhoAudio = await falar(promptBody, `saida_${Date.now()}.mp3`);
-        // envia o áudio para o usuário (supondo que você tenha função sendAudio)
-        await sendAudio(from, caminhoAudio);
+        const audioBuffer = await falar(promptBody); // retorna Buffer
+        await sendAudio(from, audioBuffer);
       } catch (err) {
         console.error("Erro ao gerar áudio:", err);
         await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
@@ -314,12 +312,6 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-  } catch (err) {
-    console.error("Erro no webhook:", err);
-    res.sendStatus(500);
-  }
-});
-
 
     // ===== ESCOLHER EMPRESA =====
     if (state.step === "ESCOLHER_EMPRESA") {
@@ -363,6 +355,8 @@ app.post("/webhook", async (req, res) => {
       }
       return res.sendStatus(200);
     }
+
+    
 
     // 🔒 NÃO AUTORIZADO → apenas FAQ
     if (!numerosAutorizados.includes(from)) {
@@ -462,6 +456,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     return res.sendStatus(200);
+
   } catch (err) {
     console.error("❌ Erro ao processar webhook:", err);
     return res.sendStatus(500);

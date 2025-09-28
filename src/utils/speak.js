@@ -1,28 +1,37 @@
 import fs from "fs";
 import path from "path";
-import ElevenLabs from "@elevenlabs/elevenlabs-js";
+import OpenAI from "openai";
 
-const eleven = new ElevenLabs({
-  apiKey: process.env.ELEVEN_API_KEY, // sua chave da ElevenLabs
+// Inicialize a OpenAI com a chave da sua .env
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 });
 
-// Função para falar e salvar áudio
-export async function falar(texto, nomeArquivo = "saida.mp3") {
+/**
+ * Gera áudio a partir de texto usando OpenAI TTS.
+ * @param {string} texto - O texto que será convertido em fala
+ * @param {string} arquivoSaida - Caminho do arquivo de saída (ex: "./audio.mp3")
+ * @returns {Promise<Buffer>} - Retorna buffer do áudio
+ */
+export async function falar(texto, arquivoSaida = "./output.mp3") {
   try {
-    const response = await eleven.textToSpeech({
-      voice: "alloy", // ou outro voice disponível
-      input: texto,
+    if (!texto) throw new Error("Texto vazio para fala");
+
+    const response = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts", // modelo TTS
+      voice: "alloy",           // voz, pode mudar se quiser
+      input: texto
     });
 
-    // Converte para buffer e salva como MP3
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const filePath = path.join(process.cwd(), nomeArquivo);
-    fs.writeFileSync(filePath, buffer);
+    // converte ArrayBuffer para Buffer
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
 
-    console.log(`Áudio gerado em: ${filePath}`);
-    return filePath;
+    // salva arquivo local
+    await fs.promises.writeFile(arquivoSaida, audioBuffer);
+
+    return audioBuffer;
   } catch (err) {
-    console.error("Erro no TTS:", err);
+    console.error("❌ Erro no TTS OpenAI:", err);
     throw err;
   }
 }
