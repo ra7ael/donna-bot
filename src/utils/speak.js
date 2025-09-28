@@ -1,31 +1,20 @@
-// src/utils/speak.js
-import axios from 'axios';
+import say from 'say';
+import fs from 'fs';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
-/**
- * Gera áudio usando Coqui TTS
- * @param {string} text - Texto a ser convertido em fala
- * @param {string} voice - Nome da voz (opcional)
- * @returns {Buffer|null} - Buffer de áudio MP3
- */
-export default async function speak(text, voice = 'alloy') {
-  try {
-    // URL do seu servidor Coqui TTS
-    const TTS_SERVER_URL = process.env.COQUI_TTS_URL || 'http://localhost:5005/api/tts';
+export default async function speak(text) {
+  return new Promise((resolve, reject) => {
+    const fileName = `audio_${uuidv4()}.wav`;
+    const filePath = path.join('./temp', fileName);
 
-    const response = await axios.post(
-      TTS_SERVER_URL,
-      {
-        text,
-        voice,           // Voz que você quer usar
-        format: 'mp3'    // Saída em mp3
-      },
-      { responseType: 'arraybuffer' } // Receber como buffer
-    );
+    if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
 
-    return Buffer.from(response.data);
-  } catch (err) {
-    console.error('❌ Erro ao gerar áudio Coqui TTS:', err.message || err);
-    return null;
-  }
+    say.export(text, null, 1.0, filePath, (err) => {
+      if (err) return reject(err);
+      const buffer = fs.readFileSync(filePath);
+      fs.unlinkSync(filePath);
+      resolve(buffer);
+    });
+  });
 }
-
