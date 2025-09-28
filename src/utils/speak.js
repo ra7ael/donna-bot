@@ -1,76 +1,65 @@
 import fs from "fs";
 import path from "path";
 import axios from "axios";
+import FormData from "form-data";
 import OpenAI from "openai";
-import { sendAudio } from "./utils/sendAudio.js";
-import { askGPT } from '../server.js';
 
-// Inicializa OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/**
- * Gera áudio a partir de texto usando OpenAI TTS
- * @param {string} texto - Texto para converter em fala
- * @param {string} arquivoSaida - Caminho opcional para salvar arquivo local (default: "./output.mp3")
- * @returns {Promise<Buffer>} - Buffer do áudio gerado
- */
-export async function falar(texto, arquivoSaida = "./output.mp3") {
-  try {
-    if (!texto) throw new Error("Texto vazio para fala");
+export async function falar(texto, arquivoSaida = "./audios/output.mp3") {
+  const response = await openai.audio.speech.create({
+    model: "gpt-4o-mini-tts",
+    voice: "alloy",
+    input: texto
+  });
 
-    const response = await openai.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice: "alloy",
-      input: texto
-    });
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
 
-    const audioBuffer = Buffer.from(await response.arrayBuffer());
+  const dir = path.dirname(arquivoSaida);
+  await fs.promises.mkdir(dir, { recursive: true });
+  await fs.promises.writeFile(arquivoSaida, audioBuffer);
 
-    // salva localmente
-    await fs.promises.writeFile(arquivoSaida, audioBuffer);
-
-    return audioBuffer;
-  } catch (err) {
-    console.error("❌ Erro no TTS OpenAI:", err);
-    throw err;
-  }
+  return arquivoSaida;
 }
 
-/**
- * Envia áudio via WhatsApp Cloud API
- * @param {string} to - Número do destinatário (ex: "5541999999999")
- * @param {Buffer} audioBuffer - Buffer do áudio gerado pelo OpenAI TTS
- */
-export async function sendAudio(to, audioBuffer) {
-  try {
-    if (!audioBuffer) throw new Error("Audio buffer vazio");
+async function uploadAudio(filePath) {
+  const formData = new FormData();
+  formData.append("file", fs.createReadStream(filePath));
+  formData.append("type", "audio/mpeg");
+  formData.append("messaging_product", "whatsapp");
 
-    const audioBase64 = audioBuffer.toString("base64");
-
-    await axios.post(
-      `https://graph.facebook.com/v17.0/${process.env.WHATSAPP_PHONE_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to,
-        type: "audio",
-        audio: {
-          data: audioBase64
-        }
+  const res = await axios.post(
+    `https://graph.facebook.com/v17.0/${process.env.WHATSAPP_PHONE_ID}/media`,
+    formData,
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        ...formData.getHeaders(),
       },
-      {
-        headers: {
-          "Authorization": `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+    }
+  );
 
-    console.log("✅ Áudio enviado com sucesso!");
-  } catch (err) {
-    console.error("❌ Erro ao enviar áudio:", err.response?.data || err.message);
-    throw err;
-  }
+  return res.data.id;
 }
+
+// ✅ Aqui só uma vez
+export async function sendAudio(to, filePath) {
+  if (!fs.existsSync(filePath)) throw new Error("Arquivo não encontrado: " + filePath);
+
+  const mediaId = await uploadAudio(filePath);
+
+  await axios.post(
+    `https://graph.facebook.com/v17.0/${process.env.WHATSAPP_PHONE_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "audio",
+      audio: { id: mediaId },
+    },
+    { headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
+  );
+
+  console.log("✅ Áudio enviado com sucesso!");
+}
+
 
