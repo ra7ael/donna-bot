@@ -9,7 +9,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 export async function falar(texto, arquivoSaida = "./audios/output.mp3") {
   const response = await openai.audio.speech.create({
     model: "gpt-4o-mini-tts",
-    voice: "bella",
+    voice: "sage",
     input: texto
   });
 
