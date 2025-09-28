@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import OpenAI from "openai";
+import { askGPT } from '../server.js';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
