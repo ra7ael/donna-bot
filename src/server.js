@@ -48,8 +48,8 @@ async function connectDB() {
     db = client.db();
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
     
-   // Só inicia o cron depois que o DB estiver conectado
-    startReminderCron(db);
+    // Só inicia o cron depois que o DB estiver conectado, passando a função sendMessage
+    startReminderCron(db, sendMessage);
   } catch (err) {
     console.error('❌ Erro ao conectar ao MongoDB:', err.message);
   }
