@@ -1,0 +1,10 @@
+await axios.post(
+  `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
+  {
+    messaging_product: "whatsapp",
+    to,
+    type: "audio",
+    audio: { link: "https://donna-bot-59gx.onrender.com/audio/output.mp3" }
+  },
+  { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+);
