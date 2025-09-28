@@ -18,7 +18,6 @@ import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
 import path from "path";
-import express from "express";
 import { falar } from "./utils/speak.js";
 
 dotenv.config();
