@@ -1,52 +1,43 @@
 // src/cron/reminders.js
 import cron from "node-cron";
-import mongoose from "mongoose";
-import axios from "axios";
 import { DateTime } from "luxon";
+import { numerosAutorizados } from "../config/autorizados.js";
+import { sendMessage } from "../server.js"; // importa a função de envio
 
-/**
- * Inicia o cron de lembretes usando a função sendMessage do server.js
- * @param {function} sendMessage - função que envia mensagem WhatsApp
- */
-export function startReminderCron(sendMessage) {
+export function startReminderCron(db) {
+  // Roda a cada minuto (você pode ajustar)
   cron.schedule("* * * * *", async () => {
     try {
-      if (mongoose.connection.readyState !== 1) {
+      if (!db) {
         console.log("❌ Mongo não conectado. Cron aguardando...");
         return;
       }
 
-      const now = DateTime.now().setZone("America/Sao_Paulo");
-      const today = now.toFormat("yyyy-MM-dd");
-      const currentTime = now.toFormat("HH:mm");
+      const today = DateTime.now().toFormat("yyyy-MM-dd");
 
-      // Buscar lembretes ainda não enviados até a hora atual
-      const reminders = await mongoose.connection.db.collection("donna").find({
-        data: today,
-        hora: { $lte: currentTime },
-        sent: false
-      }).toArray();
+      // Pega lembretes não enviados para hoje
+      const reminders = await db.collection("donna")
+        .find({ data: today, sent: false })
+        .toArray();
 
-      if (reminders.length === 0) {
-        console.log(`⏰ Nenhum lembrete para enviar às ${currentTime}`);
-        return;
-      }
+      for (const reminder of reminders) {
+        // Ignora números não autorizados
+        if (!numerosAutorizados.includes(reminder.numero)) {
+          console.log(`⚠️ Ignorando número não autorizado: ${reminder.numero}`);
+          continue;
+        }
 
-      console.log(`⏰ Enviando ${reminders.length} lembrete(s) às ${currentTime}`);
-
-      for (const r of reminders) {
-        // Usa sendMessage do server.js (respeita histórico e logs)
-        await sendMessage(r.numero, `⏰ Lembrete: ${r.titulo} (agendado para ${r.data} ${r.hora})`);
+        // Envia a mensagem
+        await sendMessage(reminder.numero, `🔔 Lembrete: ${reminder.titulo}`);
 
         // Marca como enviado
-        await mongoose.connection.db.collection("donna").updateOne(
-          { _id: r._id },
+        await db.collection("donna").updateOne(
+          { _id: reminder._id },
           { $set: { sent: true } }
         );
 
-        console.log(`✅ Lembrete enviado para ${r.numero}: "${r.titulo}"`);
+        console.log(`✅ Lembrete enviado para ${reminder.numero}: ${reminder.titulo}`);
       }
-
     } catch (err) {
       console.error("❌ Erro no cron de lembretes:", err);
     }
