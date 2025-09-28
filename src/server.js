@@ -454,7 +454,7 @@ app.post("/webhook", async (req, res) => {
     console.log("✅ Conectado ao MongoDB (reminders)");
 
     // Inicia cron corretamente
-    startReminderCron();  // não precisa passar sendMessage se reminders.js já importa
+    startReminderCron(sendMessage); // não precisa passar sendMessage se reminders.js já importa
 
     app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
   } catch (err) {
