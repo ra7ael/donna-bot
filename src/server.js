@@ -11,7 +11,6 @@ import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
-import speak from "./utils/speak.js"; // TTS opcional
 import { downloadMedia } from './utils/downloadMedia.js';
 import cron from 'node-cron';
 import { responderFAQ } from "./utils/faqHandler.js";
