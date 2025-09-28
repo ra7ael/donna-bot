@@ -28,20 +28,20 @@ app.use(bodyParser.json());
 // ===== Servir arquivos públicos para WhatsApp TTS =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+app.use('/audio', express.static(path.join(__dirname, 'public/audio'))); // nova linha
 
 const eleven = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY });
 
 async function gerarAudio(texto) {
-  const filePath = path.join(__dirname, "resposta.mp3");
+  const filePath = path.join(__dirname, "public/audio/resposta.mp3"); // salva na pasta pública
 
   const audio = await eleven.generate({
-    voice: "Rachel", // pode trocar por outra voz
+    voice: "Rachel",
     model_id: "eleven_multilingual_v2",
     text: texto,
   });
 
   fs.writeFileSync(filePath, audio); // salva o áudio no servidor
-
   return filePath;
 }
 
@@ -57,12 +57,7 @@ async function enviarAudio(numero, texto) {
   await axios.post(
     `https://graph.facebook.com/v20.0/${process.env.PHONE_NUMBER_ID}/messages`,
     data,
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-        ...data.getHeaders(),
-      },
-    }
+    { headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`, ...data.getHeaders() } }
   );
 }
 
