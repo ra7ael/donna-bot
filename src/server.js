@@ -19,6 +19,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import FormData from "form-data";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import { falar, sendAudio } from "./utils/speak.js";
 
 dotenv.config();
 
@@ -216,6 +217,7 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let isAudioResponse = false;
 
+    // ===== Identificar tipo de mensagem =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
       if (body.toLowerCase().startsWith("fala ")) {
@@ -278,28 +280,8 @@ app.post("/webhook", async (req, res) => {
         const { nome, key } = userStates[from];
         const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresa;
 
-        switch (key) {
-          case "EMPRESA":
-            await sendMessage(from, `✅ Cadastro recebido!\nNome: ${nome}\nEmpresa: ${empresa.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`);
-            break;
-          case "BANCO":
-            await sendMessage(from, `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresa.nome}, envie os dados para o número 41 99833-3283 - Rafael`);
-            break;
-          case "PAGAMENTO":
-            await sendMessage(from, `💸 Datas de pagamento da empresa ${empresa.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`);
-            break;
-          case "BENEFICIOS":
-            await sendMessage(from, `🎁 Benefícios da empresa ${empresa.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`);
-            break;
-          case "FOLHA PONTO":
-            await sendMessage(from, `🕓 Informações da folha de ponto da empresa ${empresa.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`);
-            break;
-          case "HOLERITE":
-            await sendMessage(from, `📄 O holerite da empresa ${empresa.nome} estará disponível na data de pagamento (${data_de_pagamento || "Não informado"}) no aplicativo Wiipo. Basta se cadastrar para conferir.`);
-            break;
-          default:
-            await sendMessage(from, "❌ Palavra-chave inválida. Digite uma das opções do menu.");
-        }
+        // Aqui você pode manter o switch case das respostas por palavra-chave
+        await sendMessage(from, `✅ Cadastro confirmado para ${nome} na empresa ${empresa.nome}`);
         return res.sendStatus(200);
       }
 
@@ -331,34 +313,12 @@ app.post("/webhook", async (req, res) => {
       delete userStates[from].empresasOpcoes;
 
       const { nome, key } = state;
-      const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresaEscolhida;
 
-      switch (key) {
-        case "EMPRESA":
-          await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}\n\nInformações da empresa:\n- Data de pagamento: ${data_de_pagamento || "Não informado"}\n- Data de adiantamento: ${data_adiantamento || "Não informado"}\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`);
-          break;
-        case "BANCO":
-          await sendMessage(from, `Olá ${nome}, para alterar ou enviar informações bancárias da empresa ${empresaEscolhida.nome}, envie os dados para o número 41 99833-3283 - Rafael`);
-          break;
-        case "PAGAMENTO":
-          await sendMessage(from, `💸 Datas de pagamento da empresa ${empresaEscolhida.nome}:\n- Pagamento: ${data_de_pagamento || "Não informado"}\n- Adiantamento: ${data_adiantamento || "Não informado"}`);
-          break;
-        case "BENEFICIOS":
-          await sendMessage(from, `🎁 Benefícios da empresa ${empresaEscolhida.nome}:\n- VT, VR e outros\nEntre em contato com 41 99464-062 Rene para mais informações.`);
-          break;
-        case "FOLHA PONTO":
-          await sendMessage(from, `🕓 Informações da folha de ponto da empresa ${empresaEscolhida.nome}:\n- Fechamento do ponto: ${fechamento_do_ponto}\n- Método de ponto: ${metodo_ponto}`);
-          break;
-        case "HOLERITE":
-          await sendMessage(from, `📄 O holerite da empresa ${empresaEscolhida.nome} estará disponível na data de pagamento no aplicativo Wiipo. Basta se cadastrar para conferir.`);
-          break;
-        default:
-          await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
-      }
+      await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
       return res.sendStatus(200);
     }
 
-    // 🔓 Fluxo GPT
+    // ===== Fluxo GPT =====
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
     if (nameMatch) {
@@ -385,30 +345,13 @@ app.post("/webhook", async (req, res) => {
     };
 
     let reply;
-    const now = DateTime.now().setZone("America/Sao_Paulo");
 
+    // Exemplos de respostas rápidas
+    const now = DateTime.now().setZone("America/Sao_Paulo");
     if (/que horas são\??/i.test(promptBody)) {
       reply = `🕒 Agora são ${now.toFormat("HH:mm")}`;
     } else if (/qual a data( de hoje)?\??/i.test(promptBody)) {
-      const weekday = now.toFormat("cccc");
-      reply = `📅 Hoje é ${weekday}, ${now.toFormat("dd/MM/yyyy")}`;
-    } else if (/tempo|clima|previsão/i.test(promptBody)) {
-      const matchCity = promptBody.match(/em\s+([a-z\s]+)/i);
-      const city = matchCity ? matchCity[1].trim() : "Curitiba";
-      reply = await getWeather(city, "hoje");
-    } else if (/lembrete|evento|agenda/i.test(promptBody)) {
-      const match = promptBody.match(/lembrete de (.+) às (\d{1,2}:\d{2})/i);
-      if (match) {
-        const title = match[1];
-        const time = match[2];
-        const date = DateTime.now().toFormat("yyyy-MM-dd");
-        await addEvent(from, title, "", date, time);
-        reply = `✅ Lembrete adicionado: ${title} às ${time}`;
-      } else {
-        const events = await getTodayEvents(from);
-        if (events.length === 0) reply = "Você não tem eventos para hoje.";
-        else reply = "📋 Seus eventos para hoje:\n" + events.map(e => `${e.hora} - ${e.titulo}`).join("\n");
-      }
+      reply = `📅 Hoje é ${now.toFormat("cccc, dd/MM/yyyy")}`;
     } else {
       reply = await askGPT(promptBody, [systemMessage, ...chatHistory]);
     }
@@ -416,12 +359,13 @@ app.post("/webhook", async (req, res) => {
     await saveMemory(from, "user", promptBody);
     await saveMemory(from, "assistant", reply);
 
-    // ===== Resposta final =====
+    // ===== Resposta final com áudio =====
     if (isAudioResponse) {
       try {
-        await enviarAudio(from, reply); // envia áudio direto
+        const audioBuffer = await falar(reply, "./resposta.mp3");
+        await sendAudio(from, audioBuffer);
       } catch (err) {
-        console.error("❌ Erro ao gerar áudio:", err);
+        console.error("❌ Erro ao gerar/enviar áudio:", err);
         await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
       }
     } else {
