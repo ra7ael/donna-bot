@@ -24,6 +24,10 @@ dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 
+// ===== Servir arquivos públicos para WhatsApp TTS =====
+const __dirname = path.resolve();
+app.use('/audio', express.static(path.join(__dirname, 'src/public/audio')));
+
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 const GPT_API_KEY = process.env.OPENAI_API_KEY;
@@ -104,21 +108,21 @@ async function sendMessage(to, message) {
   }
 }
 
-async function sendAudio(to, audioBuffer) {
-  if (!audioBuffer) return;
+// ===== Enviar áudio via WhatsApp usando URL pública =====
+async function sendAudio(to, nomeArquivo = "output.mp3") {
   try {
-    const formData = new FormData();
-    formData.append("messaging_product", "whatsapp");
-    formData.append("to", to);
-    formData.append("type", "audio");
-    formData.append("audio", audioBuffer, { filename: "audio.mp3" });
-
+    const urlAudio = `https://donna-bot-59gx.onrender.com/audio/${nomeArquivo}`;
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
-      formData,
-      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, ...formData.getHeaders() } }
+      {
+        messaging_product: "whatsapp",
+        to,
+        type: "audio",
+        audio: { link: urlAudio }
+      },
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
     );
-    console.log("📤 Áudio enviado");
+    console.log("📤 Áudio enviado:", urlAudio);
   } catch (err) {
     console.error("❌ Erro ao enviar áudio:", err.response?.data || err);
   }
@@ -208,7 +212,7 @@ app.post("/webhook", async (req, res) => {
     } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
-      isAudioResponse = true; // aqui você pode escolher se quer sempre áudio
+      isAudioResponse = true;
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
       return res.sendStatus(200);
@@ -404,8 +408,8 @@ app.post("/webhook", async (req, res) => {
     // ===== RESPOSTA FINAL =====
     if (isAudioResponse) {
       try {
-        const audioBuffer = await falar(reply); // TTS OpenAI
-        await sendAudio(from, audioBuffer);
+        const nomeArquivo = await falar(reply); // retorna nome do arquivo mp3 salvo
+        await sendAudio(from, nomeArquivo);
       } catch (err) {
         console.error("❌ Erro ao gerar áudio:", err);
         await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
@@ -423,14 +427,13 @@ app.post("/webhook", async (req, res) => {
 });
 
 //cron job//
-
 (async () => {
   try {
     await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
     console.log("✅ Conectado ao MongoDB (reminders)");
 
     // Inicia cron corretamente
-    startReminderCron(sendMessage); // não precisa passar sendMessage se reminders.js já importa
+    startReminderCron(sendMessage);
 
     app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
   } catch (err) {
@@ -439,3 +442,4 @@ app.post("/webhook", async (req, res) => {
 })();
 
 export { askGPT };
+
