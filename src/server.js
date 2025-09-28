@@ -383,3 +383,5 @@ app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
 // ===== Inicialização de cron jobs =====
 startReminderCron(db);
+
+export { askGPT };
