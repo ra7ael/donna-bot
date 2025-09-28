@@ -1,20 +1,29 @@
-import say from 'say';
-import fs from 'fs';
-import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import fs from "fs";
+import path from "path";
+import ElevenLabs from "@elevenlabs/elevenlabs-js";
 
-export default async function speak(text) {
-  return new Promise((resolve, reject) => {
-    const fileName = `audio_${uuidv4()}.wav`;
-    const filePath = path.join('./temp', fileName);
+const eleven = new ElevenLabs({
+  apiKey: process.env.ELEVEN_API_KEY, // sua chave da ElevenLabs
+});
 
-    if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
-
-    say.export(text, null, 1.0, filePath, (err) => {
-      if (err) return reject(err);
-      const buffer = fs.readFileSync(filePath);
-      fs.unlinkSync(filePath);
-      resolve(buffer);
+// Função para falar e salvar áudio
+export async function falar(texto, nomeArquivo = "saida.mp3") {
+  try {
+    const response = await eleven.textToSpeech({
+      voice: "alloy", // ou outro voice disponível
+      input: texto,
     });
-  });
+
+    // Converte para buffer e salva como MP3
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const filePath = path.join(process.cwd(), nomeArquivo);
+    fs.writeFileSync(filePath, buffer);
+
+    console.log(`Áudio gerado em: ${filePath}`);
+    return filePath;
+  } catch (err) {
+    console.error("Erro no TTS:", err);
+    throw err;
+  }
 }
+

@@ -18,7 +18,8 @@ import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
 import path from "path";
-
+import express from "express";
+import { falar } from "./utils/speak.js";
 
 dotenv.config();
 
@@ -191,6 +192,7 @@ async function getTodayEvents(number) {
 }
 
 // ===== Webhook =====
+// ===== Webhook =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -221,6 +223,19 @@ app.post("/webhook", async (req, res) => {
     // ⚠️ Bloquear entradas inválidas ou letras soltas
     if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
       await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
+      return res.sendStatus(200);
+    }
+
+    // ===== COMANDO FALA =====
+    if (isAudioResponse) {
+      try {
+        const caminhoAudio = await falar(promptBody, `saida_${Date.now()}.mp3`);
+        // envia o áudio para o usuário (supondo que você tenha função sendAudio)
+        await sendAudio(from, caminhoAudio);
+      } catch (err) {
+        console.error("Erro ao gerar áudio:", err);
+        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
+      }
       return res.sendStatus(200);
     }
 
@@ -298,6 +313,13 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, listaMsg);
       return res.sendStatus(200);
     }
+
+  } catch (err) {
+    console.error("Erro no webhook:", err);
+    res.sendStatus(500);
+  }
+});
+
 
     // ===== ESCOLHER EMPRESA =====
     if (state.step === "ESCOLHER_EMPRESA") {
