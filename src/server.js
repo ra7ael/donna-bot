@@ -43,11 +43,15 @@ let db;
 // ===== Conectar MongoDB =====
 async function connectDB() {
   try {
+    console.log("🔹 Tentando conectar ao MongoDB...");
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db();
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
+
+    // Só inicia o cron depois que o DB estiver conectado
+    startReminderCron(db);
   } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB:', err);
+    console.error('❌ Erro ao conectar ao MongoDB:', err.message);
   }
 }
 connectDB();
