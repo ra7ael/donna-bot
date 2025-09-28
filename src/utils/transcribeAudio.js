@@ -1,6 +1,7 @@
 import axios from "axios";
 import fs from "fs";
 import FormData from "form-data";
+import { askGPT } from '../server.js';
 
 export async function transcribeAudio(audioBuffer) {
   const tempFile = "/tmp/audio.ogg";
