@@ -6,18 +6,19 @@ import { MongoClient } from 'mongodb';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
-import FormData from 'form-data';
 import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from './utils/downloadMedia.js';
-import cron from 'node-cron';
+import cron from "node-cron";
 import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
 import path from "path";
-import { falar } from "./utils/speak.js";
+import { fileURLToPath } from "url";
+import FormData from "form-data";
+import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 
 dotenv.config();
 
@@ -25,9 +26,47 @@ const app = express();
 app.use(bodyParser.json());
 
 // ===== Servir arquivos públicos para WhatsApp TTS =====
-const __dirname = path.resolve();
-app.use('/audio', express.static(path.join(__dirname, 'src/public/audio')));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+const eleven = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY });
+
+async function gerarAudio(texto) {
+  const filePath = path.join(__dirname, "resposta.mp3");
+
+  const audio = await eleven.generate({
+    voice: "Rachel", // pode trocar por outra voz
+    model_id: "eleven_multilingual_v2",
+    text: texto,
+  });
+
+  fs.writeFileSync(filePath, audio); // salva o áudio no servidor
+
+  return filePath;
+}
+
+async function enviarAudio(numero, texto) {
+  const audioPath = await gerarAudio(texto);
+
+  const data = new FormData();
+  data.append("messaging_product", "whatsapp");
+  data.append("to", numero);
+  data.append("type", "audio");
+  data.append("audio", fs.createReadStream(audioPath));
+
+  await axios.post(
+    `https://graph.facebook.com/v20.0/${process.env.PHONE_NUMBER_ID}/messages`,
+    data,
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        ...data.getHeaders(),
+      },
+    }
+  );
+}
+
+// ===== Configurações =====
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 const GPT_API_KEY = process.env.OPENAI_API_KEY;
@@ -49,11 +88,10 @@ async function connectDB() {
 }
 connectDB();
 
-// Caminho absoluto para garantir que funcione no Render
 const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 
-// ===== Armazena estado dos usuários =====
+// ===== Estado dos usuários =====
 const userStates = {};
 
 // ===== Funções GPT =====
@@ -77,7 +115,7 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// ===== Funções WhatsApp =====
+// ===== WhatsApp =====
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
 
@@ -108,27 +146,7 @@ async function sendMessage(to, message) {
   }
 }
 
-// ===== Enviar áudio via WhatsApp usando URL pública =====
-async function sendAudio(to, nomeArquivo = "output.mp3") {
-  try {
-    const urlAudio = `https://donna-bot-59gx.onrender.com/audio/${nomeArquivo}`;
-    await axios.post(
-      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to,
-        type: "audio",
-        audio: { link: urlAudio }
-      },
-      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-    );
-    console.log("📤 Áudio enviado:", urlAudio);
-  } catch (err) {
-    console.error("❌ Erro ao enviar áudio:", err.response?.data || err);
-  }
-}
-
-// ===== Usuários e memória =====
+// ===== Usuário e memória =====
 async function getUserName(number) {
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
@@ -221,13 +239,12 @@ app.post("/webhook", async (req, res) => {
     const promptBody = (body || "").trim();
     const state = userStates[from] || {};
 
-    // ⚠️ Bloquear entradas inválidas
     if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
       await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
       return res.sendStatus(200);
     }
 
-    // ===== FLUXO PALAVRAS-CHAVE =====
+    // ===== Fluxo palavras-chave =====
     const keywords = ["EMPRESA", "BANCO", "PAGAMENTO", "BENEFICIOS", "FOLHA PONTO", "HOLERITE"];
     if (keywords.includes(promptBody.toUpperCase())) {
       if (!state.nome) {
@@ -241,7 +258,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // ===== PEDIR NOME =====
+    // ===== Pedir nome =====
     if (state.step === "PEDIR_NOME") {
       userStates[from].nome = promptBody;
       await setUserName(from, promptBody);
@@ -250,7 +267,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // ===== PEDIR EMPRESA =====
+    // ===== Pedir empresa =====
     if (state.step === "PEDIR_EMPRESA") {
       const empresaInput = promptBody.toUpperCase();
       const empresasEncontradas = empresas.filter(e => e.nome.toUpperCase().includes(empresaInput));
@@ -303,7 +320,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // ===== ESCOLHER EMPRESA =====
+    // ===== Escolher empresa =====
     if (state.step === "ESCOLHER_EMPRESA") {
       const escolha = parseInt(promptBody.trim(), 10);
       const opcoes = state.empresasOpcoes || [];
@@ -346,7 +363,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // 🔓 AUTORIZADO → fluxo GPT
+    // 🔓 Fluxo GPT
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
     if (nameMatch) {
@@ -390,26 +407,24 @@ app.post("/webhook", async (req, res) => {
         const title = match[1];
         const time = match[2];
         const date = DateTime.now().toFormat("yyyy-MM-dd");
-        await addEvent(from, title, title, date, time);
-        reply = `✅ Lembrete "${title}" criado para hoje às ${time}`;
-      } else if (/mostrar agenda|meus lembretes/i.test(promptBody)) {
+        await addEvent(from, title, "", date, time);
+        reply = `✅ Lembrete adicionado: ${title} às ${time}`;
+      } else {
         const events = await getTodayEvents(from);
-        reply = events.length === 0 ? "📭 Você não tem nenhum evento para hoje." : "📅 Seus eventos de hoje:\n" + events.map(e => `- ${e.hora}: ${e.titulo}`).join("\n");
+        if (events.length === 0) reply = "Você não tem eventos para hoje.";
+        else reply = "📋 Seus eventos para hoje:\n" + events.map(e => `${e.hora} - ${e.titulo}`).join("\n");
       }
     } else {
-      const personalizedPrompt = userName ? `O usuário se chama ${userName}. ${promptBody}` : promptBody;
-      reply = await askGPT(personalizedPrompt, [systemMessage, ...chatHistory]);
+      reply = await askGPT(promptBody, [systemMessage, ...chatHistory]);
     }
 
-    await db.collection("historico").insertOne({ numero: from, mensagem: promptBody, resposta: reply, timestamp: new Date() });
     await saveMemory(from, "user", promptBody);
     await saveMemory(from, "assistant", reply);
 
-    // ===== RESPOSTA FINAL =====
+    // ===== Resposta final =====
     if (isAudioResponse) {
       try {
-        const nomeArquivo = await falar(reply); // retorna nome do arquivo mp3 salvo
-        await sendAudio(from, nomeArquivo);
+        await enviarAudio(from, reply); // envia áudio direto
       } catch (err) {
         console.error("❌ Erro ao gerar áudio:", err);
         await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
@@ -418,28 +433,14 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, reply);
     }
 
-    return res.sendStatus(200);
-
+    res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro ao processar webhook:", err);
-    return res.sendStatus(500);
+    console.error("❌ Erro no webhook:", err);
+    res.sendStatus(500);
   }
 });
 
-//cron job//
-(async () => {
-  try {
-    await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-    console.log("✅ Conectado ao MongoDB (reminders)");
+app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-    // Inicia cron corretamente
-    startReminderCron(sendMessage);
-
-    app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
-  } catch (err) {
-    console.error("❌ Erro ao conectar ao MongoDB:", err);
-  }
-})();
-
-export { askGPT };
-
+// ===== Inicialização de cron jobs =====
+startReminderCron(db);
