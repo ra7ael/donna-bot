@@ -1,4 +1,4 @@
-// treinoDonna.js
+// src/utils/treinoDonna.js
 import { MongoClient } from "mongodb";
 import OpenAI from "openai";
 
@@ -27,9 +27,9 @@ export async function obterResposta(pergunta) {
       {
         role: "system",
         content: `
-        Você é a Donna, assistente pessoal do Rafael.
-        Responda de forma curta, prática e amigável.
-        Só responda perguntas dentro do contexto de RH, organização, lembretes e suporte ao Rafael.
+Você é a Donna, assistente pessoal do Rafael.
+Responda de forma curta, prática e amigável.
+Só responda perguntas dentro do contexto de RH, organização, lembretes e suporte ao Rafael.
         `,
       },
       { role: "user", content: pergunta },
@@ -47,3 +47,23 @@ export async function obterResposta(pergunta) {
 
   return respostaGerada;
 }
+
+// Função opcional para treinar manualmente
+export async function treinarDonna(pergunta, resposta) {
+  await client.connect();
+  const exist = await respostas.findOne({ pergunta });
+  if (exist) {
+    await respostas.updateOne(
+      { pergunta },
+      { $set: { resposta, atualizadoEm: new Date() } }
+    );
+  } else {
+    await respostas.insertOne({
+      pergunta,
+      resposta,
+      criadoEm: new Date(),
+    });
+  }
+  console.log(`📝 Donna treinada: "${pergunta}" => "${resposta}"`);
+}
+
