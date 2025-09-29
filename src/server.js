@@ -23,6 +23,60 @@ import { treinarDonna, obterResposta } from "./utils/treinoDonna.js"; // <-- imp
 
 dotenv.config();
 
+// ===== Papéis Profissionais =====
+const profissoes = [
+  "Médico", "Nutricionista", "Personal Trainer", "Psicólogo", "Coach de Produtividade",
+  "Consultor de RH", "Advogado", "Contador", "Engenheiro Civil", "Arquiteto",
+  "Designer Gráfico", "Professor de Inglês", "Professor de Matemática", "Professor de História",
+  "Cientista de Dados", "Desenvolvedor Full Stack", "Especialista em IA", "Marketing Manager",
+  "Copywriter", "Redator Publicitário", "Social Media", "Especialista em SEO", "Especialista em E-commerce",
+  "Consultor Financeiro", "Analista de Investimentos", "Corretor de Imóveis", "Jornalista", "Editor de Vídeo",
+  "Fotógrafo", "Músico", "Chef de Cozinha", "Sommelier", "Designer de Moda", "Estilista",
+  "Terapeuta Holístico", "Consultor de Carreira", "Recrutador", "Especialista em Treinamento Corporativo",
+  "Mentor de Startups", "Engenheiro de Software", "Administrador de Sistemas", "Especialista em Redes",
+  "Advogado Trabalhista", "Advogado Civil", "Psicopedagogo", "Fisioterapeuta", "Enfermeiro",
+  "Pediatra", "Oftalmologista", "Dentista", "Barista", "Coach de Inteligência Emocional"
+];
+
+let papelAtual = null; // Papel profissional atual
+let papeisCombinados = [];
+
+// ===== Função para checar comandos de papéis =====
+function verificarComandoProfissao(texto) {
+  const textoLower = texto.toLowerCase();
+
+  // Comando para sair do papel
+  if (textoLower.includes("saia do papel")) {
+    papelAtual = null;
+    papeisCombinados = [];
+    return { tipo: "saida", resposta: "Ok! 😊 Voltei a ser sua assistente pessoal." };
+  }
+
+  // Comando para assumir papel único
+  for (const p of profissoes) {
+    if (textoLower.includes(`hoje você é ${p.toLowerCase()}`) || textoLower.includes(`ajude-me como ${p.toLowerCase()}`) || textoLower === p.toLowerCase()) {
+      papelAtual = p;
+      papeisCombinados = [p];
+      return { tipo: "papel", resposta: `Perfeito! 😊 Agora estou assumindo o papel de ${p}. Como posso ajudá-lo?` };
+    }
+  }
+
+  // Comando para combinar papéis
+  const combinarMatch = textoLower.match(/misture (.+)/i);
+  if (combinarMatch) {
+    const solicitados = combinarMatch[1].split(" e ").map(s => s.trim());
+    const validos = solicitados.filter(s => profissoes.map(p => p.toLowerCase()).includes(s.toLowerCase()));
+    if (validos.length > 0) {
+      papeisCombinados = validos;
+      papelAtual = "Multiplos";
+      return { tipo: "papel", resposta: `Perfeito! Vou considerar os papéis: ${validos.join(", ")}. Qual é sua dúvida ou situação específica?` };
+    }
+  }
+
+  return null;
+}
+
+
 const app = express();
 app.use(bodyParser.json());
 
@@ -54,6 +108,7 @@ async function connectDB() {
     console.error('❌ Erro ao conectar ao MongoDB:', err.message);
   }
 }
+
 connectDB();
 
 const empresasPath = path.resolve("./src/data/empresa.json");
