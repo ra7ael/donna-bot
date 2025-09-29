@@ -10,6 +10,14 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Variáveis globais para papéis (compartilhadas com server.js)
+let papeisCombinados = [];
+
+// Função para definir papéis dinamicamente
+export function setPapeis(papeis) {
+  papeisCombinados = papeis;
+}
+
 // Função principal de treino/resposta
 export async function obterResposta(pergunta) {
   await client.connect();
@@ -27,9 +35,12 @@ export async function obterResposta(pergunta) {
       {
         role: "system",
         content: `
-Você é a Donna, assistente pessoal do Rafael.
+Você é a Donna, assistente pessoal do Usuario.
+${papeisCombinados.length > 0 
+  ? `Atualmente você está assumindo os papéis de: ${papeisCombinados.join(", ")}.`
+  : "Atue como assistente corporativa geral, organização, lembretes e produtividade e tudo o que o usuario soliciar."}
 Responda de forma curta, prática e amigável.
-Só responda perguntas dentro do contexto de RH, organização, lembretes e suporte ao Rafael.
+Se não souber, diga isso de forma educada.
         `,
       },
       { role: "user", content: pergunta },
@@ -66,4 +77,6 @@ export async function treinarDonna(pergunta, resposta) {
   }
   console.log(`📝 Donna treinada: "${pergunta}" => "${resposta}"`);
 }
+
+
 
