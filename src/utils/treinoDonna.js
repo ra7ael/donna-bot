@@ -1,82 +1,112 @@
-// src/utils/treinoDonna.js
 import { MongoClient } from "mongodb";
 import OpenAI from "openai";
 
-const client = new MongoClient(process.env.MONGO_URI);
-const db = client.db("donnaDB");
-const respostas = db.collection("respostas");
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Variáveis globais para papéis (compartilhadas com server.js)
+let client;
+let respostas;
+let connected = false;
 let papeisCombinados = [];
 
-// Função para definir papéis dinamicamente
+// Inicializa cliente OpenAI com a chave de ambiente
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Inicializa/garante conexão com MongoDB (conecta apenas uma vez)
+async function initDB() {
+  if (connected && respostas) return;
+  client = new MongoClient(process.env.MONGO_URI, { useUnifiedTopology: true });
+  await client.connect();
+  const dbName = process.env.DONNA_DB_NAME || "donnaDB";
+  const db = client.db(dbName);
+  respostas = db.collection("respostas");
+  connected = true;
+  console.log(`treinoDonna: conectado ao MongoDB (${dbName})`);
+}
+
+// Define os papéis ativos (chamado pelo server.js quando usuário solicita)
 export function setPapeis(papeis) {
-  papeisCombinados = papeis;
+  if (!papeis) papeis = [];
+  papeisCombinados = Array.isArray(papeis) ? papeis.map(p => p.trim()).filter(Boolean) : [];
+  console.log("treinoDonna: papéis definidos =>", papeisCombinados);
 }
 
-// Função principal de treino/resposta
+export function clearPapeis() {
+  papeisCombinados = [];
+  console.log("treinoDonna: papéis limpos");
+}
+
+export function getPapeis() {
+  return papeisCombinados;
+}
+
+// Tenta obter resposta treinada; se não houver, chama a OpenAI, salva e retorna
 export async function obterResposta(pergunta) {
-  await client.connect();
+  await initDB();
+  const perguntaTrim = (pergunta || "").trim();
+  if (!perguntaTrim) return "";
 
-  // 1️⃣ Tenta encontrar no banco
-  const respostaExistente = await respostas.findOne({ pergunta });
-  if (respostaExistente) {
-    return respostaExistente.resposta;
+  // 1) Busca exata no banco
+  const existente = await respostas.findOne({ pergunta: perguntaTrim });
+  if (existente) {
+    console.log("treinoDonna: resposta encontrada no DB para pergunta ->", perguntaTrim);
+    return existente.resposta;
   }
 
-  // 2️⃣ Se não achar, consulta a OpenAI
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-       content: `
-Você é a Donna, assistente pessoal do Rafael.
-${papeisCombinados.length > 0 
-  ? `Atualmente você está assumindo os papéis de: ${papeisCombinados.join(", ")}.`
-  : "Atue como o usuario desejar."}
-Responda de forma curta, prática e amigável.
-Se não souber, diga isso de forma educada.
-`,
-      },
-      { role: "user", content: pergunta },
-    ],
-  });
+  // 2) Se não existir, gera com a OpenAI
+  const systemContent = `Você é Donna, assistente pessoal do Rafael. Use toda sua inteligência e combine conhecimentos dos papéis ativos (${papeisCombinados.length > 0 ? papeisCombinados.join(', ') : 'nenhum'}).
 
-  const respostaGerada = completion.choices[0].message.content;
+Regras importantes:
+- Responda de forma curta, prática e objetiva (máx. 2 frases).
+- Se a resposta envolver saúde ou medicina, adicione o disclaimer: "Não sou um profissional; consulte um especialista.".
+- Quando combinar vários papéis, integre a expertise de cada um. Se aplicar um papel específico, indique entre colchetes qual foi usado (ex: [Nutricionista]).
+- Sugira até 1 ação prática clara quando fizer sentido.
+- Não invente fatos. Se tiver incerteza, diga isso claramente.
+- Mantenha o tom amistoso e direto.
+`;
 
-  // 3️⃣ Salva a nova resposta no banco (aprendizado)
-  await respostas.insertOne({
-    pergunta,
-    resposta: respostaGerada,
-    criadoEm: new Date(),
-  });
+  const messages = [
+    { role: "system", content: systemContent },
+    { role: "user", content: perguntaTrim }
+  ];
 
-  return respostaGerada;
-}
-
-// Função opcional para treinar manualmente
-export async function treinarDonna(pergunta, resposta) {
-  await client.connect();
-  const exist = await respostas.findOne({ pergunta });
-  if (exist) {
-    await respostas.updateOne(
-      { pergunta },
-      { $set: { resposta, atualizadoEm: new Date() } }
-    );
-  } else {
-    await respostas.insertOne({
-      pergunta,
-      resposta,
-      criadoEm: new Date(),
+  try {
+    // Observação: usa-se chat.completions.create conforme sua instalação atual do SDK
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      messages
     });
+
+    const respostaGerada = (completion.choices?.[0]?.message?.content || "").trim();
+
+    // Salva a nova resposta para aprendizado futuro
+    await respostas.insertOne({
+      pergunta: perguntaTrim,
+      resposta: respostaGerada,
+      papeis: papeisCombinados,
+      criadoEm: new Date()
+    });
+
+    console.log("treinoDonna: gerada e salva resposta para ->", perguntaTrim);
+    return respostaGerada;
+  } catch (err) {
+    console.error("treinoDonna: erro ao chamar OpenAI ->", err);
+    return "Desculpe, não consegui processar sua solicitação no momento.";
   }
-  console.log(`📝 Donna treinada: "${pergunta}" => "${resposta}"`);
 }
 
+// Função para treinar manualmente (upsert)
+export async function treinarDonna(pergunta, resposta) {
+  await initDB();
+  const p = (pergunta || "").trim();
+  const r = (resposta || "").trim();
+  if (!p) return;
+
+  const exist = await respostas.findOne({ pergunta: p });
+  if (exist) {
+    await respostas.updateOne({ pergunta: p }, { $set: { resposta: r, atualizadoEm: new Date(), papeis: papeisCombinados } });
+  } else {
+    await respostas.insertOne({ pergunta: p, resposta: r, criadoEm: new Date(), papeis: papeisCombinados });
+  }
+
+  console.log(`treinoDonna: treinada -> "${p}" => "${r}"`);
+}
 
 
