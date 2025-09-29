@@ -1,3 +1,5 @@
+// src/utils/buscarPdf.js
+
 import OpenAI from "openai";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
@@ -10,7 +12,7 @@ const colecao = "pdfEmbeddings";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-async function buscarPergunta(pergunta, topK = 3) {
+export async function buscarPergunta(pergunta, topK = 3) {
   await client.connect();
   const db = client.db(dbName);
   const collection = db.collection(colecao);
@@ -43,8 +45,10 @@ async function buscarPergunta(pergunta, topK = 3) {
   return topTrechos.join("\n\n");
 }
 
-// Exemplo de uso
-(async () => {
-  const resposta = await buscarPergunta("O que Freud dizia sobre o inconsciente?");
-  console.log(resposta);
-})();
+// Exemplo de uso local (opcional)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  (async () => {
+    const resposta = await buscarPergunta("O que Freud dizia sobre o inconsciente?");
+    console.log(resposta);
+  })();
+}
