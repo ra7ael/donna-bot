@@ -288,6 +288,16 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    const promptBody = (body || "").trim();
+const state = userStates[from] || {};
+
+// ===== Checar comandos de papéis =====
+const comandoPapel = verificarComandoProfissao(promptBody);
+if (comandoPapel) {
+  await sendMessage(from, comandoPapel.resposta);
+  return res.sendStatus(200);
+}
+
     // ===== Pedir nome =====
     if (state.step === "PEDIR_NOME") {
       userStates[from].nome = promptBody;
