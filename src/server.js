@@ -20,21 +20,22 @@ import { fileURLToPath } from "url";
 import FormData from "form-data";
 import { falar, sendAudio } from "./utils/speak.js";
 import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
+import { buscarPergunta } from "./utils/buscarPdf.js"; // <-- adicionado
 
 dotenv.config();
 
 // ===== Papéis Profissionais =====
 const profissoes = [
-  "Médico", "Nutricionista", "Personal Trainer", "Psicólogo", "Coach de Produtividade",
-  "Consultor de RH", "Advogado", "Contador", "Engenheiro Civil", "Arquiteto",
-  "Designer Gráfico", "Professor de Inglês", "Professor de Matemática", "Professor de História",
-  "Cientista de Dados", "Desenvolvedor Full Stack", "Especialista em IA", "Marketing Manager",
-  "Copywriter", "Redator Publicitário", "Social Media", "Especialista em SEO", "Especialista em E-commerce",
-  "Consultor Financeiro", "Analista de Investimentos", "Corretor de Imóveis", "Jornalista", "Editor de Vídeo",
-  "Fotógrafo", "Músico", "Chef de Cozinha", "Sommelier", "Designer de Moda", "Estilista",
-  "Terapeuta Holístico", "Consultor de Carreira", "Recrutador", "Especialista em Treinamento Corporativo",
-  "Mentor de Startups", "Engenheiro de Software", "Administrador de Sistemas", "Especialista em Redes",
-  "Advogado Trabalhista", "Advogado Civil", "Psicopedagogo", "Fisioterapeuta", "Enfermeiro",
+  "Enfermeira Obstetra","Médica", "Nutricionista", "Personal Trainer", "Psicóloga", "Coach de Produtividade",
+  "Consultora de RH", "Advogada", "Contadora", "Engenheira Civil", "Arquiteta",
+  "Designer Gráfica", "Professora de Inglês", "Professora de Matemática", "Professora de História",
+  "Cientista de Dados", "Desenvolvedora Full Stack", "Especialista em IA", "Marketing Manager", // neutro
+  "Copywriter", "Redatora Publicitária", "Social Media", "Especialista em SEO", "Especialista em E-commerce",
+  "Consultora Financeira", "Analista de Investimentos", "Corretora de Imóveis", "Jornalista", "Editora de Vídeo",
+  "Fotógrafa", "Música", "Chef de Cozinha", "Sommelier", "Designer de Moda", "Estilista",
+  "Terapeuta Holística", "Consultora de Carreira", "Recrutadora", "Especialista em Treinamento Corporativo",
+  "Mentora de Startups", "Engenheira de Software", "Administradora de Sistemas", "Especialista em Redes",
+  "Advogada Trabalhista", "Advogada Civil", "Psicopedagoga", "Fisioterapeuta", "Enfermeira",
   "Pediatra", "Oftalmologista", "Dentista", "Barista", "Coach de Inteligência Emocional"
 ];
 
@@ -45,7 +46,6 @@ let papeisCombinados = [];
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
-    // Sair do papel
   if (
     textoLower.includes("sair do papel") ||
     textoLower.includes("volte a ser assistente") ||
@@ -53,11 +53,10 @@ function verificarComandoProfissao(texto) {
   ) {
     papelAtual = null;
     papeisCombinados = [];
-    clearPapeis(); // limpa também no treinoDonna
+    clearPapeis();
     return { tipo: "saida", resposta: "Ok! 😊 Voltei a ser sua assistente pessoal." };
   }
 
-  // Detectar profissão única
   for (const p of profissoes) {
     const pLower = p.toLowerCase();
     if (
@@ -68,12 +67,11 @@ function verificarComandoProfissao(texto) {
     ) {
       papelAtual = p;
       papeisCombinados = [p];
-      setPapeis([p]); // sincroniza com treinoDonna
+      setPapeis([p]);
       return { tipo: "papel", resposta: `Perfeito! Agora estou no papel de ${p}. O que deseja?` };
     }
   }
 
-  // Detectar múltiplos papéis
   const combinarMatch = textoLower.match(/(misture|combine|junte) (.+)/i);
   if (combinarMatch) {
     const solicitados = combinarMatch[2].split(/,| e /).map(s => s.trim());
@@ -83,7 +81,7 @@ function verificarComandoProfissao(texto) {
     if (validos.length > 0) {
       papeisCombinados = validos;
       papelAtual = "Multiplos";
-      setPapeis(validos); // sincroniza com treinoDonna
+      setPapeis(validos);
       return { tipo: "papel", resposta: `Beleza! Vou atuar como ${validos.join(" + ")}. Qual sua dúvida?` };
     } else {
       return { tipo: "erro", resposta: "Não reconheci esses papéis — verifique a grafia ou escolha outros." };
@@ -93,16 +91,13 @@ function verificarComandoProfissao(texto) {
   return null;
 }
 
-
 const app = express();
 app.use(bodyParser.json());
 
-// ===== Servir arquivos públicos para WhatsApp TTS =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
-// ===== Configurações =====
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 const GPT_API_KEY = process.env.OPENAI_API_KEY;
@@ -112,14 +107,12 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
 let db;
 
-// ===== Conectar MongoDB =====
 async function connectDB() {
   try {
     console.log("🔹 Tentando conectar ao MongoDB...");
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db();
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
-    
     startReminderCron(db, sendMessage);
   } catch (err) {
     console.error('❌ Erro ao conectar ao MongoDB:', err.message);
@@ -131,10 +124,8 @@ connectDB();
 const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 
-// ===== Estado dos usuários =====
 const userStates = {};
 
-// ===== Funções GPT =====
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
@@ -155,7 +146,6 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// ===== WhatsApp =====
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
 
@@ -186,7 +176,6 @@ async function sendMessage(to, message) {
   }
 }
 
-// ===== Usuário e memória =====
 async function getUserName(number) {
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
@@ -213,7 +202,6 @@ async function saveMemory(number, role, content) {
   await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
 }
 
-// ===== Transcrição =====
 async function transcribeAudio(audioBuffer) {
   try {
     const form = new FormData();
@@ -233,7 +221,6 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
-// ===== Agenda =====
 async function addEvent(number, title, description, date, time) {
   await db.collection("donna").insertOne({
     numero: number,
@@ -251,7 +238,6 @@ async function getTodayEvents(number) {
   return await db.collection("donna").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-// ===== Webhook =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -261,13 +247,11 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let isAudioResponse = false;
 
-    // 🔒 Bloqueio de números não autorizados (ignorar totalmente)
     if (!numerosAutorizados.includes(from)) {
       console.log(`🚫 Número não autorizado ignorado: ${from}`);
       return res.sendStatus(200);
     }
 
-    // ===== Identificar tipo de mensagem =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
       if (body.toLowerCase().startsWith("fala ")) {
@@ -291,7 +275,6 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // ===== Fluxo palavras-chave =====
     const keywords = ["EMPRESA", "BANCO", "PAGAMENTO", "BENEFICIOS", "FOLHA PONTO", "HOLERITE"];
     if (keywords.includes(promptBody.toUpperCase())) {
       if (!state.nome) {
@@ -305,15 +288,12 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    const comandoPapel = verificarComandoProfissao(promptBody);
+    if (comandoPapel) {
+      await sendMessage(from, comandoPapel.resposta);
+      return res.sendStatus(200);
+    }
 
-// ===== Checar comandos de papéis =====
-const comandoPapel = verificarComandoProfissao(promptBody);
-if (comandoPapel) {
-  await sendMessage(from, comandoPapel.resposta);
-  return res.sendStatus(200);
-}
-
-    // ===== Pedir nome =====
     if (state.step === "PEDIR_NOME") {
       userStates[from].nome = promptBody;
       await setUserName(from, promptBody);
@@ -322,7 +302,6 @@ if (comandoPapel) {
       return res.sendStatus(200);
     }
 
-    // ===== Pedir empresa =====
     if (state.step === "PEDIR_EMPRESA") {
       const empresaInput = promptBody.toUpperCase();
       const empresasEncontradas = empresas.filter(e => e.nome.toUpperCase().includes(empresaInput));
@@ -352,7 +331,6 @@ if (comandoPapel) {
       return res.sendStatus(200);
     }
 
-    // ===== Escolher empresa =====
     if (state.step === "ESCOLHER_EMPRESA") {
       const escolha = parseInt(promptBody.trim(), 10);
       const opcoes = state.empresasOpcoes || [];
@@ -372,7 +350,6 @@ if (comandoPapel) {
       return res.sendStatus(200);
     }
 
-    // ===== Fluxo GPT + Treino Donna =====
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
     if (nameMatch) {
@@ -403,10 +380,16 @@ if (comandoPapel) {
 
     // ===== Verifica se há resposta treinada =====
     let reply = await obterResposta(promptBody);
+
     if (!reply) {
+      // ===== Buscar trechos do PDF =====
+      const pdfTrechos = await buscarPergunta(promptBody);
+      const promptFinal = pdfTrechos
+        ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
+        : promptBody;
+
       // Se não tem resposta treinada, usa GPT
-      reply = await askGPT(promptBody, [systemMessage, ...chatHistory]);
-      // Opcional: treinar Donna automaticamente
+      reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
       await treinarDonna(promptBody, reply);
     }
 
@@ -435,3 +418,4 @@ if (comandoPapel) {
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
 export { askGPT };
+
