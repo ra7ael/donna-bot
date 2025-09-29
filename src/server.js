@@ -189,6 +189,13 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let isAudioResponse = false;
 
+    // 🔒 Bloqueio de números não autorizados
+    if (!numerosAutorizados.includes(from)) {
+      console.log(`🚫 Número não autorizado: ${from}`);
+      await sendMessage(from, "❌ Desculpe, você não tem permissão para usar a Donna.");
+      return res.sendStatus(200);
+    }
+
     // ===== Identificar tipo de mensagem =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
