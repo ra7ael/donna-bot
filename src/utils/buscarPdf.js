@@ -39,10 +39,14 @@ export async function buscarPergunta(pergunta, topK = 3) {
   const scored = trechos.map(t => ({ ...t, score: similaridade(perguntaEmbedding, t.embedding) }));
   scored.sort((a, b) => b.score - a.score);
 
-  const topTrechos = scored.slice(0, topK).map(t => t.trecho);
+  const topTrechos = scored.slice(0, topK);
 
   await client.close();
-  return topTrechos.join("\n\n");
+
+  // Junta os trechos com a fonte dinâmica
+  return topTrechos
+    .map(t => `${t.trecho}\n\n[Fonte: ${t.fonte || "Desconhecida"}]`)
+    .join("\n\n");
 }
 
 // Exemplo de uso local (opcional)
