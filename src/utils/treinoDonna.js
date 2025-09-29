@@ -34,14 +34,14 @@ export async function obterResposta(pergunta) {
     messages: [
       {
         role: "system",
-        content: `
-Você é a Donna, assistente pessoal do Usuario.
+       content: `
+Você é a Donna, assistente pessoal do Rafael.
 ${papeisCombinados.length > 0 
   ? `Atualmente você está assumindo os papéis de: ${papeisCombinados.join(", ")}.`
-  : "Atue como assistente corporativa geral, organização, lembretes e produtividade e tudo o que o usuario soliciar."}
+  : "Atue como o usuario desejar."}
 Responda de forma curta, prática e amigável.
 Se não souber, diga isso de forma educada.
-        `,
+`,
       },
       { role: "user", content: pergunta },
     ],
