@@ -19,7 +19,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import FormData from "form-data";
 import { falar, sendAudio } from "./utils/speak.js";
-import { treinarDonna, obterResposta } from "./utils/treinoDonna.js"; // <-- import treino
+import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 
 dotenv.config();
 
@@ -45,31 +45,48 @@ let papeisCombinados = [];
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
-  // Comando para sair do papel
-  if (textoLower.includes("saia do papel")) {
+    // Sair do papel
+  if (
+    textoLower.includes("sair do papel") ||
+    textoLower.includes("volte a ser assistente") ||
+    textoLower.includes("saia do papel")
+  ) {
     papelAtual = null;
     papeisCombinados = [];
+    clearPapeis(); // limpa também no treinoDonna
     return { tipo: "saida", resposta: "Ok! 😊 Voltei a ser sua assistente pessoal." };
   }
 
-  // Comando para assumir papel único
+  // Detectar profissão única
   for (const p of profissoes) {
-    if (textoLower.includes(`hoje você é ${p.toLowerCase()}`) || textoLower.includes(`ajude-me como ${p.toLowerCase()}`) || textoLower === p.toLowerCase()) {
+    const pLower = p.toLowerCase();
+    if (
+      textoLower.includes(`você é ${pLower}`) ||
+      textoLower.includes(`seja meu ${pLower}`) ||
+      textoLower.includes(`ajude-me como ${pLower}`) ||
+      textoLower === pLower
+    ) {
       papelAtual = p;
       papeisCombinados = [p];
-      return { tipo: "papel", resposta: `Perfeito! 😊 Agora estou assumindo o papel de ${p}. Como posso ajudá-lo?` };
+      setPapeis([p]); // sincroniza com treinoDonna
+      return { tipo: "papel", resposta: `Perfeito! Agora estou no papel de ${p}. O que deseja?` };
     }
   }
 
-  // Comando para combinar papéis
-  const combinarMatch = textoLower.match(/misture (.+)/i);
+  // Detectar múltiplos papéis
+  const combinarMatch = textoLower.match(/(misture|combine|junte) (.+)/i);
   if (combinarMatch) {
-    const solicitados = combinarMatch[1].split(" e ").map(s => s.trim());
-    const validos = solicitados.filter(s => profissoes.map(p => p.toLowerCase()).includes(s.toLowerCase()));
+    const solicitados = combinarMatch[2].split(/,| e /).map(s => s.trim());
+    const validos = solicitados.filter(s =>
+      profissoes.map(p => p.toLowerCase()).includes(s.toLowerCase())
+    );
     if (validos.length > 0) {
       papeisCombinados = validos;
       papelAtual = "Multiplos";
-      return { tipo: "papel", resposta: `Perfeito! Vou considerar os papéis: ${validos.join(", ")}. Qual é sua dúvida ou situação específica?` };
+      setPapeis(validos); // sincroniza com treinoDonna
+      return { tipo: "papel", resposta: `Beleza! Vou atuar como ${validos.join(" + ")}. Qual sua dúvida?` };
+    } else {
+      return { tipo: "erro", resposta: "Não reconheci esses papéis — verifique a grafia ou escolha outros." };
     }
   }
 
