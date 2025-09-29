@@ -19,6 +19,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import FormData from "form-data";
 import { falar, sendAudio } from "./utils/speak.js";
+import { treinarDonna, obterResposta } from "./utils/treinoDonna.js"; // <-- import treino
 
 dotenv.config();
 
@@ -28,7 +29,7 @@ app.use(bodyParser.json());
 // ===== Servir arquivos públicos para WhatsApp TTS =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.use('/audio', express.static(path.join(__dirname, 'public/audio'))); // nova linha
+app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
 // ===== Configurações =====
 const PORT = process.env.PORT || 3000;
@@ -48,7 +49,6 @@ async function connectDB() {
     db = client.db();
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
     
-    // Só inicia o cron depois que o DB estiver conectado, passando a função sendMessage
     startReminderCron(db, sendMessage);
   } catch (err) {
     console.error('❌ Erro ao conectar ao MongoDB:', err.message);
@@ -189,10 +189,10 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let isAudioResponse = false;
 
-      // 🔒 Bloqueio de números não autorizados (ignorar totalmente)
+    // 🔒 Bloqueio de números não autorizados (ignorar totalmente)
     if (!numerosAutorizados.includes(from)) {
       console.log(`🚫 Número não autorizado ignorado: ${from}`);
-      return res.sendStatus(200); // não envia nada de volta
+      return res.sendStatus(200);
     }
 
     // ===== Identificar tipo de mensagem =====
@@ -256,14 +256,11 @@ app.post("/webhook", async (req, res) => {
         userStates[from].empresa = empresa.nome;
         userStates[from].step = null;
         const { nome, key } = userStates[from];
-        const { data_de_pagamento, data_adiantamento, fechamento_do_ponto, metodo_ponto } = empresa;
 
-        // Aqui você pode manter o switch case das respostas por palavra-chave
         await sendMessage(from, `✅ Cadastro confirmado para ${nome} na empresa ${empresa.nome}`);
         return res.sendStatus(200);
       }
 
-      // Mais de uma empresa encontrada → lista opções
       userStates[from].empresasOpcoes = empresasEncontradas;
       userStates[from].step = "ESCOLHER_EMPRESA";
       let listaMsg = "🔎 Encontramos mais de uma empresa correspondente:\n";
@@ -291,12 +288,11 @@ app.post("/webhook", async (req, res) => {
       delete userStates[from].empresasOpcoes;
 
       const { nome, key } = state;
-
       await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
       return res.sendStatus(200);
     }
 
-    // ===== Fluxo GPT =====
+    // ===== Fluxo GPT + Treino Donna =====
     let userName = await getUserName(from);
     const nameMatch = promptBody.match(/meu nome é (\w+)/i);
     if (nameMatch) {
@@ -322,26 +318,21 @@ app.post("/webhook", async (req, res) => {
 - Nunca escreva parágrafos longos.
 - Adapte o tom para ser acolhedora e prestativa.
 - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa.
-- Não invente informações; se não souber, admita de forma educada.
-- Adapte seu tom para ser acolhedora e prestativa.`
+- Não invente informações; se não souber, admita de forma educada.`
     };
 
-    let reply;
-
-    // Exemplos de respostas rápidas
-    const now = DateTime.now().setZone("America/Sao_Paulo");
-    if (/que horas são\??/i.test(promptBody)) {
-      reply = `🕒 Agora são ${now.toFormat("HH:mm")}`;
-    } else if (/qual a data( de hoje)?\??/i.test(promptBody)) {
-      reply = `📅 Hoje é ${now.toFormat("cccc, dd/MM/yyyy")}`;
-    } else {
+    // ===== Verifica se há resposta treinada =====
+    let reply = await obterResposta(promptBody);
+    if (!reply) {
+      // Se não tem resposta treinada, usa GPT
       reply = await askGPT(promptBody, [systemMessage, ...chatHistory]);
+      // Opcional: treinar Donna automaticamente
+      await treinarDonna(promptBody, reply);
     }
 
     await saveMemory(from, "user", promptBody);
     await saveMemory(from, "assistant", reply);
 
-    // ===== Resposta final com áudio =====
     if (isAudioResponse) {
       try {
         const audioBuffer = await falar(reply, "./resposta.mp3");
@@ -362,8 +353,5 @@ app.post("/webhook", async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
-
-// ===== Inicialização de cron jobs =====
-
 
 export { askGPT };
