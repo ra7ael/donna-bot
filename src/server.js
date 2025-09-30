@@ -298,18 +298,19 @@ app.post("/webhook", async (req, res) => {
           return res.sendStatus(200);
         }
 
-        // Salva temporariamente
-        const caminhoTemporario = `uploads/${document.filename}`;
-        fs.writeFileSync(caminhoTemporario, pdfBuffer);
+        // Pasta de PDFs (cria se não existir)
+        const pdfsDir = "./src/utils/pdfs";
+        if (!fs.existsSync(pdfsDir)) fs.mkdirSync(pdfsDir, { recursive: true });
+
+        // Salva o PDF na pasta definida
+        const caminhoPDF = `${pdfsDir}/${document.filename}`;
+        fs.writeFileSync(caminhoPDF, pdfBuffer);
 
         // Processa o PDF
-        await processarPdf(caminhoTemporario);
+        await processarPdf(caminhoPDF);
 
         // Confirmação
         await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
-
-        // Remove arquivo temporário
-        fs.unlinkSync(caminhoTemporario);
       } catch (err) {
         console.error("❌ Erro ao processar PDF do WhatsApp:", err);
         await sendMessage(from, "❌ Ocorreu um erro ao processar seu PDF.");
