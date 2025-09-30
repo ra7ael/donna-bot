@@ -9,7 +9,6 @@ import { DateTime } from "luxon";
 import axios from "axios";
 import { getTodayEvents, addEvent, saveMemory, db } from "../server.js";
 import { buscarPergunta } from "./buscarPdf.js";
-import { getWeather } from "./weather.js"; // precisa existir no seu projeto
 
 export async function funcoesExtras(from, texto) {
   const t = texto.toLowerCase();
@@ -213,15 +212,16 @@ export async function funcoesExtras(from, texto) {
   }
 
   // ===== 27. Dias entre datas =====
-  if (t.startsWith("dias entre")) {
-    const match = t.match(/(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})/);
-    if (match) {
-      const d1 = DateTime.fromISO(match[1]);
-      const d2 = DateTime.fromISO(match[2]);
-      return `📆 Dias entre datas: ${Math.abs(d2.diff(d1, "days").days)}`;
-    }
-    return "❌ Use formato: 'dias entre 2025-09-01 2025-09-30'";
+if (t.startsWith("dias entre")) {
+  const match = t.match(/(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})/);
+  if (match) {
+    const d1 = DateTime.fromISO(match[1]);
+    const d2 = DateTime.fromISO(match[2]);
+    const diff = Math.abs(d2.diff(d1, "days").days);
+    return `📆 Dias entre datas: ${diff}`;
   }
+  return "❌ Use formato: 'dias entre 2025-09-01 2025-09-30'";
+}
 
   // ===== 28. Frase motivacional =====
   if (t.includes("motiva") || t.includes("frase motivacional")) {
