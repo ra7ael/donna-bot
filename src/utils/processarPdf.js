@@ -30,9 +30,13 @@ export async function processarPdf(caminhoArquivo) {
   try {
     await connectDB();
 
+    if (!fs.existsSync(caminhoArquivo)) {
+      console.warn(`⚠️ Arquivo não encontrado: ${caminhoArquivo}`);
+      return; // Sai da função sem lançar erro
+    }
+
     const dataBuffer = fs.readFileSync(caminhoArquivo);
     const pdfData = await pdfParse(dataBuffer);
-
     const textoExtraido = pdfData.text || "";
 
     // Salva no MongoDB
@@ -45,6 +49,7 @@ export async function processarPdf(caminhoArquivo) {
     console.log(`✅ PDF processado e salvo: ${caminhoArquivo}`);
   } catch (err) {
     console.error("❌ Erro ao processar PDF:", err);
-    throw err;
+    throw err; // Mantém o throw para capturar erros inesperados
   }
 }
+
