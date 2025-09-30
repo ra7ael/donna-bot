@@ -22,7 +22,7 @@ if (tNorm.includes("que horas") || tNorm.includes("horas sao") || tNorm.includes
 }
 
   // ===== 2. Data de hoje =====
-  if (t.includes("data de hoje") || t.includes("que dia é hoje")) {
+  if (tNorm.includes("data de hoje") || tNorm.includes("que dia é hoje"))  {
     return `📅 Hoje é ${DateTime.now().toLocaleString(DateTime.DATE_FULL)}`;
   }
 
