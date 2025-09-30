@@ -12,12 +12,14 @@ import { buscarPergunta } from "./buscarPdf.js";
 import { getWeather } from "./weather.js"; // precisa existir no projeto
 
 export async function funcoesExtras(from, texto) {
-  const t = texto.toLowerCase();
+  // Função para remover acentos e normalizar texto
+const normalize = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const tNorm = normalize(texto.toLowerCase());
 
   // ===== 1. Hora atual =====
-  if (t.includes("horas") || t.includes("que horas")) {
-    return `🕒 Agora são ${DateTime.now().toLocaleString(DateTime.TIME_24_SIMPLE)}`;
-  }
+if (tNorm.includes("que horas") || tNorm.includes("horas sao") || tNorm.includes("horas agora")) {
+  return `🕒 Agora são ${DateTime.now().toFormat("HH:mm")}`;
+}
 
   // ===== 2. Data de hoje =====
   if (t.includes("data de hoje") || t.includes("que dia é hoje")) {
