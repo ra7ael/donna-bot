@@ -15,7 +15,8 @@ export async function funcoesExtras(from, texto) {
   // Função para remover acentos e normalizar texto
 const normalize = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const tNorm = normalize(texto.toLowerCase());
-
+const t = tNorm;
+  
   // ===== 1. Hora atual =====
 if (tNorm.includes("que horas") || tNorm.includes("horas sao") || tNorm.includes("horas agora")) {
   return `🕒 Agora são ${DateTime.now().toFormat("HH:mm")}`;
