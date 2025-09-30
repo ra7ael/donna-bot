@@ -20,7 +20,7 @@ import { fileURLToPath } from "url";
 import FormData from "form-data";
 import { falar, sendAudio } from "./utils/speak.js";
 import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
-import { buscarPergunta } from "./utils/buscarPdf.js"; // <-- adicionado
+import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { processarPdf } from "./utils/processarPdf.js";
 
@@ -36,7 +36,7 @@ const profissoes = [
   "Enfermeira Obstetra","Médica", "Nutricionista", "Personal Trainer", "Psicóloga", "Coach de Produtividade",
   "Consultora de RH", "Advogada", "Contadora", "Engenheira Civil", "Arquiteta",
   "Designer Gráfica", "Professora de Inglês", "Professora de Matemática", "Professora de História",
-  "Cientista de Dados", "Desenvolvedora Full Stack", "Especialista em IA", "Marketing Manager", // neutro
+  "Cientista de Dados", "Desenvolvedora Full Stack", "Especialista em IA", "Marketing Manager",
   "Copywriter", "Redatora Publicitária", "Social Media", "Especialista em SEO", "Especialista em E-commerce",
   "Consultora Financeira", "Analista de Investimentos", "Corretora de Imóveis", "Jornalista", "Editora de Vídeo",
   "Fotógrafa", "Música", "Chef de Cozinha", "Sommelier", "Designer de Moda", "Estilista",
@@ -257,6 +257,7 @@ async function getTodayEvents(number) {
   return await db.collection("donna").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
+// ===== Webhook WhatsApp =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -271,6 +272,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // ===== Tipos de mensagem =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
       if (body.toLowerCase().startsWith("fala ")) {
@@ -281,6 +283,39 @@ app.post("/webhook", async (req, res) => {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
       isAudioResponse = true;
+    } else if (messageObj.type === "document") {
+      const document = messageObj.document;
+      if (!document) {
+        await sendMessage(from, "❌ Não consegui processar o arquivo enviado.");
+        return res.sendStatus(200);
+      }
+
+      try {
+        // Baixa o PDF
+        const pdfBuffer = await downloadMedia(document.id);
+        if (!pdfBuffer) {
+          await sendMessage(from, "❌ Não consegui baixar o arquivo PDF.");
+          return res.sendStatus(200);
+        }
+
+        // Salva temporariamente
+        const caminhoTemporario = `uploads/${document.filename}`;
+        fs.writeFileSync(caminhoTemporario, pdfBuffer);
+
+        // Processa o PDF
+        await processarPdf(caminhoTemporario);
+
+        // Confirmação
+        await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
+
+        // Remove arquivo temporário
+        fs.unlinkSync(caminhoTemporario);
+      } catch (err) {
+        console.error("❌ Erro ao processar PDF do WhatsApp:", err);
+        await sendMessage(from, "❌ Ocorreu um erro ao processar seu PDF.");
+      }
+
+      return res.sendStatus(200);
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
       return res.sendStatus(200);
