@@ -1,13 +1,15 @@
 // src/utils/funcoesExtras.js
+
 /**
  * Funções extras da Donna - 40 funções prontas
  * A Donna tenta executar essas funções antes de chamar o GPT.
  */
+
 import { DateTime } from "luxon";
 import axios from "axios";
 import { getTodayEvents, addEvent, saveMemory, db } from "../server.js";
 import { buscarPergunta } from "./buscarPdf.js";
-import { getWeather } from "./weather.js"; // precisa existir no projeto
+import { getWeather } from "./weather.js"; // precisa existir no seu projeto
 
 export async function funcoesExtras(from, texto) {
   const t = texto.toLowerCase();
@@ -216,8 +218,7 @@ export async function funcoesExtras(from, texto) {
     if (match) {
       const d1 = DateTime.fromISO(match[1]);
       const d2 = DateTime.fromISO(match[2]);
-      const diff = d2.diff(d1, "days").days;
-      return `📆 Há ${Math.abs(diff)} dias entre ${match[1]} e ${match[2]}`;
+      return `📆 Dias entre datas: ${Math.abs(d2.diff(d1, "days").days)}`;
     }
     return "❌ Use formato: 'dias entre 2025-09-01 2025-09-30'";
   }
