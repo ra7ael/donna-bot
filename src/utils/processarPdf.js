@@ -1,5 +1,4 @@
 // src/utils/processarPdf.js
-
 import fs from "fs";
 import path from "path";
 import pdfParse from "pdf-parse";
@@ -9,32 +8,33 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const MONGO_URI = process.env.MONGO_URI;
-const PASTA_PDFS = path.resolve("./pdfs"); // pasta com PDFs
+const DB_NAME = "donnaDB";
 
 let db;
 
-// Conectar ao MongoDB
+// Conecta ao MongoDB (reusa conexão se já existir)
 async function connectDB() {
   if (!db) {
     try {
       const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-      db = client.db();
+      db = client.db(DB_NAME);
       console.log("✅ Conectado ao MongoDB");
     } catch (err) {
       console.error("❌ Erro ao conectar ao MongoDB:", err.message);
+      throw err;
     }
   }
   return db;
 }
 
-// Processar um PDF individual
-async function processarPdf(caminhoArquivo) {
+// Processa um PDF seguro
+export async function processarPdf(caminhoArquivo) {
   try {
     await connectDB();
 
     if (!fs.existsSync(caminhoArquivo)) {
       console.warn(`⚠️ Arquivo não encontrado: ${caminhoArquivo}`);
-      return false; // não processou
+      return; // sai sem lançar erro
     }
 
     const dataBuffer = fs.readFileSync(caminhoArquivo);
@@ -47,38 +47,34 @@ async function processarPdf(caminhoArquivo) {
       timestamp: new Date(),
     });
 
-    console.log(`✅ PDF processado: ${path.basename(caminhoArquivo)}`);
-    return true;
+    console.log(`✅ PDF processado e salvo: ${caminhoArquivo}`);
   } catch (err) {
-    console.error(`❌ Erro ao processar PDF "${path.basename(caminhoArquivo)}":`, err.message);
-    return false;
+    console.error("❌ Erro ao processar PDF:", err.message);
   }
 }
 
-// Processar todos os PDFs da pasta
-export async function processarTodosPDFs() {
-  if (!fs.existsSync(PASTA_PDFS)) {
-    console.warn(`⚠️ Pasta de PDFs não encontrada: ${PASTA_PDFS}`);
-    return;
+// Função para processar todos os PDFs de uma pasta
+export async function processarTodosPDFs(pasta = "./pdfs") {
+  try {
+    if (!fs.existsSync(pasta)) {
+      console.warn(`⚠️ Pasta de PDFs não encontrada: ${pasta}`);
+      return;
+    }
+
+    const arquivos = fs.readdirSync(pasta).filter(f => f.endsWith(".pdf"));
+    if (arquivos.length === 0) {
+      console.log("📂 Nenhum PDF encontrado para processar");
+      return;
+    }
+
+    for (const arquivo of arquivos) {
+      const caminho = path.join(pasta, arquivo);
+      await processarPdf(caminho);
+    }
+
+    console.log("🎉 Todos os PDFs processados!");
+  } catch (err) {
+    console.error("❌ Erro ao processar PDFs da pasta:", err.message);
   }
-
-  const arquivos = fs.readdirSync(PASTA_PDFS).filter(f => f.endsWith(".pdf"));
-
-  if (arquivos.length === 0) {
-    console.log("ℹ️ Nenhum PDF encontrado na pasta.");
-    return;
-  }
-
-  for (const arquivo of arquivos) {
-    const caminho = path.join(PASTA_PDFS, arquivo);
-    await processarPdf(caminho);
-  }
-
-  console.log("🎉 Todos os PDFs foram processados!");
-}
-
-// Executar automaticamente se rodar diretamente
-if (import.meta.url === `file://${process.argv[1]}`) {
-  processarTodosPDFs();
 }
 
