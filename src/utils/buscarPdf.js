@@ -3,6 +3,8 @@
 import OpenAI from "openai";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
+
 
 dotenv.config();
 
