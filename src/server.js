@@ -22,7 +22,7 @@ import { falar, sendAudio } from "./utils/speak.js";
 import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
-import { funcoesExtras } from "./utils/funcoesExtras.js";
+//import { funcoesExtras } from "./utils/funcoesExtras.js";
 
 dotenv.config();
 
