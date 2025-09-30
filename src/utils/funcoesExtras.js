@@ -9,6 +9,7 @@ import { DateTime } from "luxon";
 import axios from "axios";
 import { getTodayEvents, addEvent, saveMemory, db } from "../server.js";
 import { buscarPergunta } from "./buscarPdf.js";
+import { getWeather } from "./weather.js"; // precisa existir no projeto
 
 export async function funcoesExtras(from, texto) {
   const t = texto.toLowerCase();
