@@ -434,7 +434,7 @@ app.post("/webhook", async (req, res) => {
     };
 
     // ===== Verifica se o texto se encaixa em alguma função extra =====
-//let reply = await funcoesExtras(from, body);
+  let reply = await funcoesExtras(from, body);
 
   if (!reply) {
   // ===== Se não for função extra, verifica resposta treinada =====
