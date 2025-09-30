@@ -477,5 +477,10 @@ if (!reply) {
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-export { askGPT };
-
+export { 
+  askGPT,
+  getTodayEvents, 
+  addEvent, 
+  saveMemory, 
+  db 
+};
