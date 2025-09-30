@@ -24,21 +24,12 @@ import { buscarPergunta } from "./utils/buscarPdf.js"; // <-- adicionado
 import multer from "multer";
 import { processarPdf } from "./utils/processarPdf.js";
 
-const upload = multer({ dest: "uploads/" });
-
-// Rota para receber PDFs
-app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
-  try {
-    console.log(`📥 Recebido PDF: ${req.file.originalname}`);
-    await processarPdf(req.file.path);
-    res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
-  } catch (err) {
-    console.error("❌ Erro ao processar PDF:", err);
-    res.status(500).send("Erro ao processar PDF");
-  }
-});
-
 dotenv.config();
+
+const app = express();
+app.use(bodyParser.json());
+
+const upload = multer({ dest: "uploads/" });
 
 // ===== Papéis Profissionais =====
 const profissoes = [
@@ -107,9 +98,6 @@ function verificarComandoProfissao(texto) {
   return null;
 }
 
-const app = express();
-app.use(bodyParser.json());
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
@@ -142,6 +130,19 @@ const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 
 const userStates = {};
 
+// ===== ROTA PARA RECEBER PDFs =====
+app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
+  try {
+    console.log(`📥 Recebido PDF: ${req.file.originalname}`);
+    await processarPdf(req.file.path);
+    res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
+  } catch (err) {
+    console.error("❌ Erro ao processar PDF:", err);
+    res.status(500).send("Erro ao processar PDF");
+  }
+});
+
+// ===== Funções de GPT, WhatsApp, Memória, etc =====
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
@@ -192,6 +193,7 @@ async function sendMessage(to, message) {
   }
 }
 
+// ===== Outras funções auxiliares =====
 async function getUserName(number) {
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
@@ -237,6 +239,7 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
+// ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
   await db.collection("donna").insertOne({
     numero: number,
