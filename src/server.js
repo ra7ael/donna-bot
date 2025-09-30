@@ -13,7 +13,6 @@ import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from './utils/downloadMedia.js';
 import cron from "node-cron";
-import { responderFAQ } from "./utils/faqHandler.js";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
 import path from "path";
@@ -23,7 +22,6 @@ import { falar, sendAudio } from "./utils/speak.js";
 import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
-import { processarPdf } from "./utils/processarPdf.js";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 dotenv.config();
 
