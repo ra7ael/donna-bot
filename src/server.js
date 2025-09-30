@@ -21,6 +21,22 @@ import FormData from "form-data";
 import { falar, sendAudio } from "./utils/speak.js";
 import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 import { buscarPergunta } from "./utils/buscarPdf.js"; // <-- adicionado
+import multer from "multer";
+import { processarPdf } from "./utils/processarPdf.js";
+
+const upload = multer({ dest: "uploads/" });
+
+// Rota para receber PDFs
+app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
+  try {
+    console.log(`📥 Recebido PDF: ${req.file.originalname}`);
+    await processarPdf(req.file.path);
+    res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
+  } catch (err) {
+    console.error("❌ Erro ao processar PDF:", err);
+    res.status(500).send("Erro ao processar PDF");
+  }
+});
 
 dotenv.config();
 
