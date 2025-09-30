@@ -451,6 +451,7 @@ if (!reply) {
     reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
     await treinarDonna(promptBody, reply);
   }
+}
 
     await saveMemory(from, "user", promptBody);
     await saveMemory(from, "assistant", reply);
