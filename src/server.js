@@ -433,20 +433,24 @@ app.post("/webhook", async (req, res) => {
 - Não invente informações; se não souber, admita de forma educada.`
     };
 
-    // ===== Verifica se há resposta treinada =====
-    let reply = await obterResposta(promptBody);
+    // ===== Verifica se o texto se encaixa em alguma função extra =====
+let reply = await funcoesExtras(from, body);
 
-    if (!reply) {
-      // ===== Buscar trechos do PDF =====
-      const pdfTrechos = await buscarPergunta(promptBody);
-      const promptFinal = pdfTrechos
-        ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
-        : promptBody;
+if (!reply) {
+  // ===== Se não for função extra, verifica resposta treinada =====
+  reply = await obterResposta(promptBody);
 
-      // Se não tem resposta treinada, usa GPT
-      reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
-      await treinarDonna(promptBody, reply);
-    }
+  if (!reply) {
+    // ===== Buscar trechos do PDF =====
+    const pdfTrechos = await buscarPergunta(promptBody);
+    const promptFinal = pdfTrechos
+      ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
+      : promptBody;
+
+    // Se não tem resposta treinada, usa GPT
+    reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
+    await treinarDonna(promptBody, reply);
+  }
 
     await saveMemory(from, "user", promptBody);
     await saveMemory(from, "assistant", reply);
