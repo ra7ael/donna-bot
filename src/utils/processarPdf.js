@@ -37,6 +37,7 @@ export async function processarPdf(caminhoArquivo) {
 
     const dataBuffer = fs.readFileSync(caminhoArquivo);
     const pdfData = await pdfParse(dataBuffer);
+
     const textoExtraido = pdfData.text || "";
 
     // Salva no MongoDB
