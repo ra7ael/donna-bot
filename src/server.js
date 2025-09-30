@@ -3,7 +3,7 @@
 import express from 'express';
 import OpenAI from "openai";
 import { MongoClient } from 'mongodb';
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import pdfParse from "pdf-parse";
 import bodyParser from "body-parser";
 import axios from 'axios';
 import dotenv from 'dotenv';
