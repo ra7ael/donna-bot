@@ -23,6 +23,8 @@ import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/tre
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
+import { processarTodosPDFs } from "./utils/processarPdf.js"; // importar a função
+
 dotenv.config();
 
 const app = express();
