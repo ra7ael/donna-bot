@@ -10,16 +10,20 @@ import { getTodayEvents, addEvent, saveMemory } from "../server.js";
 import { buscarPergunta } from "./buscarPdf.js";
 import { getWeather } from "./weather.js";
 
+const fusoSP = "America/Sao_Paulo";
+
 export async function funcoesExtras(from, texto) {
   const normalize = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const t = normalize(texto.toLowerCase());
 
+  const agora = DateTime.now().setZone(fusoSP);
+
   // ===== Funções gerais =====
   if (t.includes("que horas") || t.includes("horas sao") || t.includes("horas agora")) 
-    return `🕒 Agora são ${DateTime.now().toFormat("HH:mm")}`;
+    return `🕒 Agora são ${agora.toFormat("HH:mm")}`;
 
   if (t.includes("data de hoje") || t.includes("que dia é hoje")) 
-    return `📅 Hoje é ${DateTime.now().toLocaleString(DateTime.DATE_FULL)}`;
+    return `📅 Hoje é ${agora.toLocaleString(DateTime.DATE_FULL)}`;
 
   if (t.includes("clima") || t.includes("temperatura")) {
     try { return `🌤️ O clima atual: ${await getWeather()}`; } 
@@ -110,7 +114,7 @@ export async function funcoesExtras(from, texto) {
   if (t.startsWith("dias entre")) {
     const match = t.match(/(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})/);
     if (match) { 
-      const diff = Math.abs(DateTime.fromISO(match[2]).diff(DateTime.fromISO(match[1]), "days").days);
+      const diff = Math.abs(DateTime.fromISO(match[2], {zone: fusoSP}).diff(DateTime.fromISO(match[1], {zone: fusoSP}), "days").days);
       return `📆 Dias entre datas: ${diff}`;
     }
     return "❌ Use formato: 'dias entre 2025-09-01 2025-09-30'";
@@ -123,13 +127,12 @@ export async function funcoesExtras(from, texto) {
     return "😂 Por que o computador foi ao médico? Porque estava com vírus!";
 
   if (t.includes("fuso horário")) 
-    return `🌍 O fuso horário atual é ${DateTime.now().offsetNameShort}`;
+    return `🌍 O fuso horário atual é ${agora.offsetNameShort}`;
 
   if (t.includes("dia da semana") || t.includes("que dia caiu")) 
-    return `📅 Hoje é ${DateTime.now().toFormat("cccc")}`;
+    return `📅 Hoje é ${agora.toFormat("cccc")}`;
 
   if (t.includes("segundos desde meia-noite")) {
-    const agora = DateTime.now();
     const segundos = agora.diff(agora.startOf("day"), "seconds").seconds;
     return `⏱️ Segundos desde meia-noite: ${Math.floor(segundos)}`;
   }
@@ -157,6 +160,15 @@ export async function funcoesExtras(from, texto) {
     return `💾 Informação salva na memória: ${info}`;
   }
 
+  // ===== Novas funções por categoria =====
+  // (aqui adicionaremos as 60 funções novas organizadas por tema)
+  // Exemplo rápido para DP e Folha:
+  if (t.includes("calcular férias")) return "📌 Função: cálculo de férias do colaborador (simulação)";
+  if (t.includes("calcular décimo terceiro")) return "📌 Função: cálculo de décimo terceiro salário (simulação)";
+  if (t.includes("gerar holerite")) return "📌 Função: gerar holerite em PDF (simulação)";
+  if (t.includes("admissão de funcionário")) return "📌 Função: cadastro de novo funcionário (simulação)";
+  if (t.includes("demissão de funcionário")) return "📌 Função: demissão e baixa no sistema (simulação)";
+
   // ===== Se nada se aplica =====
   return null;
-}
+                            }
