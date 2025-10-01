@@ -14,97 +14,134 @@ import { db } from "../server.js"; // importa a conexão já aberta no server
 
 const fusoSP = "America/Sao_Paulo";
 
+// Coleção de tarefas no Mongo
+const tasksCollection = () => db.collection("tasks");
+
+/**
+ * Cria um novo lembrete/tarefa
+ */
+export async function criarLembrete(numero, titulo, descricao, data, hora) {
+  const task = {
+    numero,
+    titulo,
+    descricao: descricao || titulo,
+    data, // formato YYYY-MM-DD
+    hora, // formato HH:mm
+    concluido: false,
+    criadoEm: new Date(),
+  };
+
+  const result = await tasksCollection().insertOne(task);
+  return { ...task, _id: result.insertedId };
+}
+
+/**
+ * Lista todos os lembretes/tarefas de um número
+ */
+export async function listarLembretes(numero) {
+  const tasks = await tasksCollection()
+    .find({ numero })
+    .sort({ data: 1, hora: 1 })
+    .toArray();
+
+  if (!tasks.length) return "Você não tem nenhum lembrete cadastrado.";
+
+  return tasks
+    .map(
+      (t, i) =>
+        `${i + 1}. ${t.titulo} - ${t.data} ${t.hora || ""} ${
+          t.concluido ? "✅" : "⏳"
+        }`
+    )
+    .join("\n");
+}
+
+/**
+ * Lista apenas os lembretes de hoje
+ */
+export async function listarLembretesHoje(numero) {
+  const hoje = DateTime.now().toFormat("yyyy-MM-dd");
+  const tasks = await tasksCollection()
+    .find({ numero, data: hoje })
+    .sort({ hora: 1 })
+    .toArray();
+
+  if (!tasks.length) return "Você não tem lembretes para hoje.";
+
+  return tasks
+    .map(
+      (t, i) =>
+        `${i + 1}. ${t.titulo} - ${t.hora || "sem horário"} ${
+          t.concluido ? "✅" : "⏳"
+        }`
+    )
+    .join("\n");
+}
+
+/**
+ * Marca um lembrete como concluído
+ */
+export async function concluirLembrete(taskId) {
+  await tasksCollection().updateOne(
+    { _id: new ObjectId(taskId) },
+    { $set: { concluido: true } }
+  );
+  return "✅ Lembrete marcado como concluído.";
+}
+
+/**
+ * Remove um lembrete pelo ID
+ */
+export async function removerLembrete(taskId) {
+  await tasksCollection().deleteOne({ _id: new ObjectId(taskId) });
+  return "🗑️ Lembrete removido.";
+}
+
+/**
+ * Função principal de execução de comandos extras
+ */
 export async function funcoesExtras(from, texto) {
   const normalize = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const t = normalize(texto.toLowerCase());
-
   const agora = DateTime.now().setZone(fusoSP);
 
-  // Coleção de tarefas no Mongo
-  const tasksCollection = () => db.collection("tasks");
+  // ===== Comandos de lembretes com ID =====
+  if (t.startsWith("concluir lembrete")) {
+    const match = t.match(/concluir lembrete (\d+)/);
+    if (!match) return "❌ Informe o número do lembrete, ex: 'concluir lembrete 2'";
+    const index = parseInt(match[1]) - 1;
 
-  /**
-   * Cria um novo lembrete/tarefa
-   */
-  async function criarLembrete(numero, titulo, descricao, data, hora) {
-    const task = {
-      numero,
-      titulo,
-      descricao: descricao || titulo,
-      data, // formato YYYY-MM-DD
-      hora, // formato HH:mm
-      concluido: false,
-      criadoEm: new Date(),
-    };
+    const tasks = await tasksCollection().find({ numero: from }).sort({ data: 1, hora: 1 }).toArray();
+    if (!tasks[index]) return "❌ Número inválido. Confira a lista de lembretes.";
 
-    const result = await tasksCollection().insertOne(task);
-    return { ...task, _id: result.insertedId };
+    await concluirLembrete(tasks[index]._id);
+    return `✅ Lembrete "${tasks[index].titulo}" marcado como concluído.`;
   }
 
-  /**
-   * Lista todos os lembretes/tarefas de um número
-   */
-  async function listarLembretes(numero) {
-    const tasks = await tasksCollection()
-      .find({ numero })
-      .sort({ data: 1, hora: 1 })
-      .toArray();
+  if (t.startsWith("remover lembrete")) {
+    const match = t.match(/remover lembrete (\d+)/);
+    if (!match) return "❌ Informe o número do lembrete, ex: 'remover lembrete 3'";
+    const index = parseInt(match[1]) - 1;
 
-    if (!tasks.length) {
-      return "Você não tem nenhum lembrete cadastrado.";
-    }
+    const tasks = await tasksCollection().find({ numero: from }).sort({ data: 1, hora: 1 }).toArray();
+    if (!tasks[index]) return "❌ Número inválido. Confira a lista de lembretes.";
 
-    return tasks
-      .map(
-        (t, i) =>
-          `${i + 1}. ${t.titulo} - ${t.data} ${t.hora || ""} ${
-            t.concluido ? "✅" : "⏳"
-          }`
-      )
-      .join("\n");
+    await removerLembrete(tasks[index]._id);
+    return `🗑️ Lembrete "${tasks[index].titulo}" removido com sucesso.`;
   }
 
-  /**
-   * Lista apenas os lembretes de hoje
-   */
-  async function listarLembretesHoje(numero) {
-    const hoje = DateTime.now().toFormat("yyyy-MM-dd");
-    const tasks = await tasksCollection()
-      .find({ numero, data: hoje })
-      .sort({ hora: 1 })
-      .toArray();
-
-    if (!tasks.length) {
-      return "Você não tem lembretes para hoje.";
-    }
-
-    return tasks
-      .map(
-        (t, i) =>
-          `${i + 1}. ${t.titulo} - ${t.hora || "sem horário"} ${
-            t.concluido ? "✅" : "⏳"
-          }`
-      )
-      .join("\n");
+  // Comandos antigos de criação/listagem de lembretes (simulação ou texto livre)
+  if (t.startsWith("lembrete") || t.startsWith("adicionar tarefa") || t.startsWith("nova tarefa")) {
+    const tarefa = t.replace(/lembrete|adicionar tarefa|nova tarefa/, "").trim();
+    if (!tarefa) return "❌ Informe uma mensagem ou tarefa.";
+    const hoje = agora.toFormat("yyyy-MM-dd");
+    const hora = agora.toFormat("HH:mm");
+    const task = await criarLembrete(from, tarefa, tarefa, hoje, hora);
+    return `✅ Tarefa criada: "${tarefa}" (ID: ${task._id})`;
   }
 
-  /**
-   * Marca um lembrete como concluído
-   */
-  async function concluirLembrete(taskId) {
-    await tasksCollection().updateOne(
-      { _id: new ObjectId(taskId) },
-      { $set: { concluido: true } }
-    );
-    return "✅ Lembrete marcado como concluído.";
-  }
-
-  /**
-   * Remove um lembrete pelo ID
-   */
-  async function removerLembrete(taskId) {
-    await tasksCollection().deleteOne({ _id: new ObjectId(taskId) });
-    return "🗑️ Lembrete removido.";
+  if (t.includes("minhas tarefas") || t.includes("listar tarefas") || t.includes("listar lembretes")) {
+    return await listarLembretes(from);
   }
 
   // ===== Funções gerais =====
@@ -119,85 +156,10 @@ export async function funcoesExtras(from, texto) {
     catch { return "❌ Não consegui obter o clima no momento."; }
   }
 
-  if (t.includes("teste")) return "✅ Função extra funcionando!";
-
   if (t.startsWith("contagem regressiva")) {
     const match = t.match(/\d+/);
     return match ? `⏱️ Começando contagem regressiva de ${match[0]} segundos!`
                  : "❌ Informe a quantidade de segundos, ex: 'contagem regressiva 10'";
-  }
-
-  if (t.includes("converta") && t.includes("brl para usd")) {
-    const match = t.match(/[\d,.]+/);
-    return match ? `💰 ${parseFloat(match[0].replace(",", ".")) * 0.20} USD`
-                 : "❌ Informe o valor em BRL, ex: 'converta 50 BRL para USD'";
-  }
-
-  if (t.includes("converta") && t.includes("usd para brl")) {
-    const match = t.match(/[\d,.]+/);
-    return match ? `💰 ${parseFloat(match[0].replace(",", ".")) * 5.0} BRL`
-                 : "❌ Informe o valor em USD, ex: 'converta 10 USD para BRL'";
-  }
-
-  // Operações matemáticas básicas
-  const opMap = {
-    soma: (nums) => nums.reduce((a, b) => a + b, 0),
-    subtraia: (nums) => nums.reduce((a, b) => a - b),
-    multiplique: (nums) => nums.reduce((a, b) => a * b, 1),
-    divida: (nums) => nums.length >= 2 ? (nums.reduce((a, b) => a / b)).toFixed(2) : null
-  };
-
-  for (let key of Object.keys(opMap)) {
-    if (t.startsWith(key)) {
-      const nums = t.match(/-?\d+(\.\d+)?/g)?.map(Number);
-      if (!nums || (key === "subtraia" || key === "divida") && nums.length < 2) 
-        return `❌ Informe números válidos, ex: '${key} 10 2'`;
-      return `➗ Resultado: ${opMap[key](nums)}`;
-    }
-  }
-
-  if (t.includes("número aleatório") || t.includes("numero aleatorio")) {
-    const min = t.match(/min\s*(\d+)/)?.[1] || 0;
-    const max = t.match(/max\s*(\d+)/)?.[1] || 100;
-    return `🎲 Número aleatório: ${Math.floor(Math.random() * (max - min + 1)) + parseInt(min)}`;
-  }
-
-  if (t.startsWith("lembrete") || t.startsWith("adicionar tarefa") || t.startsWith("nova tarefa")) {
-    const tarefa = t.replace(/lembrete|adicionar tarefa|nova tarefa/, "").trim();
-    return tarefa ? `✅ Tarefa criada: "${tarefa}" (simulação)` 
-                  : "❌ Informe uma mensagem ou tarefa.";
-  }
-
-  if (t.includes("minhas tarefas") || t.includes("listar tarefas"))
-    return "📋 Suas tarefas: [simulação] 1. Estudar JS 2. Revisar PDF 3. Treinar Donna";
-
-  if (t.startsWith("traduzir")) {
-    const palavra = t.replace("traduzir", "").trim();
-    return palavra ? `🌐 "${palavra}" em inglês é "${palavra}-en" (simulação)`
-                   : "❌ Informe a palavra, ex: 'traduzir casa'";
-  }
-
-  if (t.includes("bitcoin") || t.includes("btc")) {
-    try { const res = await axios.get("https://api.coindesk.com/v1/bpi/currentprice.json");
-          return `₿ Bitcoin: $${res.data.bpi.USD.rate}`; } 
-    catch { return "❌ Não consegui obter cotação do Bitcoin agora."; }
-  }
-
-  if (t.includes("dólar") || t.includes("dolar")) {
-    try { const res = await axios.get("https://economia.awesomeapi.com.br/json/last/USD-BRL");
-          return `💵 Dólar: R$${res.data["USDBRL"].bid}`; } 
-    catch { return "❌ Não consegui obter cotação do dólar agora."; }
-  }
-
-  if (t.includes("euro")) {
-    try { const res = await axios.get("https://economia.awesomeapi.com.br/json/last/EUR-BRL");
-          return `💶 Euro: R$${res.data["EURBRL"].bid}`; } 
-    catch { return "❌ Não consegui obter cotação do euro agora."; }
-  }
-
-  if (t.includes("resumo pdf") || t.includes("trecho pdf")) {
-    const pdfTrechos = await buscarPergunta(texto);
-    return pdfTrechos ? `📄 Trechos encontrados:\n${pdfTrechos}` : "❌ Não encontrei nada nos PDFs.";
   }
 
   if (t.startsWith("dias entre")) {
