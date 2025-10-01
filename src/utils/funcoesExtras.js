@@ -20,92 +20,92 @@ export async function funcoesExtras(from, texto) {
 
   const agora = DateTime.now().setZone(fusoSP);
 
-// Coleção de tarefas no Mongo
-const tasksCollection = () => db.collection("tasks");
+  // Coleção de tarefas no Mongo
+  const tasksCollection = () => db.collection("tasks");
 
-/**
- * Cria um novo lembrete/tarefa
- */
-async function criarLembrete(numero, titulo, descricao, data, hora) {
-  const task = {
-    numero,
-    titulo,
-    descricao: descricao || titulo,
-    data, // formato YYYY-MM-DD
-    hora, // formato HH:mm
-    concluido: false,
-    criadoEm: new Date(),
-  };
+  /**
+   * Cria um novo lembrete/tarefa
+   */
+  async function criarLembrete(numero, titulo, descricao, data, hora) {
+    const task = {
+      numero,
+      titulo,
+      descricao: descricao || titulo,
+      data, // formato YYYY-MM-DD
+      hora, // formato HH:mm
+      concluido: false,
+      criadoEm: new Date(),
+    };
 
-  const result = await tasksCollection().insertOne(task);
-  return { ...task, _id: result.insertedId };
-}
-
-/**
- * Lista todos os lembretes/tarefas de um número
- */
-async function listarLembretes(numero) {
-  const tasks = await tasksCollection()
-    .find({ numero })
-    .sort({ data: 1, hora: 1 })
-    .toArray();
-
-  if (!tasks.length) {
-    return "Você não tem nenhum lembrete cadastrado.";
+    const result = await tasksCollection().insertOne(task);
+    return { ...task, _id: result.insertedId };
   }
 
-  return tasks
-    .map(
-      (t, i) =>
-        `${i + 1}. ${t.titulo} - ${t.data} ${t.hora || ""} ${
-          t.concluido ? "✅" : "⏳"
-        }`
-    )
-    .join("\n");
-}
+  /**
+   * Lista todos os lembretes/tarefas de um número
+   */
+  async function listarLembretes(numero) {
+    const tasks = await tasksCollection()
+      .find({ numero })
+      .sort({ data: 1, hora: 1 })
+      .toArray();
 
-/**
- * Lista apenas os lembretes de hoje
- */
-async function listarLembretesHoje(numero) {
-  const hoje = DateTime.now().toFormat("yyyy-MM-dd");
-  const tasks = await tasksCollection()
-    .find({ numero, data: hoje })
-    .sort({ hora: 1 })
-    .toArray();
+    if (!tasks.length) {
+      return "Você não tem nenhum lembrete cadastrado.";
+    }
 
-  if (!tasks.length) {
-    return "Você não tem lembretes para hoje.";
+    return tasks
+      .map(
+        (t, i) =>
+          `${i + 1}. ${t.titulo} - ${t.data} ${t.hora || ""} ${
+            t.concluido ? "✅" : "⏳"
+          }`
+      )
+      .join("\n");
   }
 
-  return tasks
-    .map(
-      (t, i) =>
-        `${i + 1}. ${t.titulo} - ${t.hora || "sem horário"} ${
-          t.concluido ? "✅" : "⏳"
-        }`
-    )
-    .join("\n");
-}
+  /**
+   * Lista apenas os lembretes de hoje
+   */
+  async function listarLembretesHoje(numero) {
+    const hoje = DateTime.now().toFormat("yyyy-MM-dd");
+    const tasks = await tasksCollection()
+      .find({ numero, data: hoje })
+      .sort({ hora: 1 })
+      .toArray();
 
-/**
- * Marca um lembrete como concluído
- */
-async function concluirLembrete(taskId) {
-  await tasksCollection().updateOne(
-    { _id: new ObjectId(taskId) },
-    { $set: { concluido: true } }
-  );
-  return "✅ Lembrete marcado como concluído.";
-}
+    if (!tasks.length) {
+      return "Você não tem lembretes para hoje.";
+    }
 
-/**
- * Remove um lembrete pelo ID
- */
-async function removerLembrete(taskId) {
-  await tasksCollection().deleteOne({ _id: new ObjectId(taskId) });
-  return "🗑️ Lembrete removido.";
-}
+    return tasks
+      .map(
+        (t, i) =>
+          `${i + 1}. ${t.titulo} - ${t.hora || "sem horário"} ${
+            t.concluido ? "✅" : "⏳"
+          }`
+      )
+      .join("\n");
+  }
+
+  /**
+   * Marca um lembrete como concluído
+   */
+  async function concluirLembrete(taskId) {
+    await tasksCollection().updateOne(
+      { _id: new ObjectId(taskId) },
+      { $set: { concluido: true } }
+    );
+    return "✅ Lembrete marcado como concluído.";
+  }
+
+  /**
+   * Remove um lembrete pelo ID
+   */
+  async function removerLembrete(taskId) {
+    await tasksCollection().deleteOne({ _id: new ObjectId(taskId) });
+    return "🗑️ Lembrete removido.";
+  }
 
   // ===== Funções gerais =====
   if (t.includes("que horas") || t.includes("horas sao") || t.includes("horas agora")) 
@@ -249,24 +249,13 @@ async function removerLembrete(taskId) {
     return `💾 Informação salva na memória: ${info}`;
   }
 
-  // ===== Novas funções por categoria =====
-  // (aqui adicionaremos as 60 funções novas organizadas por tema)
-  // Exemplo rápido para DP e Folha:
+ // ===== Novas funções por categoria (DP e Folha) =====
   if (t.includes("calcular férias")) return "📌 Função: cálculo de férias do colaborador (simulação)";
   if (t.includes("calcular décimo terceiro")) return "📌 Função: cálculo de décimo terceiro salário (simulação)";
   if (t.includes("gerar holerite")) return "📌 Função: gerar holerite em PDF (simulação)";
   if (t.includes("admissão de funcionário")) return "📌 Função: cadastro de novo funcionário (simulação)";
   if (t.includes("demissão de funcionário")) return "📌 Função: demissão e baixa no sistema (simulação)";
 
-
-module.exports = {
-  criarLembrete,
-  listarLembretes,
-  listarLembretesHoje,
-  concluirLembrete,
-  removerLembrete,
-};
-  
   // ===== Se nada se aplica =====
   return null;
-                            }
+}
