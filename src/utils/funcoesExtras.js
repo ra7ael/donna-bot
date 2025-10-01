@@ -130,6 +130,8 @@ export async function funcoesExtras(from, texto) {
     return `🗑️ Lembrete "${tasks[index].titulo}" removido com sucesso.`;
   }
 
+  
+
   // Comandos antigos de criação/listagem de lembretes (simulação ou texto livre)
   if (t.startsWith("lembrete") || t.startsWith("adicionar tarefa") || t.startsWith("nova tarefa")) {
     const tarefa = t.replace(/lembrete|adicionar tarefa|nova tarefa/, "").trim();
