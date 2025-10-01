@@ -1,8 +1,9 @@
+// src/cron/reminders.js
 import cron from "node-cron";
 import { DateTime } from "luxon";
 
 /**
- * Inicia o cron de lembretes
+ * Inicia o cron de lembretes na coleção "lembretes"
  * @param {import('mongodb').Db} db - instância do MongoDB
  * @param {Function} sendMessage - função para enviar WhatsApp
  */
@@ -34,7 +35,6 @@ export function startReminderCron(db, sendMessage) {
       }
 
       for (const reminder of reminders) {
-        // Checa hora exata
         if (reminder.hora === currentTime) {
           console.log(`🔔 Enviando lembrete para ${reminder.numero}: ${reminder.titulo}`);
           await sendMessage(reminder.numero, `⏰ Lembrete: ${reminder.titulo} às ${reminder.hora}`);
@@ -43,7 +43,7 @@ export function startReminderCron(db, sendMessage) {
             { $set: { sent: true, enviadoEm: new Date() } }
           );
         } else {
-          console.log(`⏳ Lembrete ${reminder.titulo} ainda não é hora (${reminder.hora})`);
+          console.log(`⏳ Lembrete "${reminder.titulo}" ainda não é hora (${reminder.hora})`);
         }
       }
     } catch (err) {
@@ -76,4 +76,3 @@ export async function addReminder(db, numero, titulo, data, hora) {
 
   console.log(`✅ Lembrete adicionado para ${numero}: "${titulo}" em ${data} ${hora}`);
 }
-
