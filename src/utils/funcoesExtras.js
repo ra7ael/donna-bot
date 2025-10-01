@@ -26,7 +26,7 @@ const tasksCollection = () => db.collection("tasks");
 /**
  * Cria um novo lembrete/tarefa
  */
-export async function criarLembrete(numero, titulo, descricao, data, hora) {
+async function criarLembrete(numero, titulo, descricao, data, hora) {
   const task = {
     numero,
     titulo,
@@ -44,7 +44,7 @@ export async function criarLembrete(numero, titulo, descricao, data, hora) {
 /**
  * Lista todos os lembretes/tarefas de um número
  */
-export async function listarLembretes(numero) {
+async function listarLembretes(numero) {
   const tasks = await tasksCollection()
     .find({ numero })
     .sort({ data: 1, hora: 1 })
@@ -67,7 +67,7 @@ export async function listarLembretes(numero) {
 /**
  * Lista apenas os lembretes de hoje
  */
-export async function listarLembretesHoje(numero) {
+async function listarLembretesHoje(numero) {
   const hoje = DateTime.now().toFormat("yyyy-MM-dd");
   const tasks = await tasksCollection()
     .find({ numero, data: hoje })
@@ -91,7 +91,7 @@ export async function listarLembretesHoje(numero) {
 /**
  * Marca um lembrete como concluído
  */
-export async function concluirLembrete(taskId) {
+async function concluirLembrete(taskId) {
   await tasksCollection().updateOne(
     { _id: new ObjectId(taskId) },
     { $set: { concluido: true } }
@@ -102,7 +102,7 @@ export async function concluirLembrete(taskId) {
 /**
  * Remove um lembrete pelo ID
  */
-export async function removerLembrete(taskId) {
+async function removerLembrete(taskId) {
   await tasksCollection().deleteOne({ _id: new ObjectId(taskId) });
   return "🗑️ Lembrete removido.";
 }
@@ -258,6 +258,15 @@ export async function removerLembrete(taskId) {
   if (t.includes("admissão de funcionário")) return "📌 Função: cadastro de novo funcionário (simulação)";
   if (t.includes("demissão de funcionário")) return "📌 Função: demissão e baixa no sistema (simulação)";
 
+
+module.exports = {
+  criarLembrete,
+  listarLembretes,
+  listarLembretesHoje,
+  concluirLembrete,
+  removerLembrete,
+};
+  
   // ===== Se nada se aplica =====
   return null;
                             }
