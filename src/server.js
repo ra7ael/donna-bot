@@ -30,13 +30,6 @@ const app = express();
 app.use(bodyParser.json());
 
 const upload = multer({ dest: "uploads/" });
-const {
-  criarLembrete,
-  listarLembretes,
-  listarLembretesHoje,
-  concluirLembrete,
-  removerLembrete,
-} = require("./utils/funcoesExtras");
 
 // ===== Papéis Profissionais =====
 const profissoes = [
