@@ -24,7 +24,7 @@ export function startReminderCron(db, sendMessage) {
       console.log(`⏰ Checando lembretes para hoje (${today}) às ${currentTime}`);
 
       const reminders = await db
-        .collection("donna")
+        .collection("lembretes")
         .find({ data: today, sent: false })
         .toArray();
 
@@ -38,7 +38,7 @@ export function startReminderCron(db, sendMessage) {
         if (reminder.hora === currentTime) {
           console.log(`🔔 Enviando lembrete para ${reminder.numero}: ${reminder.titulo}`);
           await sendMessage(reminder.numero, `⏰ Lembrete: ${reminder.titulo} às ${reminder.hora}`);
-          await db.collection("donna").updateOne(
+          await db.collection("lembretes").updateOne(
             { _id: reminder._id },
             { $set: { sent: true, enviadoEm: new Date() } }
           );
@@ -65,7 +65,7 @@ export async function addReminder(db, numero, titulo, data, hora) {
     throw new Error("Campos obrigatórios faltando para adicionar lembrete.");
   }
 
-  await db.collection("donna").insertOne({
+  await db.collection("lembretes").insertOne({
     numero,
     titulo,
     data,
