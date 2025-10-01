@@ -9,7 +9,7 @@ import pdfParse from "pdf-parse/lib/pdf-parse.js";
 dotenv.config();
 
 const client = new MongoClient(process.env.MONGO_URI);
-const dbName = "donnaDB";
+const dbName = "donna";
 const colecao = "pdfEmbeddings";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
