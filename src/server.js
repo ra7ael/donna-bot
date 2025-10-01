@@ -241,7 +241,7 @@ async function transcribeAudio(audioBuffer) {
 
 // ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
-  await db.collection("donna").insertOne({
+  await db.collection("agenda").insertOne({
     numero: number,
     titulo: title,
     descricao: description || title,
@@ -254,7 +254,7 @@ async function addEvent(number, title, description, date, time) {
 
 async function getTodayEvents(number) {
   const today = DateTime.now().toFormat("yyyy-MM-dd");
-  return await db.collection("donna").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
+  return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
 // ===== Webhook WhatsApp =====
