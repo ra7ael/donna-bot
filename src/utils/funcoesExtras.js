@@ -508,6 +508,103 @@ if (t.includes("checklist auditoria")) {
   return "Checklist de Auditoria RH:\n- Contratos assinados.\n- Folhas de ponto.\n- Benefícios pagos.\n- Treinamentos registrados.";
 }
 
+  // ==========================
+// Funções Departamento Pessoal (DP) e Folha de Pagamento
+// ==========================
+
+// ===== 1. Cálculo de férias =====
+if (t.includes("calcular férias")) {
+  const match = t.match(/(\d+(?:\.\d+)?) dias?/);
+  const dias = match ? parseFloat(match[1]) : 30;
+  const salario = t.match(/(\d+(?:\.\d+)?)/) ? parseFloat(t.match(/(\d+(?:\.\d+)?)/)[1]) : 0;
+  const valorFerias = ((salario / 30) * dias * 1.3333).toFixed(2); // 1/3 constitucional
+  return `💼 Férias de ${dias} dias = R$ ${valorFerias} (inclui 1/3 constitucional)`;
+}
+
+// ===== 2. Cálculo de 13º salário =====
+if (t.includes("calcular 13º")) {
+  const salario = t.match(/(\d+(?:\.\d+)?)/) ? parseFloat(t.match(/(\d+(?:\.\d+)?)/)[1]) : 0;
+  const meses = t.match(/(\d+)\s*meses?/) ? parseInt(t.match(/(\d+)\s*meses?/)[1]) : 12;
+  const valor = ((salario / 12) * meses).toFixed(2);
+  return `💰 13º salário proporcional (${meses} meses) = R$ ${valor}`;
+}
+
+// ===== 3. Cálculo de rescisão =====
+if (t.includes("calcular rescisão")) {
+  const salario = t.match(/(\d+(?:\.\d+)?)/) ? parseFloat(t.match(/(\d+(?:\.\d+)?)/)[1]) : 0;
+  const diasTrabalhados = t.match(/(\d+) dias?/) ? parseInt(t.match(/(\d+) dias?/)[1]) : 30;
+  const aviso = t.includes("indenizado") ? salario : 0;
+  const ferias = (salario / 30 * diasTrabalhados * 1.3333).toFixed(2);
+  const total = (parseFloat(ferias) + aviso).toFixed(2);
+  return `⚖️ Rescisão aproximada = R$ ${total} (Férias: R$${ferias}, Aviso: R$${aviso})`;
+}
+
+// ===== 4. INSS a pagar =====
+if (t.includes("calcular inss")) {
+  const salario = t.match(/(\d+(?:\.\d+)?)/) ? parseFloat(t.match(/(\d+(?:\.\d+)?)/)[1]) : 0;
+  let desconto = 0;
+  if (salario <= 1302) desconto = salario * 0.075;
+  else if (salario <= 2571.29) desconto = salario * 0.09;
+  else if (salario <= 3856.94) desconto = salario * 0.12;
+  else if (salario <= 7507.49) desconto = salario * 0.14;
+  else desconto = 1050.88; // teto 2025
+  return `📌 INSS a pagar = R$ ${desconto.toFixed(2)}`;
+}
+
+// ===== 5. IRRF a pagar =====
+if (t.includes("calcular irrf")) {
+  const salario = t.match(/(\d+(?:\.\d+)?)/) ? parseFloat(t.match(/(\d+(?:\.\d+)?)/)[1]) : 0;
+  const dependentes = t.match(/(\d+) dependentes?/) ? parseInt(t.match(/(\d+) dependentes?/)[1]) : 0;
+  const base = salario - dependentes * 189.59; // dedução por dependente
+  let ir = 0;
+  if (base <= 1903.98) ir = 0;
+  else if (base <= 2826.65) ir = base * 0.075 - 142.80;
+  else if (base <= 3751.05) ir = base * 0.15 - 354.80;
+  else if (base <= 4664.68) ir = base * 0.225 - 636.13;
+  else ir = base * 0.275 - 869.36;
+  return `📌 IRRF a pagar ≈ R$ ${ir.toFixed(2)}`;
+}
+
+// ===== 6. Cálculo salário líquido =====
+if (t.includes("calcular salário líquido")) {
+  const salario = t.match(/(\d+(?:\.\d+)?)/) ? parseFloat(t.match(/(\d+(?:\.\d+)?)/)[1]) : 0;
+  const inss = salario <= 1302 ? salario * 0.075
+               : salario <= 2571.29 ? salario * 0.09
+               : salario <= 3856.94 ? salario * 0.12
+               : salario <= 7507.49 ? salario * 0.14
+               : 1050.88;
+  const ir = 0; // simplificado ou use função IRRF anterior
+  const liquido = salario - inss - ir;
+  return `💵 Salário líquido aproximado = R$ ${liquido.toFixed(2)} (INSS: R$${inss.toFixed(2)}, IR: R$${ir.toFixed(2)})`;
+}
+
+// ===== 7. Tabela férias =====
+if (t.includes("tabela férias")) {
+  return "Tabela de Férias Proporcional:\n- Até 12 meses: 30 dias\n- 11 meses: 27,5 dias\n- 10 meses: 25 dias\n- 9 meses: 22,5 dias\n- 8 meses: 20 dias\n- 7 meses: 17,5 dias\n- 6 meses: 15 dias\n- 5 meses: 12,5 dias\n- 4 meses: 10 dias\n- 3 meses: 7,5 dias\n- 2 meses: 5 dias\n- 1 mês: 2,5 dias";
+}
+
+// ===== 8. Aviso prévio =====
+if (t.includes("aviso prévio")) {
+  const tempo = t.match(/(\d+) anos?/) ? parseInt(t.match(/(\d+) anos?/)[1]) : 0;
+  const dias = 30 + (tempo > 1 ? Math.min((tempo - 1) * 3, 30) : 0);
+  return `📌 Aviso prévio = ${dias} dias`;
+}
+
+// ===== 9. FGTS =====
+if (t.includes("calcular fgts")) {
+  const salario = t.match(/(\d+(?:\.\d+)?)/) ? parseFloat(t.match(/(\d+(?:\.\d+)?)/)[1]) : 0;
+  const fgts = salario * 0.08;
+  return `💰 FGTS mensal = R$ ${fgts.toFixed(2)}`;
+}
+
+// ===== 10. Jornada de trabalho =====
+if (t.includes("horas trabalhadas")) {
+  const dias = t.match(/(\d+) dias?/) ? parseInt(t.match(/(\d+) dias?/)[1]) : 30;
+  const horasDia = t.match(/(\d+) horas?/) ? parseInt(t.match(/(\d+) horas?/)[1]) : 8;
+  const total = dias * horasDia;
+  return `⏱️ Total de horas trabalhadas = ${total}h`;
+}
+
   // ===== Se nada se aplica =====
   return null;
 }
