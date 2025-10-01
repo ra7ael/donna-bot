@@ -9,6 +9,8 @@ import axios from "axios";
 import { getTodayEvents, addEvent, saveMemory } from "../server.js";
 import { buscarPergunta } from "./buscarPdf.js";
 import { getWeather } from "./weather.js";
+import { ObjectId } from "mongodb";
+import { db } from "../server.js"; // importa a conexão já aberta no server
 
 const fusoSP = "America/Sao_Paulo";
 
@@ -17,6 +19,93 @@ export async function funcoesExtras(from, texto) {
   const t = normalize(texto.toLowerCase());
 
   const agora = DateTime.now().setZone(fusoSP);
+
+// Coleção de tarefas no Mongo
+const tasksCollection = () => db.collection("tasks");
+
+/**
+ * Cria um novo lembrete/tarefa
+ */
+export async function criarLembrete(numero, titulo, descricao, data, hora) {
+  const task = {
+    numero,
+    titulo,
+    descricao: descricao || titulo,
+    data, // formato YYYY-MM-DD
+    hora, // formato HH:mm
+    concluido: false,
+    criadoEm: new Date(),
+  };
+
+  const result = await tasksCollection().insertOne(task);
+  return { ...task, _id: result.insertedId };
+}
+
+/**
+ * Lista todos os lembretes/tarefas de um número
+ */
+export async function listarLembretes(numero) {
+  const tasks = await tasksCollection()
+    .find({ numero })
+    .sort({ data: 1, hora: 1 })
+    .toArray();
+
+  if (!tasks.length) {
+    return "Você não tem nenhum lembrete cadastrado.";
+  }
+
+  return tasks
+    .map(
+      (t, i) =>
+        `${i + 1}. ${t.titulo} - ${t.data} ${t.hora || ""} ${
+          t.concluido ? "✅" : "⏳"
+        }`
+    )
+    .join("\n");
+}
+
+/**
+ * Lista apenas os lembretes de hoje
+ */
+export async function listarLembretesHoje(numero) {
+  const hoje = DateTime.now().toFormat("yyyy-MM-dd");
+  const tasks = await tasksCollection()
+    .find({ numero, data: hoje })
+    .sort({ hora: 1 })
+    .toArray();
+
+  if (!tasks.length) {
+    return "Você não tem lembretes para hoje.";
+  }
+
+  return tasks
+    .map(
+      (t, i) =>
+        `${i + 1}. ${t.titulo} - ${t.hora || "sem horário"} ${
+          t.concluido ? "✅" : "⏳"
+        }`
+    )
+    .join("\n");
+}
+
+/**
+ * Marca um lembrete como concluído
+ */
+export async function concluirLembrete(taskId) {
+  await tasksCollection().updateOne(
+    { _id: new ObjectId(taskId) },
+    { $set: { concluido: true } }
+  );
+  return "✅ Lembrete marcado como concluído.";
+}
+
+/**
+ * Remove um lembrete pelo ID
+ */
+export async function removerLembrete(taskId) {
+  await tasksCollection().deleteOne({ _id: new ObjectId(taskId) });
+  return "🗑️ Lembrete removido.";
+}
 
   // ===== Funções gerais =====
   if (t.includes("que horas") || t.includes("horas sao") || t.includes("horas agora")) 
