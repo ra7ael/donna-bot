@@ -303,6 +303,211 @@ if (t.startsWith("dias entre")) {
     return "🌙 Boa noite!";
   }
 
+  // ===== 41. Pesquisar no Google (simulação) =====
+if (t.startsWith("pesquisar")) {
+  const termo = t.replace("pesquisar", "").trim();
+  if (termo) return `🔎 Resultados de pesquisa para "${termo}":\n1. ${termo} artigo A\n2. ${termo} artigo B\n3. ${termo} artigo C (simulação)`;
+  return "❌ Informe algo para pesquisar, ex: 'pesquisar IA'";
+}
+
+// ===== 42. Notícias mais recentes (simulação) =====
+if (t.includes("notícias") || t.includes("noticias")) {
+  return "📰 Últimas notícias:\n- Economia em alta\n- Tecnologia cresce\n- Esportes em destaque (simulação)";
+}
+
+// ===== 43. CEP → Endereço =====
+if (t.startsWith("cep")) {
+  const cep = t.replace("cep", "").trim();
+  try {
+    const res = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
+    if (res.data.erro) return "❌ CEP inválido!";
+    return `🏠 Endereço: ${res.data.logradouro}, ${res.data.bairro}, ${res.data.localidade}-${res.data.uf}`;
+  } catch {
+    return "❌ Não consegui consultar o CEP.";
+  }
+}
+
+// ===== 44. Clima cidade =====
+if (t.startsWith("clima")) {
+  const cidade = t.replace("clima", "").trim();
+  return cidade ? `🌤️ Clima em ${cidade}: 25°C ensolarado (simulação)` : "❌ Informe a cidade, ex: 'clima São Paulo'";
+}
+
+  // ===== 45. Nova lista de tarefas =====
+if (t.startsWith("nova lista")) {
+  const itens = t.replace("nova lista", "").split(",").map(i=>i.trim());
+  return `📌 Lista criada:\n${itens.map((i,idx)=>`${idx+1}. ⏳ ${i}`).join("\n")}`;
+}
+
+// ===== 46. Lista de compras =====
+if (t.startsWith("lista compras")) {
+  const itens = t.replace("lista compras", "").split(",").map(i=>i.trim());
+  return `🛒 Lista de compras:\n${itens.map(i=>`- ${i}`).join("\n")}`;
+}
+
+// ===== 47. Pomodoro =====
+if (t.includes("pomodoro")) return "⏳ Pomodoro iniciado: 25min foco + 5min pausa.";
+
+// ===== 48. Resumir texto =====
+if (t.startsWith("resumir:")) {
+  const textoBruto = t.replace("resumir:", "").trim();
+  return textoBruto.length > 50 ? `📝 Resumo: ${textoBruto.slice(0,50)}...` : "❌ Texto muito curto para resumir.";
+}
+
+// ===== 49. Explicar palavra =====
+if (t.startsWith("o que significa")) {
+  const palavra = t.replace("o que significa", "").trim();
+  return palavra ? `📖 "${palavra}" significa [explicação simulada].` : "❌ Informe uma palavra.";
+    }
+
+  // ===== 50. Horóscopo =====
+if (t.includes("horóscopo")) {
+  const signo = t.split(" ").pop();
+  return `✨ Horóscopo de ${signo}: Hoje é um bom dia para acreditar em você! (simulação)`;
+}
+
+// ===== 51. Sugestão de filmes =====
+if (t.includes("indica um filme")) return "🎬 Recomendo: 'A Origem' (Inception)";
+
+// ===== 52. Sugestão de músicas =====
+if (t.includes("indica músicas")) return "🎶 Playlist para estudar: Lofi Beats (simulação)";
+
+// ===== 53. Nome criativo =====
+if (t.startsWith("criar nome")) {
+  const tema = t.replace("criar nome", "").trim();
+  return `💡 Nome sugerido: ${tema}X Pro`;
+}
+
+// ===== 54. Slogan curto =====
+if (t.startsWith("slogan")) {
+  const tema = t.replace("slogan", "").trim();
+  return `📝 Slogan: "${tema}, conectando pessoas e ideias."`;
+                                 }
+
+  // ===== 55. Converter moeda JPY =====
+if (t.includes("converta") && t.includes("usd para jpy")) {
+  const match = t.match(/[\d,.]+/);
+  if (match) {
+    const valor = parseFloat(match[0].replace(",", "."));
+    const cotacao = 150; // simulação
+    return `💴 ${valor} USD = ${(valor*cotacao).toFixed(2)} JPY`;
+  }
+}
+
+// ===== 56. Juros compostos =====
+if (t.startsWith("juros compostos")) {
+  const [capital, taxa, meses] = t.match(/[\d.]+/g).map(Number);
+  const montante = capital * Math.pow(1+taxa/100, meses);
+  return `💰 Montante: ${montante.toFixed(2)}`;
+}
+
+// ===== 57. Regra de 3 =====
+if (t.startsWith("regra de 3")) return "🔢 Exemplo: 2 está para 10 assim como 5 está para 25.";
+
+// ===== 58. Tabuada =====
+if (t.startsWith("tabuada")) {
+  const n = parseInt(t.replace("tabuada", "").trim());
+  if (!isNaN(n)) return Array.from({length:10},(_,i)=>`${n}x${i+1}=${n*(i+1)}`).join("\n");
+}
+
+  // ===== 59. Responder WhatsApp (simulação) =====
+if (t.startsWith("responder mensagem")) {
+  const msg = t.replace("responder mensagem", "").trim();
+  return `📲 Resposta enviada: "${msg}" (simulação)`;
+}
+
+// ===== 60. Explicar código simples =====
+if (t.startsWith("explica código:")) {
+  const code = t.replace("explica código:", "").trim();
+  return `💻 Esse código faz: [explicação simulada do trecho: ${code}]`;
+}
+
+  // ==========================
+// Funções Profissionais Premium
+// ==========================
+
+// Recrutamento & Seleção
+if (t.includes("descrição vaga")) {
+  return "Modelo de descrição de vaga:\n\nTítulo: [Cargo]\nResumo: [Resumo da função]\nResponsabilidades: [Liste 3-5 pontos]\nRequisitos: [Liste exigências básicas]\nBenefícios: [Benefícios oferecidos]";
+}
+
+if (t.includes("perguntas entrevista")) {
+  return "Exemplos de perguntas para entrevista:\n1. Fale sobre você.\n2. Quais suas principais forças?\n3. Como lida com pressão?\n4. Por que deseja trabalhar aqui?";
+}
+
+if (t.includes("avaliar candidato")) {
+  return "Modelo de avaliação:\n- Comunicação: Boa / Regular / Ruim\n- Pontualidade: Sim / Não\n- Proatividade: Alta / Média / Baixa\n- Observações: [Comentários]";
+}
+
+if (t.includes("anúncio vaga")) {
+  return "Modelo de anúncio:\n📢 Estamos contratando!\nCargo: [Cargo]\nRequisitos: [Principais requisitos]\nBenefícios: [Benefícios]\nCandidate-se enviando currículo para [e-mail].";
+}
+
+if (t.includes("feedback negativo")) {
+  return "Olá [Nome], agradecemos por participar do nosso processo seletivo. Após análise, seguimos com outro candidato que se alinhou mais ao perfil da vaga. Desejamos sucesso na sua jornada!";
+}
+
+// Gestão de Pessoas
+if (t.includes("benefícios criativos")) {
+  return "Sugestões de benefícios:\n- Dia de folga no aniversário 🎂\n- Vale-cultura 🎭\n- Horário flexível ⏰\n- Programa de bem-estar 💆";
+}
+
+if (t.includes("plano onboarding")) {
+  return "Plano de Onboarding:\n1. Apresentação da empresa.\n2. Integração com equipe.\n3. Treinamento de ferramentas.\n4. Acompanhamento inicial.";
+}
+
+if (t.includes("plano treinamento")) {
+  return "Plano de Treinamento:\n- Objetivo: Desenvolver liderança.\n- Público: Gestores.\n- Duração: 3 meses.\n- Métodos: Workshops, coaching, estudo de caso.";
+}
+
+if (t.includes("política home office")) {
+  return "Política de Home Office:\n- Até 2 dias por semana.\n- Necessário alinhamento com gestor.\n- Relatórios semanais de atividades.";
+}
+
+if (t.includes("pesquisa clima")) {
+  return "Modelo de Pesquisa de Clima:\n1. Você está satisfeito com seu trabalho?\n2. Como avalia sua liderança?\n3. Sente que sua opinião é ouvida?\n4. O que pode melhorar?";
+
+// Planejamento & Estratégia
+if (t.includes("swot")) {
+  return "Análise SWOT:\n- Forças: [Liste]\n- Fraquezas: [Liste]\n- Oportunidades: [Liste]\n- Ameaças: [Liste]";
+}
+
+if (t.includes("5w2h")) {
+  return "Plano 5W2H:\n- What: O que será feito?\n- Why: Por que?\n- Where: Onde?\n- When: Quando?\n- Who: Quem?\n- How: Como?\n- How Much: Quanto custará?";
+}
+
+if (t.includes("meta smart")) {
+  return "Modelo de Meta SMART:\n- Específica: Aumentar vendas.\n- Mensurável: +10%.\n- Atingível: Com novas estratégias.\n- Relevante: Impacta receita.\n- Temporal: Até Dez/2025.";
+}
+
+if (t.includes("plano estratégico rh")) {
+  return "Plano Estratégico RH (6 meses):\n1. Recrutamento ágil.\n2. Programa de treinamento.\n3. Avaliação de desempenho.\n4. Ações de engajamento.";
+}
+
+if (t.includes("indicadores recrutamento")) {
+  return "KPIs de Recrutamento:\n- Tempo médio de contratação.\n- Custo por contratação.\n- Taxa de turnover.\n- Satisfação do gestor.";
+
+// Negócios & Produtividade
+if (t.includes("concorrência")) {
+  return "Análise de concorrência:\n- Principais players: [Liste]\n- Diferenciais: [Liste]\n- Preços: [Comparação]\n- Oportunidades: [Liste]";
+}
+
+if (t.includes("proposta consultoria")) {
+  return "Proposta Comercial:\n📌 Serviços: Consultoria em RH.\n📌 Prazo: [Definir]\n📌 Valor: [Definir]\n📌 Benefícios: Redução de custos, melhor gestão de pessoas.";
+}
+
+if (t.includes("resumo executivo")) {
+  return "Resumo Executivo:\n1. Contexto.\n2. Resultados principais.\n3. Conclusões.\n4. Recomendações.";
+}
+
+if (t.includes("ata reunião")) {
+  return "Modelo de Ata:\n📅 Data: [xx/xx]\n👥 Participantes: [Lista]\n📌 Assuntos tratados: [Lista]\n✅ Decisões tomadas: [Lista]";
+}
+
+if (t.includes("checklist auditoria")) {
+  return "Checklist de Auditoria RH:\n- Contratos assinados.\n- Folhas de ponto.\n- Benefícios pagos.\n- Treinamentos registrados.";
+}
+
   // ===== Se nada se aplica =====
   return null;
 }
