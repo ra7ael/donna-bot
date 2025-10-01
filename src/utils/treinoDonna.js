@@ -14,7 +14,7 @@ async function initDB() {
   if (connected && respostas) return;
   client = new MongoClient(process.env.MONGO_URI, { useUnifiedTopology: true });
   await client.connect();
-  const dbName = process.env.DONNA_DB_NAME || "donnaDB";
+  const dbName = process.env.DONNA_DB_NAME || "donna";
   const db = client.db(dbName);
   respostas = db.collection("respostas");
   connected = true;
