@@ -38,15 +38,15 @@ export function getPapeis() {
 }
 
 // Tenta obter resposta treinada; se não houver, chama a OpenAI, salva e retorna
-export async function obterResposta(pergunta) {
+export async function obterResposta(pergunta, numero) {
   await initDB();
   const perguntaTrim = (pergunta || "").trim();
   if (!perguntaTrim) return "";
 
-  // 1) Busca exata no banco
-  const existente = await respostas.findOne({ pergunta: perguntaTrim });
+  // 1) Busca exata no banco para este usuário
+  const existente = await respostas.findOne({ pergunta: perguntaTrim, numero });
   if (existente) {
-    console.log("treinoDonna: resposta encontrada no DB para pergunta ->", perguntaTrim);
+    console.log("treinoDonna: resposta encontrada no DB para pergunta ->", perguntaTrim, "(usuário:", numero + ")");
     return existente.resposta;
   }
 
@@ -68,7 +68,6 @@ Regras importantes:
   ];
 
   try {
-    // Observação: usa-se chat.completions.create conforme sua instalação atual do SDK
     const completion = await openai.chat.completions.create({
       model: "gpt-5-mini",
       messages
@@ -76,15 +75,16 @@ Regras importantes:
 
     const respostaGerada = (completion.choices?.[0]?.message?.content || "").trim();
 
-    // Salva a nova resposta para aprendizado futuro
+    // Salva a nova resposta para aprendizado futuro, por usuário
     await respostas.insertOne({
+      numero,
       pergunta: perguntaTrim,
       resposta: respostaGerada,
       papeis: papeisCombinados,
       criadoEm: new Date()
     });
 
-    console.log("treinoDonna: gerada e salva resposta para ->", perguntaTrim);
+    console.log("treinoDonna: gerada e salva resposta para ->", perguntaTrim, "(usuário:", numero + ")");
     return respostaGerada;
   } catch (err) {
     console.error("treinoDonna: erro ao chamar OpenAI ->", err);
@@ -92,21 +92,28 @@ Regras importantes:
   }
 }
 
-// Função para treinar manualmente (upsert)
-export async function treinarDonna(pergunta, resposta) {
+// Função para treinar manualmente (upsert) por usuário
+export async function treinarDonna(pergunta, resposta, numero) {
   await initDB();
   const p = (pergunta || "").trim();
   const r = (resposta || "").trim();
   if (!p) return;
 
-  const exist = await respostas.findOne({ pergunta: p });
+  const exist = await respostas.findOne({ pergunta: p, numero });
   if (exist) {
-    await respostas.updateOne({ pergunta: p }, { $set: { resposta: r, atualizadoEm: new Date(), papeis: papeisCombinados } });
+    await respostas.updateOne(
+      { pergunta: p, numero },
+      { $set: { resposta: r, atualizadoEm: new Date(), papeis: papeisCombinados } }
+    );
   } else {
-    await respostas.insertOne({ pergunta: p, resposta: r, criadoEm: new Date(), papeis: papeisCombinados });
+    await respostas.insertOne({
+      numero,
+      pergunta: p,
+      resposta: r,
+      criadoEm: new Date(),
+      papeis: papeisCombinados
+    });
   }
 
-  console.log(`treinoDonna: treinada -> "${p}" => "${r}"`);
+  console.log(`treinoDonna: treinada -> "${p}" => "${r}" (usuário: ${numero})`);
 }
-
-
