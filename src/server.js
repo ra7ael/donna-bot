@@ -217,7 +217,17 @@ async function getUserMemory(number, limit = 10) {
 
 async function saveMemory(number, role, content) {
   if (!content || !content.trim()) return;
-  await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
+  try {
+    await db.collection("semanticMemory").insertOne({
+      numero: number,
+      role,
+      content,
+      timestamp: new Date()
+    });
+    console.log("💾 Salvo em semanticMemory:", { number, role, content });
+  } catch (err) {
+    console.error("❌ Erro ao salvar memória:", err);
+  }
 }
 
 async function transcribeAudio(audioBuffer) {
