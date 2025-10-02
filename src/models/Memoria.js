@@ -1,22 +1,12 @@
-import mongoose from "mongoose";
+// src/models/Memoria.js
+const localMemory = [];
 
-const memoriaSchema = new mongoose.Schema({
-  userId: { type: String, required: true },
-  memoria: {
-    nome: String,
-    idade: Number,
-    projetos: [String],
-    preferencias: {
-      aprendizado: String,
-      plano: String,
-    },
-    eventos: [
-      {
-        data: String,
-        descricao: String,
-      },
-    ],
-  },
-});
+export function findInMemory(userMessage) {
+  return localMemory.find(item => item.message.toLowerCase() === userMessage.toLowerCase());
+}
 
-export default mongoose.model("Memoria", memoriaSchema);
+export function learnMemory(userMessage, answer) {
+  localMemory.push({ message: userMessage, answer });
+}
+
+export default { findInMemory, learnMemory };
