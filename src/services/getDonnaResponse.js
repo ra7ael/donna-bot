@@ -3,7 +3,7 @@ import { querySemanticMemory, addSemanticMemory } from "../models/semanticMemory
 import { getDatasetAnswer } from "./datasetService.js";
 import { cacheGet, cacheSet } from "./cacheService.js";
 import { getGPTResponse } from "./gptService.js";
-import { getUserName } from "../utils/memory.js"; // se você tiver isso
+import { getUserName } from "../models/user.js";
 import { getPapeis } from "../utils/treinoDonna.js";
 
 export async function getDonnaResponse(userMessage, userId) {
