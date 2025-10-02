@@ -1,14 +1,7 @@
-// Armazena respostas em memória (pode evoluir para DB depois)
-const cache = new Map();
+const cacheService = {
+  setDB(db) { ... },
+  getSomething() { ... },
+  ...
+};
 
-// Buscar resposta no cache
-function getCached(prompt) {
-  return cache.get(prompt);
-}
-
-// Salvar resposta no cache
-function setCached(prompt, resposta) {
-  cache.set(prompt, resposta);
-}
-
-module.exports = { getCached, setCached };
+export default cacheService;
