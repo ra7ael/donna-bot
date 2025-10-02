@@ -378,7 +378,7 @@ app.post("/webhook", async (req, res) => {
         : promptBody;
 
       reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
-      await treinarDonna(promptBody, reply);
+      await treinarDonna(promptBody, reply, from);
     }
 
     await saveMemory(from, "user", promptBody);
