@@ -23,10 +23,10 @@ import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/tre
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
-import cacheService from './services/cacheService.js';
-import datasetService from './services/datasetService.js';
-import getDonnaResponse from './services/getDonnaResponse.js';
-import gptService from './services/gptService.js';
+import * as cacheService from './services/cacheService.js';
+import * as datasetService from './services/datasetService.js';
+import * as getDonnaResponse from './services/getDonnaResponse.js';
+import * as gptService from './services/gptService.js';
 
 dotenv.config();
 
@@ -120,7 +120,6 @@ async function connectDB() {
     console.log("🔹 Tentando conectar ao MongoDB...");
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db("donna");
-    // ===== Inicializa serviços =====
     cacheService.setDB(db);
     datasetService.setDB(db);
     gptService.setDB(db);
