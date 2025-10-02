@@ -1,10 +1,11 @@
-const mongoose = require('mongoose');
+import mongoose from "mongoose";
 
 const ConversationSchema = new mongoose.Schema({
-  from: String,          // número do usuário
-  role: String,          // 'user' ou 'assistant'
-  content: String,       // texto da mensagem
+  from: { type: String, required: true },
+  role: { type: String, required: true },
+  content: { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('Conversation', ConversationSchema);
+const Conversation = mongoose.model("Conversation", ConversationSchema);
+export default Conversation;
