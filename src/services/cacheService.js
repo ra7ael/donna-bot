@@ -1,19 +1,21 @@
-// src/services/cacheService.js
-let db;
-const cache = new Map();
+let dbInstance;
 
-export function setDB(database) {
-  db = database;
+export function setDB(db) {
+  dbInstance = db;
 }
 
 export function getDB() {
-  return db;
+  return dbInstance;
 }
 
-export function getCached(prompt) {
-  return cache.get(prompt);
+const cache = new Map();
+
+export function getCached(key) {
+  return cache.get(key);
 }
 
-export function setCached(prompt, resposta) {
-  cache.set(prompt, resposta);
+export function setCached(key, value) {
+  cache.set(key, value);
 }
+
+export default { setDB, getDB, getCached, setCached };
