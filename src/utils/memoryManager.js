@@ -1,4 +1,4 @@
-import Memoria from "../models/Memoria.js";
+import Memoria from "../models/memory.js";
 
 /**
  * Salvar dados na memória estruturada do usuário
