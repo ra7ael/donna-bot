@@ -23,6 +23,10 @@ import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/tre
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
+import cacheService from './services/cacheService.js';
+import datasetService from './services/datasetService.js';
+import getDonnaResponse from './services/getDonnaResponse.js';
+import gptService from './services/gptService.js';
 
 dotenv.config();
 
