@@ -10,12 +10,12 @@ export function getDB() {
 
 const cache = new Map();
 
-export function getCached(key) {
+export function cacheGet(key) {
   return cache.get(key);
 }
 
-export function setCached(key, value) {
+export function cacheSet(key, value) {
   cache.set(key, value);
 }
 
-export default { setDB, getDB, getCached, setCached };
+export default { setDB, getDB, cacheGet, cacheSet };
