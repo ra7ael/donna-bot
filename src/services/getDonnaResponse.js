@@ -1,4 +1,4 @@
-const { findInMemory, learnMemory } = require("../models/Memoria");
+import { findInMemory, learnMemory } from "../models/Memoria.js";
 const { querySemanticMemory, addSemanticMemory } = require("../models/semanticMemory");
 const { getDatasetAnswer } = require("../services/datasetService");
 const { cacheGet, cacheSet } = require("../services/cacheService");
