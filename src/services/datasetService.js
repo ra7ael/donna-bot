@@ -1,7 +1,7 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
 
-const datasetPath = path.join(__dirname, "../dataset/dataset.jsonl");
+const datasetPath = path.join(new URL('../dataset/dataset.jsonl', import.meta.url).pathname);
 
 // Carrega dataset em memória
 const dataset = fs.readFileSync(datasetPath, "utf8")
@@ -10,7 +10,7 @@ const dataset = fs.readFileSync(datasetPath, "utf8")
   .map(line => JSON.parse(line));
 
 // Busca uma resposta parecida no dataset
-function buscarRespostaDataset(mensagem) {
+export function buscarRespostaDataset(mensagem) {
   for (const entry of dataset) {
     const userMsg = entry.messages.find(m => m.role === "user");
     if (userMsg && mensagem.toLowerCase().includes(userMsg.content.toLowerCase())) {
@@ -20,5 +20,3 @@ function buscarRespostaDataset(mensagem) {
   }
   return null;
 }
-
-module.exports = { buscarRespostaDataset };
