@@ -1,11 +1,17 @@
-// src/services/datasetService.js
 import fs from "fs";
 import path from "path";
 
-let db;
-export function setDB(database) { db = database; }
+let dbInstance;
 
-const datasetPath = path.resolve("./src/dataset/dataset.jsonl");
+export function setDB(db) {
+  dbInstance = db;
+}
+
+export function getDB() {
+  return dbInstance;
+}
+
+const datasetPath = path.join(new URL('../dataset/dataset.jsonl', import.meta.url).pathname);
 const dataset = fs.readFileSync(datasetPath, "utf8")
   .split("\n")
   .filter(Boolean)
@@ -21,3 +27,5 @@ export function buscarRespostaDataset(mensagem) {
   }
   return null;
 }
+
+export default { setDB, getDB, buscarRespostaDataset };
