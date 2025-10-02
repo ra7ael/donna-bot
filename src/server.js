@@ -115,7 +115,7 @@ async function connectDB() {
   try {
     console.log("🔹 Tentando conectar ao MongoDB...");
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-    db = client.db();
+    db = client.db("donna");
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
     startReminderCron(db, sendMessage);
   } catch (err) {
