@@ -1,8 +1,9 @@
+// src/services/getDonnaResponse.js
 import { findInMemory, learnMemory } from "../models/Memoria.js";
 import { querySemanticMemory, addSemanticMemory } from "../models/semanticMemory.js";
-import { getDatasetAnswer } from "../services/datasetService.js";
-import { cacheGet, cacheSet } from "../services/cacheService.js";
-import { getGPTResponse } from "./gptService.js"; // sua função atual do GPT
+import { getDatasetAnswer } from "./datasetService.js";
+import { cacheGet, cacheSet } from "./cacheService.js";
+import { getGPTResponse } from "./gptService.js";
 
 export async function getDonnaResponse(userMessage, userId) {
   const cacheKey = `user:${userId}:msg:${userMessage.toLowerCase()}`;
