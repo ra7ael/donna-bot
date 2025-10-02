@@ -121,10 +121,6 @@ async function connectDB() {
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db("donna");
 
-    cacheService.setDB(db);
-    gptService.setDB(db);
-    getDonnaResponse.setConfig({ apiKey: GPT_API_KEY });
-
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
     startReminderCron(db, sendMessage);
 
