@@ -1,4 +1,3 @@
-// src/cron/reminders.js
 import cron from "node-cron";
 import { DateTime } from "luxon";
 
@@ -19,14 +18,17 @@ export function startReminderCron(db, sendMessage) {
 
     try {
       const now = DateTime.now().setZone("America/Sao_Paulo");
-      const today = now.toFormat("yyyy-MM-dd");
-      const currentTime = now.toFormat("HH:mm");
+      const nowDate = now.toJSDate();
+      const nextMinute = now.plus({ minutes: 1 }).toJSDate();
 
-      console.log(`⏰ Checando lembretes para hoje (${today}) às ${currentTime}`);
+      console.log(`⏰ Verificando lembretes entre ${now.toFormat("HH:mm")} e ${now.plus({ minutes: 1 }).toFormat("HH:mm")}`);
 
       const reminders = await db
-        .collection("lembretes") // <<< Coleção certa agora
-        .find({ data: today, sent: false })
+        .collection("lembretes")
+        .find({
+          horario: { $gte: nowDate, $lt: nextMinute },
+          sent: false
+        })
         .toArray();
 
       if (reminders.length === 0) {
@@ -35,23 +37,16 @@ export function startReminderCron(db, sendMessage) {
       }
 
       for (const reminder of reminders) {
-        // Checa hora exata
-        if (reminder.hora === currentTime) {
-          console.log(`🔔 Enviando lembrete para ${reminder.numero}: ${reminder.titulo}`);
-          await sendMessage(
-            reminder.numero,
-            `⏰ Lembrete: ${reminder.titulo} às ${reminder.hora}`
-          );
+        console.log(`🔔 Enviando lembrete para ${reminder.numero}: ${reminder.titulo}`);
+        await sendMessage(
+          reminder.numero,
+          `⏰ Lembrete: ${reminder.titulo} às ${reminder.hora}`
+        );
 
-          await db.collection("lembretes").updateOne(
-            { _id: reminder._id },
-            { $set: { sent: true, enviadoEm: new Date() } }
-          );
-        } else {
-          console.log(
-            `⏳ Lembrete ${reminder.titulo} ainda não é hora (${reminder.hora})`
-          );
-        }
+        await db.collection("lembretes").updateOne(
+          { _id: reminder._id },
+          { $set: { sent: true, enviadoEm: new Date() } }
+        );
       }
     } catch (err) {
       console.error("❌ Erro no cron:", err.message);
@@ -72,15 +67,20 @@ export async function addReminder(db, numero, titulo, data, hora) {
     throw new Error("Campos obrigatórios faltando para adicionar lembrete.");
   }
 
+  const horario = DateTime.fromFormat(`${data} ${hora}`, "yyyy-MM-dd HH:mm", {
+    zone: "America/Sao_Paulo"
+  }).toJSDate();
+
   await db.collection("lembretes").insertOne({
     numero,
     titulo,
+    descricao: titulo,
     data,
     hora,
+    horario,
     sent: false,
     criadoEm: new Date()
   });
 
   console.log(`✅ Lembrete adicionado para ${numero}: "${titulo}" em ${data} ${hora}`);
 }
-
