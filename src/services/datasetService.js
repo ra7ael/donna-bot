@@ -1,15 +1,16 @@
+// src/services/datasetService.js
 import fs from "fs";
 import path from "path";
 
-const datasetPath = path.join(new URL('../dataset/dataset.jsonl', import.meta.url).pathname);
+let db;
+export function setDB(database) { db = database; }
 
-// Carrega dataset em memória
+const datasetPath = path.resolve("./src/dataset/dataset.jsonl");
 const dataset = fs.readFileSync(datasetPath, "utf8")
   .split("\n")
   .filter(Boolean)
   .map(line => JSON.parse(line));
 
-// Busca uma resposta parecida no dataset
 export function buscarRespostaDataset(mensagem) {
   for (const entry of dataset) {
     const userMsg = entry.messages.find(m => m.role === "user");
