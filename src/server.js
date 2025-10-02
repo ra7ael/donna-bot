@@ -122,7 +122,6 @@ async function connectDB() {
     db = client.db("donna");
 
     cacheService.setDB(db);
-    datasetService.setDB(db);
     gptService.setDB(db);
     getDonnaResponse.setConfig({ apiKey: GPT_API_KEY });
 
