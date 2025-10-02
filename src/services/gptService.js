@@ -1,26 +1,28 @@
-const axios = require("axios");
-require("dotenv").config();
+// src/services/gptService.js
 
-const Conversation = require("../models/Conversation");
+import axios from "axios";
+import fs from "fs";
+import path from "path";
+import Conversation from "../models/Conversation.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 // Lista de números autorizados
-const authorizedNumbers = ["554195194485"];
+export const authorizedNumbers = ["554195194485"];
 
 // ---------------- Cache ----------------
 const cache = new Map();
-function getCached(prompt) { return cache.get(prompt); }
-function setCached(prompt, resposta) { cache.set(prompt, resposta); }
+export function getCached(prompt) { return cache.get(prompt); }
+export function setCached(prompt, resposta) { cache.set(prompt, resposta); }
 
 // ---------------- Dataset ----------------
-const fs = require("fs");
-const path = require("path");
-const datasetPath = path.join(__dirname, "../dataset/dataset.jsonl");
+const datasetPath = path.join(new URL('../dataset/dataset.jsonl', import.meta.url).pathname);
 const dataset = fs.readFileSync(datasetPath, "utf8")
   .split("\n")
   .filter(Boolean)
   .map(line => JSON.parse(line));
 
-function buscarRespostaDataset(mensagem) {
+export function buscarRespostaDataset(mensagem) {
   for (const entry of dataset) {
     const userMsg = entry.messages.find(m => m.role === "user");
     if (userMsg && mensagem.toLowerCase().includes(userMsg.content.toLowerCase())) {
@@ -37,18 +39,15 @@ const MAX_TOKENS = 300;
 const TEMPERATURE = 0.7;
 
 // ---------------- Função principal ----------------
-async function getGPTResponse(userMessage, imageUrl = null, userId, phoneNumber) {
-  // Verifica se o número é autorizado
+export async function getGPTResponse(userMessage, imageUrl = null, userId, phoneNumber) {
   if (phoneNumber && !authorizedNumbers.includes(phoneNumber)) {
     console.log(`❌ Usuário não autorizado: ${phoneNumber}`);
     return "Desculpe, você não está autorizado a usar este serviço.";
   }
 
   try {
-    // Buscar histórico do usuário
     const history = await Conversation.find({ from: userId }).sort({ createdAt: 1 });
 
-    // Monta mensagens do chat
     const messages = [
       {
         role: "system",
@@ -64,56 +63,36 @@ Você é Donna, assistente executiva perspicaz, elegante e humanizada.
     ];
 
     history.forEach(h => {
-      messages.push({
-        role: h.role === "assistant" ? "assistant" : "user",
-        content: h.content,
-      });
+      messages.push({ role: h.role === "assistant" ? "assistant" : "user", content: h.content });
     });
 
     let userContent = userMessage || "";
     if (imageUrl) userContent += `\n📷 Imagem recebida: ${imageUrl}`;
     messages.push({ role: "user", content: userContent });
 
-    // 1️⃣ Checa cache
     const cached = getCached(userContent);
     if (cached) return cached;
 
-    // 2️⃣ Checa dataset local
     const datasetAnswer = buscarRespostaDataset(userContent);
     if (datasetAnswer) {
       setCached(userContent, datasetAnswer);
       return datasetAnswer;
     }
 
-    // 3️⃣ Chamada ao modelo econômico
     try {
       const response = await axios.post(
         "https://api.openai.com/v1/chat/completions",
-        {
-          model: economicalModel,
-          messages,
-          max_tokens: MAX_TOKENS,
-          temperature: TEMPERATURE,
-        },
-        {
-          headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-          timeout: 10000, // 10s timeout para não travar
-        }
+        { model: economicalModel, messages, max_tokens: MAX_TOKENS, temperature: TEMPERATURE },
+        { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" }, timeout: 10000 }
       );
 
-      const answer = response.data.choices?.[0]?.message?.content?.trim()
-        || "Desculpe, não consegui gerar uma resposta.";
-      
-      // Limita a 150 caracteres
+      const answer = response.data.choices?.[0]?.message?.content?.trim() || "Desculpe, não consegui gerar uma resposta.";
       const limitedAnswer = answer.length > 150 ? answer.slice(0, 150) : answer;
-      
       setCached(userContent, limitedAnswer);
       return limitedAnswer;
 
     } catch (modelError) {
       console.error("⚠️ Erro GPT econômico:", modelError.message || modelError);
-
-      // 4️⃣ Fallback seguro
       const fallbackAnswer = "Desculpe, não consegui responder agora. Tente novamente mais tarde.";
       setCached(userContent, fallbackAnswer);
       return fallbackAnswer;
@@ -125,4 +104,3 @@ Você é Donna, assistente executiva perspicaz, elegante e humanizada.
   }
 }
 
-module.exports = { getGPTResponse };
