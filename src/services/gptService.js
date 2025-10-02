@@ -1,44 +1,24 @@
-// src/services/gptService.js
-
 import axios from "axios";
-import fs from "fs";
-import path from "path";
 import Conversation from "../models/Conversation.js";
 import dotenv from "dotenv";
 dotenv.config();
 
-// Lista de números autorizados
+let dbInstance;
+
+export function setDB(db) {
+  dbInstance = db;
+}
+
 export const authorizedNumbers = ["554195194485"];
 
-// ---------------- Cache ----------------
 const cache = new Map();
 export function getCached(prompt) { return cache.get(prompt); }
 export function setCached(prompt, resposta) { cache.set(prompt, resposta); }
 
-// ---------------- Dataset ----------------
-const datasetPath = path.join(new URL('../dataset/dataset.jsonl', import.meta.url).pathname);
-const dataset = fs.readFileSync(datasetPath, "utf8")
-  .split("\n")
-  .filter(Boolean)
-  .map(line => JSON.parse(line));
-
-export function buscarRespostaDataset(mensagem) {
-  for (const entry of dataset) {
-    const userMsg = entry.messages.find(m => m.role === "user");
-    if (userMsg && mensagem.toLowerCase().includes(userMsg.content.toLowerCase())) {
-      const assistantMsg = entry.messages.find(m => m.role === "assistant");
-      return assistantMsg ? assistantMsg.content : null;
-    }
-  }
-  return null;
-}
-
-// ---------------- Modelo Econômico ----------------
-const economicalModel = "gpt-4o-mini"; // ou gpt-3.5-turbo
+const economicalModel = "gpt-4o-mini";
 const MAX_TOKENS = 300;
 const TEMPERATURE = 0.7;
 
-// ---------------- Função principal ----------------
 export async function getGPTResponse(userMessage, imageUrl = null, userId, phoneNumber) {
   if (phoneNumber && !authorizedNumbers.includes(phoneNumber)) {
     console.log(`❌ Usuário não autorizado: ${phoneNumber}`);
@@ -73,7 +53,7 @@ Você é Donna, assistente executiva perspicaz, elegante e humanizada.
     const cached = getCached(userContent);
     if (cached) return cached;
 
-    const datasetAnswer = buscarRespostaDataset(userContent);
+    const datasetAnswer = null; // aqui você pode chamar datasetService.buscarRespostaDataset(userContent)
     if (datasetAnswer) {
       setCached(userContent, datasetAnswer);
       return datasetAnswer;
