@@ -120,12 +120,15 @@ async function connectDB() {
     console.log("🔹 Tentando conectar ao MongoDB...");
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db("donna");
+
     cacheService.setDB(db);
     datasetService.setDB(db);
     gptService.setDB(db);
     getDonnaResponse.setConfig({ apiKey: GPT_API_KEY });
+
     console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
     startReminderCron(db, sendMessage);
+
   } catch (err) {
     console.error('❌ Erro ao conectar ao MongoDB:', err.message);
   }
