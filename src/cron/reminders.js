@@ -3,8 +3,8 @@ import cron from "node-cron";
 import { DateTime } from "luxon";
 
 /**
- * Inicia o cron de lembretes na coleção "lembretes"
- * @param {import('mongodb').Db} db - instância do MongoDB
+ * Inicia o cron de lembretes
+ * @param {import('mongodb').Db} db - instância do MongoDB (banco donna)
  * @param {Function} sendMessage - função para enviar WhatsApp
  */
 export function startReminderCron(db, sendMessage) {
@@ -25,7 +25,7 @@ export function startReminderCron(db, sendMessage) {
       console.log(`⏰ Checando lembretes para hoje (${today}) às ${currentTime}`);
 
       const reminders = await db
-        .collection("tasks")
+        .collection("lembretes") // <<< Coleção certa agora
         .find({ data: today, sent: false })
         .toArray();
 
@@ -35,15 +35,22 @@ export function startReminderCron(db, sendMessage) {
       }
 
       for (const reminder of reminders) {
+        // Checa hora exata
         if (reminder.hora === currentTime) {
           console.log(`🔔 Enviando lembrete para ${reminder.numero}: ${reminder.titulo}`);
-          await sendMessage(reminder.numero, `⏰ Lembrete: ${reminder.titulo} às ${reminder.hora}`);
-          await db.collection("tasks").updateOne(
+          await sendMessage(
+            reminder.numero,
+            `⏰ Lembrete: ${reminder.titulo} às ${reminder.hora}`
+          );
+
+          await db.collection("lembretes").updateOne(
             { _id: reminder._id },
             { $set: { sent: true, enviadoEm: new Date() } }
           );
         } else {
-          console.log(`⏳ Lembrete "${reminder.titulo}" ainda não é hora (${reminder.hora})`);
+          console.log(
+            `⏳ Lembrete ${reminder.titulo} ainda não é hora (${reminder.hora})`
+          );
         }
       }
     } catch (err) {
@@ -65,7 +72,7 @@ export async function addReminder(db, numero, titulo, data, hora) {
     throw new Error("Campos obrigatórios faltando para adicionar lembrete.");
   }
 
-  await db.collection("tasks").insertOne({
+  await db.collection("lembretes").insertOne({
     numero,
     titulo,
     data,
@@ -76,3 +83,4 @@ export async function addReminder(db, numero, titulo, data, hora) {
 
   console.log(`✅ Lembrete adicionado para ${numero}: "${titulo}" em ${data} ${hora}`);
 }
+
