@@ -1,10 +1,10 @@
 import { findInMemory, learnMemory } from "../models/Memoria.js";
-const { querySemanticMemory, addSemanticMemory } = require("../models/semanticMemory");
-const { getDatasetAnswer } = require("../services/datasetService");
-const { cacheGet, cacheSet } = require("../services/cacheService");
-const { getGPTResponse } = require("./gptService"); // sua função atual do GPT
+import { querySemanticMemory, addSemanticMemory } from "../models/semanticMemory.js";
+import { getDatasetAnswer } from "../services/datasetService.js";
+import { cacheGet, cacheSet } from "../services/cacheService.js";
+import { getGPTResponse } from "./gptService.js"; // sua função atual do GPT
 
-async function getDonnaResponse(userMessage, userId) {
+export async function getDonnaResponse(userMessage, userId) {
   const cacheKey = `user:${userId}:msg:${userMessage.toLowerCase()}`;
 
   // 1️⃣ Consulta cache
@@ -45,4 +45,3 @@ async function getDonnaResponse(userMessage, userId) {
   return answer;
 }
 
-module.exports = { getDonnaResponse };
