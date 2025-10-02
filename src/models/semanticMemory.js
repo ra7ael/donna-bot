@@ -5,12 +5,33 @@ const SemanticMemorySchema = new mongoose.Schema({
   userId: { type: String, required: true },
   role: { type: String, enum: ["user", "assistant"], required: true },
   content: { type: String, required: true },
-  contentType: { type: String, default: "text" }, // tipo de conteúdo (ex: "text", "name", "note", etc.)
-  embedding: { type: [Number], required: true }, // vetor de embedding do OpenAI
+  contentType: { type: String, default: "text" },
+  embedding: { type: [Number], default: [] },
   createdAt: { type: Date, default: Date.now }
 });
 
-// Índice para buscar mais rápido por usuário
 SemanticMemorySchema.index({ userId: 1 });
 
-export default mongoose.model("SemanticMemory", SemanticMemorySchema);
+const SemanticMemory = mongoose.model("SemanticMemory", SemanticMemorySchema);
+
+// Consulta memória semântica
+export async function querySemanticMemory(userMessage, limit = 1) {
+  const result = await SemanticMemory.find({ content: { $regex: userMessage, $options: "i" } })
+    .sort({ createdAt: -1 })
+    .limit(limit);
+  return result.length ? result[0].content : null;
+}
+
+// Adiciona nova memória semântica
+export async function addSemanticMemory(userMessage, answer, userId = "unknown", role = "assistant") {
+  const doc = new SemanticMemory({
+    userId,
+    role,
+    content: answer,
+    embedding: [] // futuramente você pode gerar embeddings
+  });
+  await doc.save();
+  return doc;
+}
+
+export default SemanticMemory;
