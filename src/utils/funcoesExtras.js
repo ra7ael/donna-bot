@@ -6,11 +6,11 @@
 
 import { DateTime } from "luxon";
 import axios from "axios";
-import { getTodayEvents, addEvent, saveMemory } from "../server.js";
 import { buscarPergunta } from "./buscarPdf.js";
 import { getWeather } from "./weather.js";
 import { ObjectId } from "mongodb";
 import { db } from "../server.js"; // importa a conexão já aberta no server
+
 
 const fusoSP = "America/Sao_Paulo";
 
