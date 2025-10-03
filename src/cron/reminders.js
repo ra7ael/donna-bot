@@ -69,7 +69,7 @@ export async function addReminder(db, numero, titulo, data, hora) {
 
   const horario = DateTime.fromFormat(`${data} ${hora}`, "yyyy-MM-dd HH:mm", {
     zone: "America/Sao_Paulo"
-  }).toJSDate();
+  }).startOf('minute').toJSDate();
 
   await db.collection("lembretes").insertOne({
     numero,
