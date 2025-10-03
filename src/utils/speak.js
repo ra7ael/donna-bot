@@ -3,6 +3,8 @@ import path from "path";
 import axios from "axios";
 import FormData from "form-data";
 import OpenAI from "openai";
+import "../../config/env.js"; // ajustado para subir um nível
+
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
