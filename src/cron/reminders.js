@@ -17,7 +17,7 @@ export function startReminderCron(db, sendMessage) {
     }
 
     try {
-      const now = DateTime.utc().startOf('minute');
+      const now = DateTime.now().setZone("America/Sao_Paulo").startOf('minute');
       const nowDate = now.toJSDate();
       const nextMinute = now.plus({ minutes: 1 }).toJSDate();
 
