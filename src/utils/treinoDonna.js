@@ -6,10 +6,8 @@ let respostas;
 let connected = false;
 let papeisCombinados = [];
 
-// Inicializa cliente OpenAI com a chave de ambiente
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Inicializa/garante conexão com MongoDB (conecta apenas uma vez)
 async function initDB() {
   if (connected && respostas) return;
   client = new MongoClient(process.env.MONGO_URI, { useUnifiedTopology: true });
@@ -21,7 +19,6 @@ async function initDB() {
   console.log(`treinoDonna: conectado ao MongoDB (${dbName})`);
 }
 
-// Define os papéis ativos (chamado pelo server.js quando usuário solicita)
 export function setPapeis(papeis) {
   if (!papeis) papeis = [];
   papeisCombinados = Array.isArray(papeis) ? papeis.map(p => p.trim()).filter(Boolean) : [];
@@ -37,13 +34,19 @@ export function getPapeis() {
   return papeisCombinados;
 }
 
-// Função principal: obtém resposta, salva e busca padrões
+// Busca o nome do usuário pela coleção "users"
+async function buscarNomeDoUsuario(userId) {
+  const db = client.db(process.env.DONNA_DB_NAME || "donna");
+  const usuarios = db.collection("users");
+  const usuario = await usuarios.findOne({ numero: userId });
+  return usuario?.nome || "você";
+}
+
 export async function obterResposta(pergunta, userId) {
   await initDB();
   const perguntaTrim = (pergunta || "").trim();
   if (!perguntaTrim) return "";
 
-  // Busca proativa: verificar se o usuário já falou algo parecido recentemente
   const semanticMemory = client.db(process.env.DONNA_DB_NAME || "donna").collection("semanticMemory");
 
   const ontem = new Date();
@@ -64,14 +67,14 @@ export async function obterResposta(pergunta, userId) {
     observacaoProativa = " (Você mencionou algo parecido ontem. Quer revisar o que disse?)";
   }
 
-  // Busca exata no banco para este usuário
   const existente = await respostas.findOne({ pergunta: perguntaTrim, userId });
   if (existente) {
     console.log("treinoDonna: resposta encontrada no DB para pergunta ->", perguntaTrim, "(usuário:", userId + ")");
     return existente.resposta;
   }
 
-  // Gera com a OpenAI
+  const nomeUsuario = await buscarNomeDoUsuario(userId);
+
   const systemContent = `Você é Donna, assistente pessoal do Rafael. Use toda sua inteligência e combine conhecimentos dos papéis ativos (${papeisCombinados.length > 0 ? papeisCombinados.join(', ') : 'nenhum'}).
 
 Regras importantes:
@@ -96,12 +99,12 @@ Regras importantes:
 
     let respostaGerada = (completion.choices?.[0]?.message?.content || "").trim();
 
-    // Adiciona observação proativa se houver
     if (observacaoProativa) {
       respostaGerada += observacaoProativa;
     }
 
-    // Salva a nova resposta para aprendizado futuro
+    respostaGerada = `${nomeUsuario}, ${respostaGerada}`;
+
     await respostas.insertOne({
       userId,
       pergunta: perguntaTrim,
@@ -110,10 +113,8 @@ Regras importantes:
       criadoEm: new Date()
     });
 
-    // Detecta sentimento
     const sentimentoDetectado = detectarSentimento(perguntaTrim);
 
-    // Salva na memória semântica
     await semanticMemory.insertOne({
       userId,
       role: "user",
@@ -138,7 +139,6 @@ Regras importantes:
   }
 }
 
-// Função para treinar manualmente (upsert)
 export async function treinarDonna(pergunta, resposta, userId) {
   await initDB();
   const p = (pergunta || "").trim();
@@ -164,7 +164,6 @@ export async function treinarDonna(pergunta, resposta, userId) {
   console.log(`treinoDonna: treinada -> "${p}" => "${r}" (usuário: ${userId})`);
 }
 
-// Função auxiliar: detector de sentimento
 function detectarSentimento(texto) {
   const textoLower = texto.toLowerCase();
 
