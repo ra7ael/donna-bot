@@ -431,3 +431,12 @@ app.post("/webhook", async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+export {
+  askGPT,
+  getTodayEvents,
+  addEvent,
+  saveMemory,
+  db
+};
+
