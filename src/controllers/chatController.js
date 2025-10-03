@@ -168,16 +168,16 @@ export async function chat(req, res) {
           .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
           .join("\n");
 
-        let memoryContext = "";
-        let relevantMemories = [];
-
-        if (/terapia|psic[oó]logo|ansiedade|emoções|emocional|sentimentos/i.test(userMessage)) {
-          relevantMemories = await getRelevantMemory(from, "terapia", 5);
-        } else {
-          relevantMemories = await getRelevantMemory(from, userMessage, 5);
-        }
-
-        memoryContext = relevantMemories
+        const curtoPrazo = await getRelevantMemory(from, userMessage, 3);
+        
+        const seteDiasAtras = DateTime.now().minus({ days: 7 }).toJSDate();
+        const medioPrazo = await Conversation.find({ from, createdAt: { $gte: seteDiasAtras } }).limit(5);
+        
+        const longoPrazo = await Conversation.find({ from }).sort({ createdAt: 1 }).limit(5);
+        
+        const todasMemorias = [...curtoPrazo, ...medioPrazo, ...longoPrazo];
+        
+        const memoryContext = todasMemorias
           .filter(m => m.content)
           .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
           .join("\n");
