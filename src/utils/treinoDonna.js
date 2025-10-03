@@ -84,6 +84,23 @@ Regras importantes:
       criadoEm: new Date()
     });
 
+    // Salva também na memória semântica
+    const semanticMemory = client.db(process.env.DONNA_DB_NAME || "donna").collection("semanticMemory");
+
+    await semanticMemory.insertOne({
+      userId,
+      role: "user",
+      content: perguntaTrim,
+      timestamp: new Date()
+    });
+
+    await semanticMemory.insertOne({
+      userId,
+      role: "assistant",
+      content: respostaGerada,
+      timestamp: new Date()
+    });
+
     console.log("treinoDonna: gerada e salva resposta para ->", perguntaTrim, "(usuário:", userId + ")");
     return respostaGerada;
   } catch (err) {
