@@ -38,15 +38,15 @@ export function getPapeis() {
 }
 
 // Tenta obter resposta treinada; se não houver, chama a OpenAI, salva e retorna
-export async function obterResposta(pergunta, numero) {
+export async function obterResposta(pergunta, userId) {
   await initDB();
   const perguntaTrim = (pergunta || "").trim();
   if (!perguntaTrim) return "";
 
   // 1) Busca exata no banco para este usuário
-  const existente = await respostas.findOne({ pergunta: perguntaTrim, numero });
+  const existente = await respostas.findOne({ pergunta: perguntaTrim, userId });
   if (existente) {
-    console.log("treinoDonna: resposta encontrada no DB para pergunta ->", perguntaTrim, "(usuário:", numero + ")");
+    console.log("treinoDonna: resposta encontrada no DB para pergunta ->", perguntaTrim, "(usuário:", userId + ")");
     return existente.resposta;
   }
 
@@ -77,14 +77,14 @@ Regras importantes:
 
     // Salva a nova resposta para aprendizado futuro, por usuário
     await respostas.insertOne({
-      numero,
+      userId,
       pergunta: perguntaTrim,
       resposta: respostaGerada,
       papeis: papeisCombinados,
       criadoEm: new Date()
     });
 
-    console.log("treinoDonna: gerada e salva resposta para ->", perguntaTrim, "(usuário:", numero + ")");
+    console.log("treinoDonna: gerada e salva resposta para ->", perguntaTrim, "(usuário:", userId + ")");
     return respostaGerada;
   } catch (err) {
     console.error("treinoDonna: erro ao chamar OpenAI ->", err);
@@ -93,21 +93,21 @@ Regras importantes:
 }
 
 // Função para treinar manualmente (upsert) por usuário
-export async function treinarDonna(pergunta, resposta, numero) {
+export async function treinarDonna(pergunta, resposta, userId) {
   await initDB();
   const p = (pergunta || "").trim();
   const r = (resposta || "").trim();
   if (!p) return;
 
-  const exist = await respostas.findOne({ pergunta: p, numero });
+  const exist = await respostas.findOne({ pergunta: p, userId });
   if (exist) {
     await respostas.updateOne(
-      { pergunta: p, numero },
+      { pergunta: p, userId },
       { $set: { resposta: r, atualizadoEm: new Date(), papeis: papeisCombinados } }
     );
   } else {
     await respostas.insertOne({
-      numero,
+      userId,
       pergunta: p,
       resposta: r,
       criadoEm: new Date(),
@@ -115,5 +115,5 @@ export async function treinarDonna(pergunta, resposta, numero) {
     });
   }
 
-  console.log(`treinoDonna: treinada -> "${p}" => "${r}" (usuário: ${numero})`);
+  console.log(`treinoDonna: treinada -> "${p}" => "${r}" (usuário: ${userId})`);
 }
