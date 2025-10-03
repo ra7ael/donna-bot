@@ -101,6 +101,7 @@ Regras importantes:
       timestamp: new Date()
     });
 
+    console.log("treinoDonna: memórias salvas na coleção semanticMemory");
     console.log("treinoDonna: gerada e salva resposta para ->", perguntaTrim, "(usuário:", userId + ")");
     return respostaGerada;
   } catch (err) {
