@@ -432,6 +432,15 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
+// ===== ROTA DE SAÚDE PARA RENDER DETECTAR A PORTA =====
+app.get("/", (req, res) => {
+  res.send("✅ Donna está online!");
+});
+
+// ===== INICIA O SERVIDOR =====
+app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
+
+
 export {
   askGPT,
   getTodayEvents,
