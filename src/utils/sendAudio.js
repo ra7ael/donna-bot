@@ -22,7 +22,7 @@ export async function falar(texto, arquivoSaida = "./audios/output.mp3") {
 
     const response = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
-      voice: "alloy",
+      voice: "fable",
       input: texto
     });
 
