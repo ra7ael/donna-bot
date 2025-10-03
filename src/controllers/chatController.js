@@ -1,3 +1,4 @@
+// [IMPORTS]
 import axios from 'axios';
 import fs from 'fs';
 import FormData from 'form-data';
@@ -136,6 +137,31 @@ export async function chat(req, res) {
           responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
         }
       } else {
+        // PATCH: revisão automática do último assunto
+        if (/do que estamos falando\??|qual era o assunto\??|sobre o que estávamos conversando\??/i.test(userMessage)) {
+          const lastMemory = await getRelevantMemory(from, "", 1);
+          const assunto = lastMemory?.[0]?.content;
+
+          if (assunto) {
+            const history = await Conversation.find({ from }).sort({ createdAt: 1 });
+            const conversationContext = history
+              .filter(h => h.content)
+              .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
+              .join("\n");
+
+            const memoryContext = `${assunto}`;
+            responseText = await getDonnaResponse(`Quero revisar o que falamos sobre isso: ${assunto}`, from, conversationContext, memoryContext);
+          } else {
+            responseText = "❌ Não encontrei nenhum assunto recente. Pode me lembrar do que quer conversar?";
+          }
+
+          await Conversation.create({ from, role: 'assistant', content: responseText });
+          await saveMemory(from, 'assistant', responseText);
+          await Message.create({ from, body: userMessage, response: responseText });
+          await sendWhatsApp(from, responseText);
+          return res.sendStatus(200);
+        }
+
         const history = await Conversation.find({ from }).sort({ createdAt: 1 });
         const conversationContext = history
           .filter(h => h.content)
