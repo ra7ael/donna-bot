@@ -5,6 +5,7 @@ import cron from 'node-cron';
 import { DateTime } from 'luxon';
 
 import { getGPTResponse } from '../services/gptService.js';
+import { getDonnaResponse } from '../services/getDonnaResponse.js';
 import Message from '../models/Message.js';
 import Reminder from '../models/Reminder.js';
 import Conversation from '../models/Conversation.js';
@@ -15,12 +16,8 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Lista de usuários autorizados
-const authorizedUsers = [
-  process.env.MY_NUMBER.replace('+', ''),
-];
+const authorizedUsers = [process.env.MY_NUMBER.replace('+', '')];
 
-// Função para enviar WhatsApp
 async function sendWhatsApp(to, text) {
   if (!text) return;
   try {
@@ -35,7 +32,6 @@ async function sendWhatsApp(to, text) {
   }
 }
 
-// Função principal do webhook
 export async function chat(req, res) {
   try {
     const body = req.body;
@@ -55,7 +51,6 @@ export async function chat(req, res) {
     let userMessage = "";
     let mediaUrl = null;
 
-    // ===== Processar mensagens =====
     if (entry.type === 'text') {
       userMessage = entry.text?.body || "";
     } else if (entry.type === 'audio') {
@@ -109,7 +104,6 @@ export async function chat(req, res) {
       return res.sendStatus(200);
     }
 
-    // ===== Salvar no histórico =====
     await Conversation.create({ from, role: 'user', content: userMessage });
     await saveMemory(from, 'user', userMessage);
 
@@ -119,7 +113,6 @@ export async function chat(req, res) {
 
     let responseText = "";
 
-    // ===== Comandos especiais: hora, data e clima =====
     if (/que horas são\??/i.test(userMessage)) {
       responseText = `🕒 Agora são ${currentTime}`;
     } else if (/qual a data( de hoje)?\??/i.test(userMessage)) {
@@ -129,48 +122,43 @@ export async function chat(req, res) {
       const city = cityMatch[1];
       responseText = await getWeather(city);
     } else {
-      // ===== Lembretes =====
-  const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
-  if (lembreteRegex.test(userMessage)) {
-    const match = userMessage.match(lembreteRegex);
-    const text = match[1];
-    const dateStr = match[3];
-    const date = new Date(dateStr);
+      const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
+      if (lembreteRegex.test(userMessage)) {
+        const match = userMessage.match(lembreteRegex);
+        const text = match[1];
+        const dateStr = match[3];
+        const date = new Date(dateStr);
 
-    if (isNaN(date)) {
-      responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
-    } else {
-      await Reminder.create({ from, text, date });
-      responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
+        if (isNaN(date)) {
+          responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
+        } else {
+          await Reminder.create({ from, text, date });
+          responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
+        }
+      } else {
+        const history = await Conversation.find({ from }).sort({ createdAt: 1 });
+        const conversationContext = history
+          .filter(h => h.content)
+          .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
+          .join("\n");
+
+        let memoryContext = "";
+        let relevantMemories = [];
+
+        if (/terapia|psic[oó]logo|ansiedade|emoções|emocional|sentimentos/i.test(userMessage)) {
+          relevantMemories = await getRelevantMemory(from, "terapia", 5);
+        } else {
+          relevantMemories = await getRelevantMemory(from, userMessage, 5);
+        }
+
+        memoryContext = relevantMemories
+          .filter(m => m.content)
+          .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+          .join("\n");
+
+        responseText = await getDonnaResponse(userMessage, from, conversationContext, memoryContext);
+      }
     }
-  } else {
-    // ===== Histórico curto e memória =====
-    const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-    const conversationContext = history
-      .filter(h => h.content)
-      .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
-      .join("\n");
-
-    let memoryContext = "";
-    let relevantMemories = [];
-
-    // ===== Patch: detectar temas emocionais e forçar busca semântica =====
-    if (/terapia|psic[oó]logo|ansiedade|emoções|emocional|sentimentos/i.test(userMessage)) {
-      relevantMemories = await getRelevantMemory(from, "terapia", 5);
-    } else {
-      relevantMemories = await getRelevantMemory(from, userMessage, 5);
-    }
-
-    memoryContext = relevantMemories
-      .filter(m => m.content)
-      .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
-      .join("\n");
-
-    // ===== Chamada GPT com contexto =====
-    import { getDonnaResponse } from '../services/getDonnaResponse.js';
-    responseText = await getDonnaResponse(userMessage, from, conversationContext, memoryContext);
-  }
-}
 
     await Conversation.create({ from, role: 'assistant', content: responseText });
     await saveMemory(from, 'assistant', responseText);
@@ -185,7 +173,6 @@ export async function chat(req, res) {
   }
 }
 
-// ===== Cron job para lembretes =====
 cron.schedule('* * * * *', async () => {
   const now = new Date();
   const reminders = await Reminder.find({ date: { $lte: now } });
