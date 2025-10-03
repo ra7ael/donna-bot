@@ -14,8 +14,11 @@ SemanticMemorySchema.index({ userId: 1 });
 
 const SemanticMemory = mongoose.model("SemanticMemory", SemanticMemorySchema);
 
-export async function querySemanticMemory(userMessage, limit = 1) {
-  const result = await SemanticMemory.find({ content: { $regex: userMessage, $options: "i" } })
+export async function querySemanticMemory(userMessage, userId, limit = 1) {
+  const result = await SemanticMemory.find({
+    userId,
+    content: { $regex: userMessage, $options: "i" }
+  })
     .sort({ createdAt: -1 })
     .limit(limit);
   return result.length ? result[0].content : null;
