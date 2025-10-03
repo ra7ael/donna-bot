@@ -291,6 +291,25 @@ app.post("/webhook", async (req, res) => {
     // ===== Tipos de mensagem =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
+
+      // 👇 COMANDO PERSONALIZADO: "minhas memórias"
+      if (body.toLowerCase().startsWith("minhas memórias")) {
+        const memorias = await db.collection("semanticMemory")
+          .find({ userId: from })
+          .sort({ timestamp: -1 })
+          .limit(5)
+          .toArray();
+
+        if (memorias.length === 0) {
+          await sendMessage(from, "🧠 Você ainda não tem memórias salvas.");
+        } else {
+          const resumo = memorias.map((m, i) => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n");
+          await sendMessage(from, `🗂️ Aqui estão suas últimas memórias:\n\n${resumo}`);
+        }
+
+        return res.sendStatus(200);
+      }
+
       if (body.toLowerCase().startsWith("fala ")) {
         body = body.slice(5).trim();
         isAudioResponse = true;
@@ -367,7 +386,7 @@ app.post("/webhook", async (req, res) => {
     let reply = await funcoesExtras(from, promptBody);
 
     // Se não for função extra, tenta resposta treinada
-    if (!reply) reply = await obterResposta(promptBody);
+    if (!reply) reply = await obterResposta(promptBody, from);
 
     // Se não tem resposta treinada, busca PDF ou GPT
     if (!reply) {
@@ -380,8 +399,19 @@ app.post("/webhook", async (req, res) => {
       await treinarDonna(promptBody, reply, from);
     }
 
-    await saveMemory(from, "user", promptBody);
-    await saveMemory(from, "assistant", reply);
+    await db.collection("semanticMemory").insertOne({
+      userId: from,
+      role: "user",
+      content: promptBody,
+      timestamp: new Date()
+    });
+
+    await db.collection("semanticMemory").insertOne({
+      userId: from,
+      role: "assistant",
+      content: reply,
+      timestamp: new Date()
+    });
 
     if (isAudioResponse) {
       try {
@@ -401,14 +431,3 @@ app.post("/webhook", async (req, res) => {
     res.sendStatus(500);
   }
 });
-
-
-app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
-
-export { 
-  askGPT,
-  getTodayEvents, 
-  addEvent, 
-  saveMemory, 
-  db 
-};
