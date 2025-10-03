@@ -310,6 +310,21 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
+      // 👇 COMANDO PERSONALIZADO: salvar nome
+      if (body.toLowerCase().startsWith("meu nome é")) {
+        const nome = body.split("meu nome é")[1].trim();
+        await setUserName(from, nome);
+        await sendMessage(from, `✅ Nome salvo: ${nome}`);
+        return res.sendStatus(200);
+      }
+
+      // 👇 COMANDO PERSONALIZADO: consultar nome
+      if (body.toLowerCase().includes("qual é meu nome")) {
+        const nome = await getUserName(from);
+        await sendMessage(from, nome ? `📛 Seu nome é ${nome}` : `❌ Ainda não sei seu nome. Quer me dizer?`);
+        return res.sendStatus(200);
+      }
+
       if (body.toLowerCase().startsWith("fala ")) {
         body = body.slice(5).trim();
         isAudioResponse = true;
