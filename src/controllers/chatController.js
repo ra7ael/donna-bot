@@ -130,44 +130,47 @@ export async function chat(req, res) {
       responseText = await getWeather(city);
     } else {
       // ===== Lembretes =====
-      const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
-      if (lembreteRegex.test(userMessage)) {
-        const match = userMessage.match(lembreteRegex);
-        const text = match[1];
-        const dateStr = match[3];
-        const date = new Date(dateStr);
+  const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
+  if (lembreteRegex.test(userMessage)) {
+    const match = userMessage.match(lembreteRegex);
+    const text = match[1];
+    const dateStr = match[3];
+    const date = new Date(dateStr);
 
-        if (isNaN(date)) {
-          responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
-        } else {
-          await Reminder.create({ from, text, date });
-          responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
-        }
-      } else {
-              // ===== Histórico curto e memória =====
-      const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-      const conversationContext = history
-        .filter(h => h.content)
-        .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
-        .join("\n");
-      
-      const relevantMemories = await getRelevantMemory(from, userMessage, 5);
-      const memoryContext = relevantMemories
-        .filter(m => m.content)
-        .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
-        .join("\n");
-
-// ===== Chamada GPT com contexto =====
-import { getDonnaResponse } from '../services/getDonnaResponse.js';
-
-responseText = await getDonnaResponse(userMessage, from, conversationContext, memoryContext);
-
-        // ===== Chamada GPT =====
-    import { getDonnaResponse } from '../services/getDonnaResponse.js';
-    
-    responseText = await getDonnaResponse(userMessage, from);
-      }
+    if (isNaN(date)) {
+      responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
+    } else {
+      await Reminder.create({ from, text, date });
+      responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
     }
+  } else {
+    // ===== Histórico curto e memória =====
+    const history = await Conversation.find({ from }).sort({ createdAt: 1 });
+    const conversationContext = history
+      .filter(h => h.content)
+      .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
+      .join("\n");
+
+    let memoryContext = "";
+    let relevantMemories = [];
+
+    // ===== Patch: detectar temas emocionais e forçar busca semântica =====
+    if (/terapia|psic[oó]logo|ansiedade|emoções|emocional|sentimentos/i.test(userMessage)) {
+      relevantMemories = await getRelevantMemory(from, "terapia", 5);
+    } else {
+      relevantMemories = await getRelevantMemory(from, userMessage, 5);
+    }
+
+    memoryContext = relevantMemories
+      .filter(m => m.content)
+      .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+      .join("\n");
+
+    // ===== Chamada GPT com contexto =====
+    import { getDonnaResponse } from '../services/getDonnaResponse.js';
+    responseText = await getDonnaResponse(userMessage, from, conversationContext, memoryContext);
+  }
+}
 
     await Conversation.create({ from, role: 'assistant', content: responseText });
     await saveMemory(from, 'assistant', responseText);
