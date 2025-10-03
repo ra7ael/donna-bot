@@ -144,18 +144,23 @@ export async function chat(req, res) {
           responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
         }
       } else {
-        // ===== Histórico curto e memória =====
-        const history = await Conversation.find({ from }).sort({ createdAt: 1 });
-        const conversationContext = history
-          .filter(h => h.content)
-          .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
-          .join("\n");
+              // ===== Histórico curto e memória =====
+      const history = await Conversation.find({ from }).sort({ createdAt: 1 });
+      const conversationContext = history
+        .filter(h => h.content)
+        .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
+        .join("\n");
+      
+      const relevantMemories = await getRelevantMemory(from, userMessage, 5);
+      const memoryContext = relevantMemories
+        .filter(m => m.content)
+        .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+        .join("\n");
 
-        const relevantMemories = await getRelevantMemory(from, userMessage, 5);
-        const memoryContext = relevantMemories
-          .filter(m => m.content)
-          .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
-          .join("\n");
+// ===== Chamada GPT com contexto =====
+import { getDonnaResponse } from '../services/getDonnaResponse.js';
+
+responseText = await getDonnaResponse(userMessage, from, conversationContext, memoryContext);
 
         // ===== Chamada GPT =====
     import { getDonnaResponse } from '../services/getDonnaResponse.js';
