@@ -17,9 +17,10 @@ export function startReminderCron(db, sendMessage) {
     }
 
     try {
-      const now = DateTime.now().setZone("America/Sao_Paulo").startOf('minute');
+      const now = DateTime.utc().startOf('minute');
       const nowDate = now.toJSDate();
       const nextMinute = now.plus({ minutes: 1 }).toJSDate();
+
 
       console.log(`⏰ Verificando lembretes entre ${now.toFormat("HH:mm")} e ${now.plus({ minutes: 1 }).toFormat("HH:mm")}`);
 
