@@ -37,20 +37,41 @@ export function getPapeis() {
   return papeisCombinados;
 }
 
-// Tenta obter resposta treinada; se não houver, chama a OpenAI, salva e retorna
+// Função principal: obtém resposta, salva e busca padrões
 export async function obterResposta(pergunta, userId) {
   await initDB();
   const perguntaTrim = (pergunta || "").trim();
   if (!perguntaTrim) return "";
 
-  // 1) Busca exata no banco para este usuário
+  // Busca proativa: verificar se o usuário já falou algo parecido recentemente
+  const semanticMemory = client.db(process.env.DONNA_DB_NAME || "donna").collection("semanticMemory");
+
+  const ontem = new Date();
+  ontem.setDate(ontem.getDate() - 1);
+
+  const palavrasChave = perguntaTrim.split(" ").slice(0, 3).join("|");
+
+  const registrosRecentes = await semanticMemory.find({
+    userId,
+    role: "user",
+    content: new RegExp(palavrasChave, "i"),
+    timestamp: { $gte: ontem }
+  }).toArray();
+
+  let observacaoProativa = "";
+
+  if (registrosRecentes.length > 0) {
+    observacaoProativa = " (Você mencionou algo parecido ontem. Quer revisar o que disse?)";
+  }
+
+  // Busca exata no banco para este usuário
   const existente = await respostas.findOne({ pergunta: perguntaTrim, userId });
   if (existente) {
     console.log("treinoDonna: resposta encontrada no DB para pergunta ->", perguntaTrim, "(usuário:", userId + ")");
     return existente.resposta;
   }
 
-  // 2) Se não existir, gera com a OpenAI
+  // Gera com a OpenAI
   const systemContent = `Você é Donna, assistente pessoal do Rafael. Use toda sua inteligência e combine conhecimentos dos papéis ativos (${papeisCombinados.length > 0 ? papeisCombinados.join(', ') : 'nenhum'}).
 
 Regras importantes:
@@ -73,9 +94,14 @@ Regras importantes:
       messages
     });
 
-    const respostaGerada = (completion.choices?.[0]?.message?.content || "").trim();
+    let respostaGerada = (completion.choices?.[0]?.message?.content || "").trim();
 
-    // Salva a nova resposta para aprendizado futuro, por usuário
+    // Adiciona observação proativa se houver
+    if (observacaoProativa) {
+      respostaGerada += observacaoProativa;
+    }
+
+    // Salva a nova resposta para aprendizado futuro
     await respostas.insertOne({
       userId,
       pergunta: perguntaTrim,
@@ -84,13 +110,15 @@ Regras importantes:
       criadoEm: new Date()
     });
 
-    // Salva também na memória semântica
-    const semanticMemory = client.db(process.env.DONNA_DB_NAME || "donna").collection("semanticMemory");
+    // Detecta sentimento
+    const sentimentoDetectado = detectarSentimento(perguntaTrim);
 
+    // Salva na memória semântica
     await semanticMemory.insertOne({
       userId,
       role: "user",
       content: perguntaTrim,
+      sentimento: sentimentoDetectado,
       timestamp: new Date()
     });
 
@@ -110,7 +138,7 @@ Regras importantes:
   }
 }
 
-// Função para treinar manualmente (upsert) por usuário
+// Função para treinar manualmente (upsert)
 export async function treinarDonna(pergunta, resposta, userId) {
   await initDB();
   const p = (pergunta || "").trim();
@@ -134,4 +162,18 @@ export async function treinarDonna(pergunta, resposta, userId) {
   }
 
   console.log(`treinoDonna: treinada -> "${p}" => "${r}" (usuário: ${userId})`);
+}
+
+// Função auxiliar: detector de sentimento
+function detectarSentimento(texto) {
+  const textoLower = texto.toLowerCase();
+
+  if (textoLower.includes("cansado") || textoLower.includes("exausto")) return "cansaço";
+  if (textoLower.includes("feliz") || textoLower.includes("animado")) return "alegria";
+  if (textoLower.includes("triste") || textoLower.includes("desanimado")) return "tristeza";
+  if (textoLower.includes("ansioso") || textoLower.includes("preocupado")) return "ansiedade";
+  if (textoLower.includes("irritado") || textoLower.includes("estressado")) return "irritação";
+  if (textoLower.includes("motivado") || textoLower.includes("focado")) return "motivação";
+
+  return "neutro";
 }
