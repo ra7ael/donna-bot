@@ -6,7 +6,7 @@ import { getGPTResponse } from "./gptService.js";
 import { getUserName } from "../models/user.js";
 import { getPapeis } from "../utils/treinoDonna.js";
 
-export async function getDonnaResponse(userMessage, userId) {
+export async function getDonnaResponse(userMessage, userId, conversationContext = "", memoryContext = "") {
   const prompt = userMessage.trim();
   const cacheKey = `user:${userId}:msg:${prompt.toLowerCase()}`;
 
@@ -48,7 +48,13 @@ export async function getDonnaResponse(userMessage, userId) {
 - Nunca invente informações.`
   };
 
-  const messages = [systemMessage, { role: "user", content: prompt }];
+  const messages = [
+    systemMessage,
+    ...(memoryContext ? [{ role: "system", content: `Memórias relevantes:\n${memoryContext}` }] : []),
+    ...(conversationContext ? [{ role: "system", content: `Histórico recente:\n${conversationContext}` }] : []),
+    { role: "user", content: prompt }
+  ];
+
   const gptAnswer = await getGPTResponse(messages);
 
   // Aprendizado
@@ -58,4 +64,3 @@ export async function getDonnaResponse(userMessage, userId) {
 
   return gptAnswer;
 }
-
