@@ -153,7 +153,21 @@ export async function chat(req, res) {
         const lastMemory = await SemanticMemory.find({ from }).sort({ createdAt: -2 }).limit(2);
         const assunto = lastMemory?.[0]?.content;
 
+      
+
           if (assunto) {
+            
+                        if (/minhas mem[oó]rias (da|sobre) (fam[ií]lia|trabalho|sono|relacionamento|sa[úu]de)/i.test(userMessage)) {
+              const match = userMessage.match(/minhas mem[oó]rias (da|sobre) (fam[ií]lia|trabalho|sono|relacionamento|sa[úu]de)/i);
+              const topic = match[2].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+            
+              const memorias = await SemanticMemory.find({ userId: from, topic }).sort({ timestamp: -1 }).limit(5);
+              const resumo = memorias.map(m => `🧠 ${m.role}: ${m.content}`).join("\n");
+            
+              await sendWhatsApp(from, resumo || "❌ Nenhuma memória encontrada sobre esse tema.");
+              return res.sendStatus(200);
+            }
+
             const history = await Conversation.find({ from }).sort({ createdAt: 1 });
             const conversationContext = history
               .filter(h => h.content)
