@@ -4,6 +4,7 @@ import fs from 'fs';
 import FormData from 'form-data';
 import cron from 'node-cron';
 import { DateTime } from 'luxon';
+import SemanticMemory from '../models/semanticMemory.js';
 
 import { getGPTResponse } from '../services/gptService.js';
 import { getDonnaResponse } from '../services/getDonnaResponse.js';
@@ -171,9 +172,9 @@ export async function chat(req, res) {
         const curtoPrazo = await getRelevantMemory(from, userMessage, 3);
         
         const seteDiasAtras = DateTime.now().minus({ days: 7 }).toJSDate();
-        const medioPrazo = await Conversation.find({ from, createdAt: { $gte: seteDiasAtras } }).limit(5);
+        const medioPrazo = await SemanticMemory.find({ from, createdAt: { $gte: seteDiasAtras } }).limit(5);
         
-        const longoPrazo = await Conversation.find({ from }).sort({ createdAt: 1 }).limit(5);
+        const longoPrazo = await SemanticMemory.find({ from }).sort({ createdAt: 1 }).limit(5);
         
         const todasMemorias = [...curtoPrazo, ...medioPrazo, ...longoPrazo];
         
