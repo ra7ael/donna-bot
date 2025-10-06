@@ -20,6 +20,15 @@ const PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 const authorizedUsers = [process.env.MY_NUMBER.replace('+', '')];
 
+function detectarTopico(texto) {
+  if (/fam[ií]lia|pai|m[ãa]e|filho|filha|irm[ãa]o|irm[ãa]|sobrinho|tia|tio/i.test(texto)) return "família";
+  if (/trabalho|emprego|carreira|empresa|profiss[aã]o|chefe|colega/i.test(texto)) return "trabalho";
+  if (/sono|ins[oô]nia|dormir|cansa[cç]o|acordar/i.test(texto)) return "sono";
+  if (/relacionamento|namoro|amor|casamento|parceir[oa]/i.test(texto)) return "relacionamento";
+  if (/sa[úu]de|doen[cç]a|m[eé]dico|terapia|ansiedade|emocional/i.test(texto)) return "saúde";
+  return "geral";
+}
+
 async function sendWhatsApp(to, text) {
   if (!text) return;
   try {
