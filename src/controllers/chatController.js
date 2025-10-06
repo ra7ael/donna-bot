@@ -140,8 +140,8 @@ export async function chat(req, res) {
       } else {
         // PATCH: revisão automática do último assunto
         if (/do que estamos falando\??|qual era o assunto\??|sobre o que estávamos conversando\??/i.test(userMessage)) {
-          const lastMemory = await getRelevantMemory(from, "", 1);
-          const assunto = lastMemory?.[0]?.content;
+        const lastMemory = await SemanticMemory.find({ from }).sort({ createdAt: -2 }).limit(2);
+        const assunto = lastMemory?.[0]?.content;
 
           if (assunto) {
             const history = await Conversation.find({ from }).sort({ createdAt: 1 });
