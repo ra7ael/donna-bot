@@ -378,6 +378,65 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+          // 👇 COMANDO PERSONALIZADO: salvar informações de empresa
+      if (body.toLowerCase().startsWith("empresa")) {
+        try {
+          const partes = body.split("empresa")[1].trim();
+          // Exemplo de mensagem: "empresa brink tem vale alimentação e plano de saúde"
+          const nomeEmpresa = partes.split(" ")[0].toLowerCase();
+          const info = partes.replace(nomeEmpresa, "").trim();
+
+          if (!info) {
+            await sendMessage(from, "⚠️ Por favor, informe algo sobre a empresa, ex: 'empresa Brink tem plano de saúde e VR'");
+            return res.sendStatus(200);
+          }
+
+          // Salvar no banco de dados (coleção 'empresas')
+          await db.collection("empresas").updateOne(
+            { nome: nomeEmpresa },
+            { $set: { beneficios: info, atualizadoEm: new Date() } },
+            { upsert: true }
+          );
+
+          console.log(`treinoDonna: informações salvas no DB para empresa -> ${nomeEmpresa}`);
+          await sendMessage(from, `🏢 Informações salvas para ${nomeEmpresa}: ${info}`);
+          return res.sendStatus(200);
+        } catch (error) {
+          console.error("❌ Erro ao salvar informações da empresa:", error);
+          await sendMessage(from, "⚠️ Ocorreu um erro ao salvar as informações da empresa.");
+          return res.sendStatus(500);
+        }
+      }
+
+      // 👇 COMANDO PERSONALIZADO: consultar informações de empresa
+      if (body.toLowerCase().startsWith("info da empresa")) {
+        try {
+          const nomeEmpresa = body.split("info da empresa")[1].trim().toLowerCase();
+
+          if (!nomeEmpresa) {
+            await sendMessage(from, "⚠️ Informe o nome da empresa, ex: 'info da empresa Brink'");
+            return res.sendStatus(200);
+          }
+
+          const empresa = await db.collection("empresas").findOne({ nome: nomeEmpresa });
+
+          if (empresa) {
+            console.log(`treinoDonna: consulta de informações para empresa -> ${nomeEmpresa}`);
+            await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
+          } else {
+            await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
+          }
+
+          return res.sendStatus(200);
+        } catch (error) {
+          console.error("❌ Erro ao consultar informações da empresa:", error);
+          await sendMessage(from, "⚠️ Ocorreu um erro ao buscar informações da empresa.");
+          return res.sendStatus(500);
+        }
+      }
+
+  
+
     // ===== Memória e GPT =====
     const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse()
