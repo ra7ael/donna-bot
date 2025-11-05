@@ -377,6 +377,33 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, comandoPapel.resposta);
       return res.sendStatus(200);
     }
+    
+    // 👇 COMANDO PERSONALIZADO: buscar memória por palavra
+if (body.toLowerCase().startsWith("buscar memória")) {
+  const termo = body.split("buscar memória")[1].trim();
+
+  if (!termo) {
+    await sendMessage(from, "⚠️ Diga o que quer buscar. Exemplo: 'buscar memória benefícios'");
+    return res.sendStatus(200);
+  }
+
+  const resultados = await db.collection("semanticMemory").find({
+    userId: from,
+    content: { $regex: new RegExp(termo, "i") }
+  })
+  .sort({ timestamp: -1 })
+  .limit(5)
+  .toArray();
+
+  if (resultados.length === 0) {
+    await sendMessage(from, `❌ Nenhuma memória encontrada com o termo: ${termo}`);
+  } else {
+    const resumo = resultados.map(m => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n\n");
+    await sendMessage(from, `🧠 Memórias que encontrei sobre *${termo}*:\n\n${resumo}`);
+  }
+
+  return res.sendStatus(200);
+}
 
           // 👇 COMANDO PERSONALIZADO: salvar informações de empresa
       if (body.toLowerCase().startsWith("empresa")) {
