@@ -436,32 +436,32 @@ if (body.toLowerCase().startsWith("buscar memória")) {
       }
 
       // 👇 COMANDO PERSONALIZADO: consultar informações de empresa
-      if (body.toLowerCase().startsWith("info da empresa")) {
-        try {
-          const nomeEmpresa = body.split("info da empresa")[1].trim().toLowerCase();
+if (body.toLowerCase().startsWith("info da empresa")) {
+  try {
+    const partes = body.split("info da empresa");
+    const nomeEmpresa = partes[1] ? partes[1].trim().toLowerCase() : null;
 
-          if (!nomeEmpresa) {
-            await sendMessage(from, "⚠️ Informe o nome da empresa, ex: 'info da empresa Brink'");
-            return res.sendStatus(200);
-          }
+    if (!nomeEmpresa) {
+      await sendMessage(from, "⚠️ Informe o nome da empresa, ex: 'info da empresa Brink'");
+      return res.sendStatus(200);
+    }
 
-          const empresa = await db.collection("empresas").findOne({ nome: nomeEmpresa });
+    const empresa = await db.collection("empresas").findOne({ nome: nomeEmpresa });
 
-          if (empresa) {
-            console.log(`treinoDonna: consulta de informações para empresa -> ${nomeEmpresa}`);
-            await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
-          } else {
-            await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
-          }
+    if (empresa) {
+      console.log(`treinoDonna: consulta de informações para empresa -> ${nomeEmpresa}`);
+      await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
+    } else {
+      await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
+    }
 
-          return res.sendStatus(200);
-        } catch (error) {
-          console.error("❌ Erro ao consultar informações da empresa:", error);
-          await sendMessage(from, "⚠️ Ocorreu um erro ao buscar informações da empresa.");
-          return res.sendStatus(500);
-        }
-      }
-
+    return res.sendStatus(200);
+  } catch (error) {
+    console.error("❌ Erro ao consultar informações da empresa:", error);
+    await sendMessage(from, "⚠️ Ocorreu um erro ao buscar informações da empresa.");
+    return res.sendStatus(500);
+  }
+}
   
 
     // ===== Memória e GPT =====
