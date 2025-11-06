@@ -465,15 +465,20 @@ if (body.toLowerCase().startsWith("info da empresa")) {
 }
   
 
-    // ===== Memória e GPT =====
-    const memories = await getUserMemory(from, 6);
-    const chatHistory = memories.reverse()
-      .map(m => ({ role: m.role, content: m.content || "" }))
-      .filter(m => m.content.trim() !== "");
+// ===== Memória e GPT =====
+const memories = await getUserMemory(from, 20); // traz até 15 mensagens anteriores
 
-    const systemMessage = {
-      role: "system",
-      content: `Você é a Donna, assistente pessoal do usuário.
+const chatHistory = memories.reverse()
+  .map(m => ({
+    role: m.role,
+    content: m.content || ""
+  }))
+  .filter(m => m.content.trim() !== "");
+
+// Mensagem de sistema para manter a persona da Donna
+const systemMessage = {
+  role: "system",
+  content: `Você é a Donna, assistente pessoal do usuário.
 - Use o nome do usuário quando souber.
 - Responda de forma objetiva, clara, direta e amigável.
 - Priorize respostas curtas e práticas.
@@ -482,24 +487,40 @@ if (body.toLowerCase().startsWith("info da empresa")) {
 - Adapte o tom para ser acolhedora e prestativa.
 - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa.
 - Não invente informações; se não souber, admita de forma educada.`
-    };
+};
 
-    // Funções extras
-    let reply = await funcoesExtras(from, promptBody);
+// Tenta funções extras e respostas treinadas
+let reply = await funcoesExtras(from, promptBody);
+if (!reply) reply = await obterResposta(promptBody, from);
 
-    // Se não for função extra, tenta resposta treinada
-    if (!reply) reply = await obterResposta(promptBody, from);
+// Caso não tenha resposta treinada, consulta PDFs ou GPT
+if (!reply) {
+  const pdfTrechos = await buscarPergunta(promptBody);
+  const promptFinal = pdfTrechos
+    ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
+    : promptBody;
 
-    // Se não tem resposta treinada, busca PDF ou GPT
-    if (!reply) {
-      const pdfTrechos = await buscarPergunta(promptBody);
-      const promptFinal = pdfTrechos
-        ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
-        : promptBody;
+  reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
+  await treinarDonna(promptBody, reply, from);
+}
 
-      reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
-      await treinarDonna(promptBody, reply, from);
-    }
+// Salva as interações no histórico do usuário
+await saveMemory(from, "user", promptBody);
+await saveMemory(from, "assistant", reply);
+
+// Envia resposta (texto ou áudio)
+if (isAudioResponse) {
+  try {
+    const audioBuffer = await falar(reply, "./resposta.mp3");
+    await sendAudio(from, audioBuffer);
+  } catch (err) {
+    console.error("❌ Erro ao gerar/enviar áudio:", err);
+    await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
+  }
+} else {
+  await sendMessage(from, reply);
+}
+
 
     await db.collection("semanticMemory").insertOne({
       userId: from,
