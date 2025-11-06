@@ -1,90 +1,93 @@
-import SemanticMemory from '../models/semanticMemory.js';
-import axios from 'axios';
-
-function detectarTopico(texto) {
-  if (/fam[ií]lia|pai|m[ãa]e|filho|filha|irm[ãa]o|irm[ãa]|sobrinho|tia|tio/i.test(texto)) return "família";
-  if (/trabalho|emprego|carreira|empresa|profiss[aã]o|chefe|colega/i.test(texto)) return "trabalho";
-  if (/sono|ins[oô]nia|dormir|cansa[cç]o|acordar/i.test(texto)) return "sono";
-  if (/relacionamento|namoro|amor|casamento|parceir[oa]/i.test(texto)) return "relacionamento";
-  if (/sa[úu]de|doen[cç]a|m[eé]dico|terapia|ansiedade|emocional/i.test(texto)) return "saúde";
-  return "geral";
-}
-
-function cosineSimilaritySafe(a, b) {
-  if (!a || !b || a.length !== b.length) return 0;
-  const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
-  const magA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0)) || 1;
-  const magB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0)) || 1;
-  return dot / (magA * magB);
-}
+import Memory from "../models/memory.js";
+import { addSemanticMemory } from "../models/semanticMemory.js";
 
 /**
- * 💾 Salva memória semântica otimizada
+ * Adiciona uma mensagem na memória de curto prazo (histórico recente)
  */
-export async function saveMemory(userId, role, content, type = "short") {
-  if (!content || content.trim().split(/\s+/).length < 5) return;
+export async function addMemory(userId, role, content) {
+  if (!content || !userId) return;
 
   try {
-    const existente = await SemanticMemory.findOne({ userId, content });
-    if (existente) return;
+    const memory = new Memory({ userId, role, content });
+    await memory.save();
 
-    const embeddingRes = await axios.post(
-      'https://api.openai.com/v1/embeddings',
-      { model: 'text-embedding-3-small', input: content },
-      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
-    );
+    // Também registra na memória semântica se for uma resposta relevante
+    if (role === "assistant" && content.length > 20) {
+      await addSemanticMemory("", content, userId, role);
+    }
 
-    const embedding = embeddingRes.data.data[0].embedding;
-    const topic = detectarTopico(content);
-
-    await SemanticMemory.create({
-      userId,
-      role,
-      content,
-      embedding,
-      topic,
-      type,
-      timestamp: new Date()
-    });
-
-    console.log(`💾 [Memória salva] ${userId} | ${topic} | ${content.slice(0, 50)}...`);
+    return memory;
   } catch (err) {
-    console.error('❌ Erro ao salvar memória:', err.response?.data || err.message);
+    console.error("Erro ao salvar memória:", err);
   }
 }
 
 /**
- * 🔍 Busca memórias relevantes (contexto inteligente)
+ * Retorna o histórico de mensagens recentes para dar contexto à IA
  */
-export async function getRelevantMemory(userId, query, topK = 5) {
-  if (!query || !query.trim()) return [];
-
+export async function getMemoryContext(userId, limit = 10) {
   try {
-    const embeddingRes = await axios.post(
-      'https://api.openai.com/v1/embeddings',
-      { model: 'text-embedding-3-small', input: query },
-      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
-    );
+    const history = await Memory.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select("role content -_id");
 
-    const queryEmbedding = embeddingRes.data.data[0].embedding;
-    const memories = await SemanticMemory.find({ userId })
-      .sort({ timestamp: -1 })
-      .limit(200);
-
-    const ranked = memories
-      .map(m => ({
-        memory: m,
-        score: cosineSimilaritySafe(m.embedding, queryEmbedding)
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
-
-    console.log(`🧠 Memórias relevantes para ${userId}:`, ranked.map(r => r.score.toFixed(3)));
-
-    return ranked.map(r => r.memory);
+    return history.reverse();
   } catch (err) {
-    console.error('❌ Erro ao buscar memórias:', err.response?.data || err.message);
+    console.error("Erro ao buscar memória:", err);
     return [];
   }
+}
+
+/**
+ * Constrói um texto de contexto unificado com base nas memórias
+ */
+export async function buildContext(userId, limit = 10) {
+  const memories = await getMemoryContext(userId, limit);
+
+  if (!memories.length) return "";
+
+  return memories
+    .map(m => `${m.role === "user" ? "👤 Usuário" : "🤖 Donna"}: ${m.content}`)
+    .join("\n");
+}
+
+/**
+ * Limpa todo o histórico de um usuário (reset de contexto)
+ */
+export async function clearMemory(userId) {
+  try {
+    await Memory.deleteMany({ userId });
+    console.log(`🧹 Memória limpa para o usuário ${userId}`);
+  } catch (err) {
+    console.error("Erro ao limpar memória:", err);
+  }
+}
+
+/**
+ * Verifica se o contexto é muito repetido e evita mensagens automáticas irritantes
+ */
+export async function shouldSkipResponse(userId, newMessage) {
+  const recent = await getMemoryContext(userId, 3);
+  const lastUserMessage = recent
+    .filter(m => m.role === "user")
+    .map(m => m.content)
+    .pop();
+
+  if (!lastUserMessage) return false;
+
+  const similarity = stringSimilarity(newMessage, lastUserMessage);
+  return similarity > 0.9; // se for quase igual, ignora repetição
+}
+
+/**
+ * Calcula similaridade simples entre duas strings
+ */
+function stringSimilarity(a, b) {
+  const clean = str => str.toLowerCase().replace(/[^\w\s]/g, "");
+  const wordsA = clean(a).split(" ");
+  const wordsB = clean(b).split(" ");
+  const intersection = wordsA.filter(word => wordsB.includes(word));
+  return intersection.length / Math.max(wordsA.length, wordsB.length);
 }
 
