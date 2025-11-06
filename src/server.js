@@ -392,22 +392,12 @@ app.post("/webhook", async (req, res) => {
 
     // 🔹 Pega o conteúdo da mensagem recebida
     const promptBody = body.trim();
-    
+
     // 🔹 Verifica se a mensagem é válida
     if (!promptBody || promptBody.length < 2) {
       await sendMessage(from, "❌ Por favor, digite uma mensagem completa.");
       return res.sendStatus(200);
     }
-    
-    // 🔹 Carrega as memórias anteriores do usuário (contexto da conversa)
-    const memories = await getUserMemory(from, 20);
-    
-    // 🔹 Gera a resposta da IA com base no histórico e na nova mensagem
-    let reply = await askGPT(promptBody, memories);
-    
-    // 🔹 Envia a resposta gerada ao usuário
-    await sendMessage(from, reply);
-
 
     // ===== Verifica comando de papéis =====
     const comandoPapel = verificarComandoProfissao(promptBody);
@@ -415,107 +405,102 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, comandoPapel.resposta);
       return res.sendStatus(200);
     }
-    
+
     // 👇 COMANDO PERSONALIZADO: buscar memória por palavra
-if (body.toLowerCase().startsWith("buscar memória")) {
-  const termo = body.split("buscar memória")[1].trim();
+    if (body.toLowerCase().startsWith("buscar memória")) {
+      const termo = body.split("buscar memória")[1].trim();
 
-  if (!termo) {
-    await sendMessage(from, "⚠️ Diga o que quer buscar. Exemplo: 'buscar memória benefícios'");
-    return res.sendStatus(200);
-  }
-
-  const resultados = await db.collection("semanticMemory").find({
-    userId: from,
-    content: { $regex: new RegExp(termo, "i") }
-  })
-  .sort({ timestamp: -1 })
-  .limit(5)
-  .toArray();
-
-  if (resultados.length === 0) {
-    await sendMessage(from, `❌ Nenhuma memória encontrada com o termo: ${termo}`);
-  } else {
-    const resumo = resultados.map(m => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n\n");
-    await sendMessage(from, `🧠 Memórias que encontrei sobre *${termo}*:\n\n${resumo}`);
-  }
-
-  return res.sendStatus(200);
-}
-
-          // 👇 COMANDO PERSONALIZADO: salvar informações de empresa
-      if (body.toLowerCase().startsWith("empresa")) {
-        try {
-          const partes = body.split("empresa")[1].trim();
-          // Exemplo de mensagem: "empresa brink tem vale alimentação e plano de saúde"
-          const nomeEmpresa = partes.split(" ")[0].toLowerCase();
-          const info = partes.replace(nomeEmpresa, "").trim();
-
-          if (!info) {
-            await sendMessage(from, "⚠️ Por favor, informe algo sobre a empresa, ex: 'empresa Brink tem plano de saúde e VR'");
-            return res.sendStatus(200);
-          }
-
-          // Salvar no banco de dados (coleção 'empresas')
-          await db.collection("empresas").updateOne(
-            { nome: nomeEmpresa },
-            { $set: { beneficios: info, atualizadoEm: new Date() } },
-            { upsert: true }
-          );
-
-          console.log(`treinoDonna: informações salvas no DB para empresa -> ${nomeEmpresa}`);
-          await sendMessage(from, `🏢 Informações salvas para ${nomeEmpresa}: ${info}`);
-          return res.sendStatus(200);
-        } catch (error) {
-          console.error("❌ Erro ao salvar informações da empresa:", error);
-          await sendMessage(from, "⚠️ Ocorreu um erro ao salvar as informações da empresa.");
-          return res.sendStatus(500);
-        }
+      if (!termo) {
+        await sendMessage(from, "⚠️ Diga o que quer buscar. Exemplo: 'buscar memória benefícios'");
+        return res.sendStatus(200);
       }
 
-      // 👇 COMANDO PERSONALIZADO: consultar informações de empresa
-if (body.toLowerCase().startsWith("info da empresa")) {
-  try {
-    const partes = body.split("info da empresa");
-    const nomeEmpresa = partes[1] ? partes[1].trim().toLowerCase() : null;
+      const resultados = await db.collection("semanticMemory").find({
+        userId: from,
+        content: { $regex: new RegExp(termo, "i") }
+      })
+        .sort({ timestamp: -1 })
+        .limit(5)
+        .toArray();
 
-    if (!nomeEmpresa) {
-      await sendMessage(from, "⚠️ Informe o nome da empresa, ex: 'info da empresa Brink'");
+      if (resultados.length === 0) {
+        await sendMessage(from, `❌ Nenhuma memória encontrada com o termo: ${termo}`);
+      } else {
+        const resumo = resultados.map(m => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n\n");
+        await sendMessage(from, `🧠 Memórias que encontrei sobre *${termo}*:\n\n${resumo}`);
+      }
+
       return res.sendStatus(200);
     }
 
-    const empresa = await db.collection("empresas").findOne({ nome: nomeEmpresa });
+    // 👇 COMANDO PERSONALIZADO: salvar informações de empresa
+    if (body.toLowerCase().startsWith("empresa")) {
+      try {
+        const partes = body.split("empresa")[1].trim();
+        const nomeEmpresa = partes.split(" ")[0].toLowerCase();
+        const info = partes.replace(nomeEmpresa, "").trim();
 
-    if (empresa) {
-      console.log(`treinoDonna: consulta de informações para empresa -> ${nomeEmpresa}`);
-      await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
-    } else {
-      await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
+        if (!info) {
+          await sendMessage(from, "⚠️ Por favor, informe algo sobre a empresa, ex: 'empresa Brink tem plano de saúde e VR'");
+          return res.sendStatus(200);
+        }
+
+        await db.collection("empresas").updateOne(
+          { nome: nomeEmpresa },
+          { $set: { beneficios: info, atualizadoEm: new Date() } },
+          { upsert: true }
+        );
+
+        console.log(`treinoDonna: informações salvas no DB para empresa -> ${nomeEmpresa}`);
+        await sendMessage(from, `🏢 Informações salvas para ${nomeEmpresa}: ${info}`);
+        return res.sendStatus(200);
+      } catch (error) {
+        console.error("❌ Erro ao salvar informações da empresa:", error);
+        await sendMessage(from, "⚠️ Ocorreu um erro ao salvar as informações da empresa.");
+        return res.sendStatus(500);
+      }
     }
 
-    return res.sendStatus(200);
-  } catch (error) {
-    console.error("❌ Erro ao consultar informações da empresa:", error);
-    await sendMessage(from, "⚠️ Ocorreu um erro ao buscar informações da empresa.");
-    return res.sendStatus(500);
-  }
-}
-  
+    // 👇 COMANDO PERSONALIZADO: consultar informações de empresa
+    if (body.toLowerCase().startsWith("info da empresa")) {
+      try {
+        const partes = body.split("info da empresa");
+        const nomeEmpresa = partes[1] ? partes[1].trim().toLowerCase() : null;
 
-// ===== Memória e GPT =====
-const memories = await getUserMemory(from, 20); // traz até 15 mensagens anteriores
+        if (!nomeEmpresa) {
+          await sendMessage(from, "⚠️ Informe o nome da empresa, ex: 'info da empresa Brink'");
+          return res.sendStatus(200);
+        }
 
-const chatHistory = memories.reverse()
-  .map(m => ({
-    role: m.role,
-    content: m.content || ""
-  }))
-  .filter(m => m.content.trim() !== "");
+        const empresa = await db.collection("empresas").findOne({ nome: nomeEmpresa });
 
-// Mensagem de sistema para manter a persona da Donna
-const systemMessage = {
-  role: "system",
-  content: `Você é a Donna, assistente pessoal do usuário.
+        if (empresa) {
+          console.log(`treinoDonna: consulta de informações para empresa -> ${nomeEmpresa}`);
+          await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
+        } else {
+          await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
+        }
+
+        return res.sendStatus(200);
+      } catch (error) {
+        console.error("❌ Erro ao consultar informações da empresa:", error);
+        await sendMessage(from, "⚠️ Ocorreu um erro ao buscar informações da empresa.");
+        return res.sendStatus(500);
+      }
+    }
+
+    // ===== Memória e GPT =====
+    const memories = await getUserMemory(from, 20);
+    const chatHistory = memories.reverse()
+      .map(m => ({
+        role: m.role,
+        content: m.content || ""
+      }))
+      .filter(m => m.content.trim() !== "");
+
+    const systemMessage = {
+      role: "system",
+      content: `Você é a Donna, assistente pessoal do usuário.
 - Use o nome do usuário quando souber.
 - Responda de forma objetiva, clara, direta e amigável.
 - Priorize respostas curtas e práticas.
@@ -524,40 +509,36 @@ const systemMessage = {
 - Adapte o tom para ser acolhedora e prestativa.
 - Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa.
 - Não invente informações; se não souber, admita de forma educada.`
-};
+    };
 
-// Tenta funções extras e respostas treinadas
-let reply = await funcoesExtras(from, promptBody);
-if (!reply) reply = await obterResposta(promptBody, from);
+    let reply = await funcoesExtras(from, promptBody);
+    if (!reply) reply = await obterResposta(promptBody, from);
 
-// Caso não tenha resposta treinada, consulta PDFs ou GPT
-if (!reply) {
-  const pdfTrechos = await buscarPergunta(promptBody);
-  const promptFinal = pdfTrechos
-    ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
-    : promptBody;
+    if (!reply) {
+      const pdfTrechos = await buscarPergunta(promptBody);
+      const promptFinal = pdfTrechos
+        ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
+        : promptBody;
 
-  reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
-  await treinarDonna(promptBody, reply, from);
-}
+      reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
+      await treinarDonna(promptBody, reply, from);
+    }
 
-// Salva as interações no histórico do usuário
-await saveMemory(from, "user", promptBody);
-await saveMemory(from, "assistant", reply);
+    await saveMemory(from, "user", promptBody);
+    await saveMemory(from, "assistant", reply);
 
-// Envia resposta (texto ou áudio)
-if (isAudioResponse) {
-  try {
-    const audioBuffer = await falar(reply, "./resposta.mp3");
-    await sendAudio(from, audioBuffer);
-  } catch (err) {
-    console.error("❌ Erro ao gerar/enviar áudio:", err);
-    await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
-  }
-} else {
-  await sendMessage(from, reply);
-}
-    
+    if (isAudioResponse) {
+      try {
+        const audioBuffer = await falar(reply, "./resposta.mp3");
+        await sendAudio(from, audioBuffer);
+      } catch (err) {
+        console.error("❌ Erro ao gerar/enviar áudio:", err);
+        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
+      }
+    } else {
+      await sendMessage(from, reply);
+    }
+
     res.sendStatus(200);
   } catch (err) {
     console.error("❌ Erro no webhook:", err);
