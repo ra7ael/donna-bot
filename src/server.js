@@ -405,10 +405,6 @@ app.post("/webhook", async (req, res) => {
     // 🔹 Gera a resposta da IA com base no histórico e na nova mensagem
     const reply = await askGPT(promptBody, memories);
     
-    // 🔹 Salva a nova interação na base de dados
-    await saveMemory(from, "user", promptBody);
-    await saveMemory(from, "assistant", reply);
-    
     // 🔹 Envia a resposta gerada ao usuário
     await sendMessage(from, reply);
 
