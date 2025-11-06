@@ -10,25 +10,28 @@ function detectarTopico(texto) {
   return "geral";
 }
 
+function cosineSimilaritySafe(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
+  const magA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0)) || 1;
+  const magB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0)) || 1;
+  return dot / (magA * magB);
+}
+
 /**
- * Salvar memória do usuário com embedding e tópico
+ * 💾 Salva memória semântica otimizada
  */
 export async function saveMemory(userId, role, content, type = "short") {
-  if (!content || !content.trim()) return;
+  if (!content || content.trim().split(/\s+/).length < 5) return;
 
   try {
+    const existente = await SemanticMemory.findOne({ userId, content });
+    if (existente) return;
+
     const embeddingRes = await axios.post(
       'https://api.openai.com/v1/embeddings',
-      {
-        model: 'text-embedding-3-small',
-        input: content
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { model: 'text-embedding-3-small', input: content },
+      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
     );
 
     const embedding = embeddingRes.data.data[0].embedding;
@@ -44,14 +47,14 @@ export async function saveMemory(userId, role, content, type = "short") {
       timestamp: new Date()
     });
 
-    console.log(`💾 Memória salva para ${userId} (${type}) [${topic}]`);
+    console.log(`💾 [Memória salva] ${userId} | ${topic} | ${content.slice(0, 50)}...`);
   } catch (err) {
     console.error('❌ Erro ao salvar memória:', err.response?.data || err.message);
   }
 }
 
 /**
- * Buscar memórias mais relevantes por similaridade de cosseno
+ * 🔍 Busca memórias relevantes (contexto inteligente)
  */
 export async function getRelevantMemory(userId, query, topK = 5) {
   if (!query || !query.trim()) return [];
@@ -59,33 +62,29 @@ export async function getRelevantMemory(userId, query, topK = 5) {
   try {
     const embeddingRes = await axios.post(
       'https://api.openai.com/v1/embeddings',
-      {
-        model: 'text-embedding-3-small',
-        input: query
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { model: 'text-embedding-3-small', input: query },
+      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
     );
 
     const queryEmbedding = embeddingRes.data.data[0].embedding;
-    const memories = await SemanticMemory.find({ userId });
+    const memories = await SemanticMemory.find({ userId })
+      .sort({ timestamp: -1 })
+      .limit(200);
 
-    const similarities = memories.map(m => {
-      const dot = m.embedding.reduce((sum, val, i) => sum + val * queryEmbedding[i], 0);
-      const magA = Math.sqrt(m.embedding.reduce((sum, val) => sum + val * val, 0));
-      const magB = Math.sqrt(queryEmbedding.reduce((sum, val) => sum + val * val, 0));
-      const cosine = dot / (magA * magB || 1);
-      return { memory: m, score: cosine };
-    });
+    const ranked = memories
+      .map(m => ({
+        memory: m,
+        score: cosineSimilaritySafe(m.embedding, queryEmbedding)
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
 
-    similarities.sort((a, b) => b.score - a.score);
-    return similarities.slice(0, topK).map(s => s.memory);
+    console.log(`🧠 Memórias relevantes para ${userId}:`, ranked.map(r => r.score.toFixed(3)));
+
+    return ranked.map(r => r.memory);
   } catch (err) {
     console.error('❌ Erro ao buscar memórias:', err.response?.data || err.message);
     return [];
   }
 }
+
