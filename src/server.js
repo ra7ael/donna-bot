@@ -390,11 +390,28 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // 🔹 Pega o conteúdo da mensagem recebida
     const promptBody = body.trim();
+    
+    // 🔹 Verifica se a mensagem é válida
     if (!promptBody || promptBody.length < 2) {
       await sendMessage(from, "❌ Por favor, digite uma mensagem completa.");
       return res.sendStatus(200);
     }
+    
+    // 🔹 Carrega as memórias anteriores do usuário (contexto da conversa)
+    const memories = await getUserMemory(from, 20);
+    
+    // 🔹 Gera a resposta da IA com base no histórico e na nova mensagem
+    const reply = await askGPT(promptBody, memories);
+    
+    // 🔹 Salva a nova interação na base de dados
+    await saveMemory(from, "user", promptBody);
+    await saveMemory(from, "assistant", reply);
+    
+    // 🔹 Envia a resposta gerada ao usuário
+    await sendMessage(from, reply);
+
 
     // ===== Verifica comando de papéis =====
     const comandoPapel = verificarComandoProfissao(promptBody);
