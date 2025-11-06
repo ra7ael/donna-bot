@@ -1,4 +1,3 @@
-// src/models/semanticMemory.js
 import mongoose from "mongoose";
 
 const SemanticMemorySchema = new mongoose.Schema({
@@ -7,39 +6,52 @@ const SemanticMemorySchema = new mongoose.Schema({
   content: { type: String, required: true },
   contentType: { type: String, default: "text" },
   embedding: { type: [Number], default: [] },
-  topic: { type: String, default: "geral" }, // 🧩 Novo: classifica o tipo de assunto (família, trabalho etc.)
-  type: { type: String, default: "short" },  // 🧩 Novo: tipo de memória (curta ou longa)
-  timestamp: { type: Date, default: Date.now } // 🧩 Novo: substitui o createdAt
+  createdAt: { type: Date, default: Date.now }
 });
 
-// Indexa por usuário + data para buscas rápidas
-SemanticMemorySchema.index({ userId: 1, timestamp: -1 });
-
-// === 🔍 Busca memórias por similaridade simples (regex ou texto exato)
-export async function querySemanticMemory(userMessage, userId, limit = 3) {
-  const result = await SemanticMemory.find({
-    userId,
-    content: { $regex: userMessage, $options: "i" }
-  })
-    .sort({ timestamp: -1 })
-    .limit(limit);
-
-  return result.map(r => r.content);
-}
-
-// === 💾 Adiciona nova memória ao histórico do usuário
-export async function addSemanticMemory(userMessage, answer, userId = "unknown", role = "assistant", topic = "geral") {
-  const doc = new SemanticMemory({
-    userId,
-    role,
-    content: role === "user" ? userMessage : answer,
-    topic,
-    embedding: [],
-    type: "short"
-  });
-  await doc.save();
-  return doc;
-}
+SemanticMemorySchema.index({ userId: 1, createdAt: -1 });
 
 const SemanticMemory = mongoose.model("SemanticMemory", SemanticMemorySchema);
+
+/**
+ * Consulta a memória semântica com base em uma mensagem do usuário.
+ * Retorna o conteúdo mais recente que contenha partes semelhantes da mensagem.
+ */
+export async function querySemanticMemory(userMessage, userId, limit = 1) {
+  if (!userMessage || !userId) return null;
+
+  const results = await SemanticMemory.find({
+    userId,
+    content: { $regex: new RegExp(userMessage, "i") }
+  })
+    .sort({ createdAt: -1 })
+    .limit(limit);
+
+  return results.length ? results[0].content : null;
+}
+
+/**
+ * Adiciona nova lembrança semântica da conversa.
+ */
+export async function addSemanticMemory(userMessage, answer, userId = "unknown", role = "assistant") {
+  if (!answer || !userId) return null;
+
+  const memory = new SemanticMemory({
+    userId,
+    role,
+    content: answer,
+    embedding: [] // pode integrar futuramente com vetores OpenAI se quiser
+  });
+
+  await memory.save();
+  return memory;
+}
+
+/**
+ * Recupera as últimas memórias registradas para um usuário.
+ */
+export async function getRecentMemories(userId, limit = 5) {
+  return await SemanticMemory.find({ userId }).sort({ createdAt: -1 }).limit(limit);
+}
+
 export default SemanticMemory;
