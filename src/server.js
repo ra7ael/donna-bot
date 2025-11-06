@@ -212,28 +212,29 @@ async function setUserName(number, name) {
   );
 }
 
-async function getUserMemory(number, limit = 10) {
+async function getUserMemory(userId, limit = 20) {
   return await db.collection("semanticMemory")
-    .find({ numero: number })
+    .find({ userId })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
 }
 
-async function saveMemory(number, role, content) {
-  if (!content || !content.trim()) return;
+async function saveMemory(userId, role, content) {
+  if (!content?.trim()) return;
   try {
     await db.collection("semanticMemory").insertOne({
-      numero: number,
+      userId,
       role,
       content,
       timestamp: new Date()
     });
-    console.log("💾 Salvo em semanticMemory:", { number, role, content });
+    console.log("💾 Memória salva:", { userId, role, content });
   } catch (err) {
     console.error("❌ Erro ao salvar memória:", err);
   }
 }
+
 
 async function transcribeAudio(audioBuffer) {
   try {
