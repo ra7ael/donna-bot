@@ -520,34 +520,7 @@ if (isAudioResponse) {
 } else {
   await sendMessage(from, reply);
 }
-
-
-    await db.collection("semanticMemory").insertOne({
-      userId: from,
-      role: "user",
-      content: promptBody,
-      timestamp: new Date()
-    });
-
-    await db.collection("semanticMemory").insertOne({
-      userId: from,
-      role: "assistant",
-      content: reply,
-      timestamp: new Date()
-    });
-
-    if (isAudioResponse) {
-      try {
-        const audioBuffer = await falar(reply, "./resposta.mp3");
-        await sendAudio(from, audioBuffer);
-      } catch (err) {
-        console.error("❌ Erro ao gerar/enviar áudio:", err);
-        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
-      }
-    } else {
-      await sendMessage(from, reply);
-    }
-
+    
     res.sendStatus(200);
   } catch (err) {
     console.error("❌ Erro no webhook:", err);
