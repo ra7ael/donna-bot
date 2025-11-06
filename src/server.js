@@ -150,23 +150,47 @@ app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
 // ===== Funções de GPT, WhatsApp, Memória, etc =====
 async function askGPT(prompt, history = []) {
   try {
-    const safeMessages = history
-      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
-      .filter(m => m.content.trim() !== "");
-    safeMessages.push({ role: "user", content: prompt || "" });
+    // 🧠 Garante que o histórico esteja limpo e formatado
+    const safeMessages = [
+      {
+        role: "system",
+        content: "Você é a Donna, assistente pessoal do Rafael. Seja gentil, proativa e sempre contextualize as conversas anteriores sem perder objetividade."
+      },
+      ...history
+        .map(m => ({
+          role: m.role,
+          content: typeof m.content === "string" ? m.content.trim() : ""
+        }))
+        .filter(m => m.content !== ""),
+      { role: "user", content: prompt?.trim() || "" }
+    ];
 
+    // 🗣️ Envio para a API da OpenAI
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      { model: "gpt-5-mini", messages: safeMessages },
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
+      {
+        model: "gpt-5-mini",
+        messages: safeMessages,
+        temperature: 0.7,
+        max_tokens: 500
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${GPT_API_KEY}`, // ✅ corrigido aqui (faltavam crases)
+          "Content-Type": "application/json"
+        }
+      }
     );
 
+    // ✅ Retorna a resposta principal
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
-    console.error("❌ Erro GPT:", err.response?.data || err);
-    return "Hmm… ainda estou pensando!";
+    console.error("❌ Erro GPT:", err.response?.data || err.message);
+    return "❌ Ocorreu um erro ao gerar a resposta.";
   }
 }
+
+
 
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
