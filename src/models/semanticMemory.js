@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
+import { getEmbedding } from "../utils/embeddingService.js"; // função que gera embedding (mostro abaixo)
 
+// ===== Schema =====
 const SemanticMemorySchema = new mongoose.Schema({
   userId: { type: String, required: true },
   role: { type: String, enum: ["user", "assistant"], required: true },
@@ -10,46 +12,52 @@ const SemanticMemorySchema = new mongoose.Schema({
 });
 
 SemanticMemorySchema.index({ userId: 1, createdAt: -1 });
-
 const SemanticMemory = mongoose.model("SemanticMemory", SemanticMemorySchema);
 
-/**
- * Consulta a memória semântica com base em uma mensagem do usuário.
- * Retorna o conteúdo mais recente que contenha partes semelhantes da mensagem.
- */
+// ===== Função de Similaridade =====
+function cosineSimilarity(vecA, vecB) {
+  if (!vecA.length || !vecB.length) return 0;
+  const dot = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
+  const normA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
+  const normB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
+  return dot / (normA * normB);
+}
+
+// ===== Consulta Inteligente =====
 export async function querySemanticMemory(userMessage, userId, limit = 1) {
   if (!userMessage || !userId) return null;
 
-  const results = await SemanticMemory.find({
-    userId,
-    content: { $regex: new RegExp(userMessage, "i") }
-  })
-    .sort({ createdAt: -1 })
-    .limit(limit);
+  const queryEmbedding = await getEmbedding(userMessage);
+  const memories = await SemanticMemory.find({ userId });
 
-  return results.length ? results[0].content : null;
+  // Calcula similaridade de cada memória
+  const ranked = memories
+    .map(m => ({
+      content: m.content,
+      similarity: cosineSimilarity(queryEmbedding, m.embedding || [])
+    }))
+    .sort((a, b) => b.similarity - a.similarity);
+
+  return ranked.length ? ranked.slice(0, limit).map(r => r.content) : null;
 }
 
-/**
- * Adiciona nova lembrança semântica da conversa.
- */
+// ===== Adiciona Memória =====
 export async function addSemanticMemory(userMessage, answer, userId = "unknown", role = "assistant") {
   if (!answer || !userId) return null;
 
+  const embedding = await getEmbedding(answer);
   const memory = new SemanticMemory({
     userId,
     role,
     content: answer,
-    embedding: [] // pode integrar futuramente com vetores OpenAI se quiser
+    embedding
   });
 
   await memory.save();
   return memory;
 }
 
-/**
- * Recupera as últimas memórias registradas para um usuário.
- */
+// ===== Recupera últimas memórias =====
 export async function getRecentMemories(userId, limit = 5) {
   return await SemanticMemory.find({ userId }).sort({ createdAt: -1 }).limit(limit);
 }
