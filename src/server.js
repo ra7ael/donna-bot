@@ -296,6 +296,26 @@ async function saveMemory(userId, role, content) {
   }
 }
 
+// ===== Recupera memória contextual antes de responder =====
+async function recuperarContexto(userId, novaMensagem) {
+  try {
+    const memorias = await db.collection("semanticMemory")
+      .find({ userId })
+      .sort({ timestamp: -1 })
+      .limit(10)
+      .toArray();
+
+    const contexto = memorias
+      .map(m => `${m.role === "user" ? "Usuário" : "Donna"}: ${m.content}`)
+      .join("\n");
+
+    return `Contexto anterior:\n${contexto}\n\nNova mensagem: ${novaMensagem}`;
+  } catch (err) {
+    console.error("❌ Erro ao recuperar contexto:", err);
+    return novaMensagem;
+  }
+}
+
 
 async function transcribeAudio(audioBuffer) {
   try {
@@ -337,15 +357,43 @@ async function getTodayEvents(number) {
 // ===== Webhook WhatsApp (interação direta) =====
 app.post("/webhook", async (req, res) => {
   try {
-    const messageObj = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!messageObj) {
-      console.warn("⚠️ Webhook sem mensagem válida recebida:", req.body);
-      return res.sendStatus(200);
-    }
+    const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    if (!messageObj) return res.sendStatus(200);
 
     const from = messageObj.from;
     let body = "";
     let isAudioResponse = false;
+
+    if (messageObj.type === "text") {
+      body = messageObj.text.body;
+    }
+
+    // 🧠 Busca histórico recente
+    const memories = await getUserMemory(from, 20);
+    const chatHistory = memories.reverse()
+      .map(m => ({
+        role: m.role,
+        content: m.content || ""
+      }))
+      .filter(m => m.content.trim() !== "");
+
+    // 🔹 Gera resposta com contexto
+    const resposta = await askGPT(body, chatHistory);
+
+    // 💾 Salva nova interação
+    await saveMemory(from, "user", body);
+    await saveMemory(from, "assistant", resposta);
+
+    // 📤 Responde no WhatsApp
+    await sendMessage(from, resposta);
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("Erro no webhook:", err);
+    res.sendStatus(500);
+  }
+});
+
 
     // 🧩 Captura com segurança o texto da mensagem
     if (messageObj.text?.body) {
