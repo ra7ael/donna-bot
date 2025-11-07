@@ -27,6 +27,43 @@ import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
 
+const uri = process.env.MONGO_URI || "mongodb+srv://<teu_usuario>:<tua_senha>@cluster0.mongodb.net/";
+let db;
+
+export async function connectDB() {
+  if (db) return db;
+
+  try {
+    console.log("🔹 Tentando conectar ao MongoDB...");
+    const client = new MongoClient(uri);
+    await client.connect();
+
+    db = client.db("donna");
+
+    const collections = await db.listCollections().toArray();
+    const names = collections.map(c => c.name);
+
+    if (!names.includes("semanticMemory")) await db.createCollection("semanticMemory");
+    if (!names.includes("users")) await db.createCollection("users");
+    if (!names.includes("agenda")) await db.createCollection("agenda");
+
+    await db.collection("semanticMemory").createIndex({ userId: 1, timestamp: -1 });
+    await db.collection("semanticMemory").createIndex({ content: "text" });
+    await db.collection("users").createIndex({ userId: 1 });
+
+    console.log("✅ Conectado ao MongoDB (histórico, usuários, agenda)");
+    return db;
+  } catch (error) {
+    console.error("❌ Erro ao conectar ao MongoDB:", error);
+    process.exit(1);
+  }
+}
+
+export function getDB() {
+  if (!db) throw new Error("Banco de dados não conectado!");
+  return db;
+}
+
 dotenv.config();
 
 const app = express();
