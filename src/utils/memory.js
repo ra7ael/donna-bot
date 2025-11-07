@@ -3,42 +3,41 @@ import Memory from "../models/Memory.js";
 import { addSemanticMemory } from "../models/semanticMemory.js";
 
 /**
- * Adiciona uma mensagem na memória de curto prazo (histórico recente)
+ * Adiciona memória curta e, opcionalmente, memória semântica
  */
 export async function addMemory(userId, role, content) {
-  if (!content || !userId) return null;
+  if (!userId || !content) return null;
   try {
     const doc = new Memory({ userId, role, content });
     await doc.save();
 
-    // Também registra na memória semântica se for uma resposta relevante (opcional)
+    // Também registra na memória semântica (com embeddings)
     if (role === "assistant" && content.length > 20) {
       try {
         await addSemanticMemory("", content, userId, role);
       } catch (err) {
-        console.warn("Falha ao adicionar na memória semântica:", err);
+        console.warn("Erro ao adicionar memória semântica:", err);
       }
     }
 
     return doc;
   } catch (err) {
-    console.error("Erro ao salvar memória:", err);
+    console.error("Erro ao salvar memória curta:", err);
     return null;
   }
 }
 
 /**
- * Retorna o histórico de mensagens recentes para dar contexto à IA
+ * Recupera o histórico recente (memória curta)
  */
 export async function getMemoryContext(userId, limit = 10) {
   try {
-    const history = await Memory.find({ userId })
+    const memories = await Memory.find({ userId })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .select("role content createdAt -_id")
       .lean();
 
-    return history.reverse();
+    return memories.reverse();
   } catch (err) {
     console.error("Erro ao buscar memória:", err);
     return [];
@@ -46,7 +45,7 @@ export async function getMemoryContext(userId, limit = 10) {
 }
 
 /**
- * Constrói um texto de contexto unificado com base nas memórias
+ * Constrói um texto de contexto concatenando o histórico
  */
 export async function buildContext(userId, limit = 10) {
   const memories = await getMemoryContext(userId, limit);
@@ -57,27 +56,27 @@ export async function buildContext(userId, limit = 10) {
 }
 
 /**
- * Limpa todo o histórico de um usuário (reset de contexto)
+ * Apaga todo o histórico curto de um usuário
  */
 export async function clearMemory(userId) {
   try {
     await Memory.deleteMany({ userId });
-    console.log(`Memória curta apagada para ${userId}`);
+    console.log(`🧠 Memória curta limpa para ${userId}`);
   } catch (err) {
     console.error("Erro ao limpar memória:", err);
   }
 }
 
 /**
- * Similaridade simples para evitar respostas repetidas irritantes
+ * Previne repetições — compara a mensagem nova com a última
  */
 function stringSimilarity(a = "", b = "") {
   const clean = str => (str || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);
   const wordsA = clean(a);
   const wordsB = clean(b);
   if (!wordsA.length || !wordsB.length) return 0;
-  const inter = wordsA.filter(w => wordsB.includes(w));
-  return inter.length / Math.max(wordsA.length, wordsB.length);
+  const intersection = wordsA.filter(w => wordsB.includes(w));
+  return intersection.length / Math.max(wordsA.length, wordsB.length);
 }
 
 export async function shouldSkipResponse(userId, newMessage) {
