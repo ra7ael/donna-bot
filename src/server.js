@@ -300,12 +300,31 @@ async function getTodayEvents(number) {
 // ===== Webhook WhatsApp (interação direta) =====
 app.post("/webhook", async (req, res) => {
   try {
-    const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!messageObj) return res.sendStatus(200);
+    const messageObj = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    if (!messageObj) {
+      console.warn("⚠️ Webhook sem mensagem válida recebida:", req.body);
+      return res.sendStatus(200);
+    }
 
     const from = messageObj.from;
     let body = "";
     let isAudioResponse = false;
+
+    // 🧩 Captura com segurança o texto da mensagem
+    if (messageObj.text?.body) {
+      body = messageObj.text.body.trim();
+    } else if (messageObj?.type === "audio") {
+      isAudioResponse = true;
+    } else {
+      console.warn("⚠️ Mensagem recebida sem texto (pode ser mídia ou botão):", messageObj);
+      return res.sendStatus(200);
+    }
+
+    if (!body) {
+      console.warn("⚠️ Mensagem sem conteúdo textual.");
+      return res.sendStatus(200);
+    }
+
 
     // Somente números autorizados
     if (!numerosAutorizados.includes(from)) {
