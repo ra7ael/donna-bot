@@ -27,7 +27,7 @@ import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
 
-const uri = process.env.MONGO_URI || "mongodb+srv://<teu_usuario>:<tua_senha>@cluster0.mongodb.net/";
+const MONGO_URI = process.env.MONGO_URI;
 let db;
 
 export async function connectDB() {
@@ -143,7 +143,6 @@ const __dirname = path.dirname(__filename);
 app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
 const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI;
 const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
