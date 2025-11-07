@@ -1,24 +1,29 @@
-import Memory from "../models/memory.js";
+// src/utils/memory.js
+import Memory from "../models/Memory.js";
 import { addSemanticMemory } from "../models/semanticMemory.js";
 
 /**
  * Adiciona uma mensagem na memória de curto prazo (histórico recente)
  */
 export async function addMemory(userId, role, content) {
-  if (!content || !userId) return;
-
+  if (!content || !userId) return null;
   try {
-    const memory = new Memory({ userId, role, content });
-    await memory.save();
+    const doc = new Memory({ userId, role, content });
+    await doc.save();
 
-    // Também registra na memória semântica se for uma resposta relevante
+    // Também registra na memória semântica se for uma resposta relevante (opcional)
     if (role === "assistant" && content.length > 20) {
-      await addSemanticMemory("", content, userId, role);
+      try {
+        await addSemanticMemory("", content, userId, role);
+      } catch (err) {
+        console.warn("Falha ao adicionar na memória semântica:", err);
+      }
     }
 
-    return memory;
+    return doc;
   } catch (err) {
     console.error("Erro ao salvar memória:", err);
+    return null;
   }
 }
 
@@ -30,7 +35,8 @@ export async function getMemoryContext(userId, limit = 10) {
     const history = await Memory.find({ userId })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .select("role content -_id");
+      .select("role content createdAt -_id")
+      .lean();
 
     return history.reverse();
   } catch (err) {
@@ -44,11 +50,9 @@ export async function getMemoryContext(userId, limit = 10) {
  */
 export async function buildContext(userId, limit = 10) {
   const memories = await getMemoryContext(userId, limit);
-
   if (!memories.length) return "";
-
   return memories
-    .map(m => `${m.role === "user" ? "👤 Usuário" : "🤖 Donna"}: ${m.content}`)
+    .map(m => `${m.role === "user" ? "Usuário" : "Donna"}: ${m.content}`)
     .join("\n");
 }
 
@@ -58,36 +62,28 @@ export async function buildContext(userId, limit = 10) {
 export async function clearMemory(userId) {
   try {
     await Memory.deleteMany({ userId });
-    console.log(`🧹 Memória limpa para o usuário ${userId}`);
+    console.log(`Memória curta apagada para ${userId}`);
   } catch (err) {
     console.error("Erro ao limpar memória:", err);
   }
 }
 
 /**
- * Verifica se o contexto é muito repetido e evita mensagens automáticas irritantes
+ * Similaridade simples para evitar respostas repetidas irritantes
  */
+function stringSimilarity(a = "", b = "") {
+  const clean = str => (str || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);
+  const wordsA = clean(a);
+  const wordsB = clean(b);
+  if (!wordsA.length || !wordsB.length) return 0;
+  const inter = wordsA.filter(w => wordsB.includes(w));
+  return inter.length / Math.max(wordsA.length, wordsB.length);
+}
+
 export async function shouldSkipResponse(userId, newMessage) {
   const recent = await getMemoryContext(userId, 3);
-  const lastUserMessage = recent
-    .filter(m => m.role === "user")
-    .map(m => m.content)
-    .pop();
-
+  const lastUserMessage = recent.filter(m => m.role === "user").map(m => m.content).pop();
   if (!lastUserMessage) return false;
-
   const similarity = stringSimilarity(newMessage, lastUserMessage);
-  return similarity > 0.9; // se for quase igual, ignora repetição
+  return similarity > 0.9;
 }
-
-/**
- * Calcula similaridade simples entre duas strings
- */
-function stringSimilarity(a, b) {
-  const clean = str => str.toLowerCase().replace(/[^\w\s]/g, "");
-  const wordsA = clean(a).split(" ");
-  const wordsB = clean(b).split(" ");
-  const intersection = wordsA.filter(word => wordsB.includes(word));
-  return intersection.length / Math.max(wordsA.length, wordsB.length);
-}
-
