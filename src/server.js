@@ -391,7 +391,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // 🔹 Pega o conteúdo da mensagem recebida
-    const promptBody = body.trim();
+    const promptBody = (messageObj?.text?.body || body || "").trim();
 
     // 🔹 Verifica se a mensagem é válida
     if (!promptBody || promptBody.length < 2) {
