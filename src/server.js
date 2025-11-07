@@ -149,7 +149,6 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
-let db;
 
 async function connectDB() {
   try {
