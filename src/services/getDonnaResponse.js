@@ -59,11 +59,15 @@ export async function getDonnaResponse(userMessage, userId, conversationContext 
   }
 
   // 5️⃣ Busca em memória semântica
-  const semanticAnswer = await querySemanticMemory(prompt, userId);
+let semanticAnswer = await querySemanticMemory(prompt, userId);
+if (semanticAnswer) {
+  // querySemanticMemory pode retornar array ou string
+  if (Array.isArray(semanticAnswer)) semanticAnswer = semanticAnswer[0];
   if (semanticAnswer) {
     cacheSet(cacheKey, semanticAnswer);
     return semanticAnswer;
   }
+}
 
   // 6️⃣ GPT com contexto personalizado
   const nome = userName || (await getUserName(userId));
