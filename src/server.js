@@ -1,11 +1,13 @@
 // src/server.js
+import dotenv from "dotenv";
+dotenv.config(); // garantir que variáveis estejam carregadas antes de usar
+
 import express from 'express';
 import OpenAI from "openai";
 import { MongoClient } from 'mongodb';
-import pdfParse from "pdf-parse/lib/pdf-parse.js";  
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import bodyParser from "body-parser";
 import axios from 'axios';
-import dotenv from 'dotenv';
 import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
@@ -27,7 +29,15 @@ import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
 
+// se você tem um util que processa PDFs, importe-o; se o arquivo for outro, ajuste o caminho
+import { processarPdf } from "./utils/importPdfEmbeddings.js";
+
 const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI não definido em .env");
+  process.exit(1);
+}
+
 let db;
 
 export async function connectDB() {
@@ -35,23 +45,26 @@ export async function connectDB() {
 
   try {
     console.log("🔹 Tentando conectar ao MongoDB...");
-    const client = new MongoClient(uri);
-    await client.connect();
-
+    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
     db = client.db("donna");
 
+    // garante coleções e índices mínimos
     const collections = await db.listCollections().toArray();
     const names = collections.map(c => c.name);
 
     if (!names.includes("semanticMemory")) await db.createCollection("semanticMemory");
     if (!names.includes("users")) await db.createCollection("users");
     if (!names.includes("agenda")) await db.createCollection("agenda");
+    if (!names.includes("empresas")) await db.createCollection("empresas");
 
     await db.collection("semanticMemory").createIndex({ userId: 1, timestamp: -1 });
     await db.collection("semanticMemory").createIndex({ content: "text" });
     await db.collection("users").createIndex({ userId: 1 });
 
     console.log("✅ Conectado ao MongoDB (histórico, usuários, agenda)");
+    // inicie cron apenas depois da conexão
+    startReminderCron(db, sendMessage);
+
     return db;
   } catch (error) {
     console.error("❌ Erro ao conectar ao MongoDB:", error);
@@ -64,12 +77,24 @@ export function getDB() {
   return db;
 }
 
-dotenv.config();
+// inicializa conexão
+connectDB().catch(err => console.error("Erro na conexão DB:", err));
 
 const app = express();
 app.use(bodyParser.json());
 
 const upload = multer({ dest: "uploads/" });
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
+
+const PORT = process.env.PORT || 3000;
+const GPT_API_KEY = process.env.OPENAI_API_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+
+const openai = new OpenAI({ apiKey: GPT_API_KEY });
 
 // ===== Papéis Profissionais =====
 const profissoes = [
@@ -86,10 +111,9 @@ const profissoes = [
   "Pediatra", "Oftalmologista", "Dentista", "Barista", "Coach de Inteligência Emocional"
 ];
 
-let papelAtual = null; // Papel profissional atual
+let papelAtual = null;
 let papeisCombinados = [];
 
-// ===== Função para checar comandos de papéis =====
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
@@ -138,69 +162,23 @@ function verificarComandoProfissao(texto) {
   return null;
 }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
-
-const PORT = process.env.PORT || 3000;
-const GPT_API_KEY = process.env.OPENAI_API_KEY;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
-
-const openai = new OpenAI({ apiKey: GPT_API_KEY });
-
-async function connectDB() {
-  try {
-    console.log("🔹 Tentando conectar ao MongoDB...");
-    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-    db = client.db("donna");
-
-    console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
-    startReminderCron(db, sendMessage);
-
-  } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB:', err.message);
-  }
-}
-
-connectDB();
-
-const empresasPath = path.resolve("./src/data/empresa.json");
-const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
-
-const userStates = {};
-
-// ===== ROTA PARA RECEBER PDFs =====
-app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
-  try {
-    console.log(`📥 Recebido PDF: ${req.file.originalname}`);
-    await processarPdf(req.file.path);
-    res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
-  } catch (err) {
-    console.error("❌ Erro ao processar PDF:", err);
-    res.status(500).send("Erro ao processar PDF");
-  }
-});
-
-// ===== Funções de GPT, WhatsApp, Memória, etc =====
+// ---------- Helpers ----------
 async function askGPT(prompt, history = []) {
   try {
-    // 🧠 Garante que o histórico esteja limpo e formatado
     const safeMessages = [
       {
         role: "system",
         content: "Você é a Donna, assistente pessoal do Rafael. Seja gentil, proativa e sempre contextualize as conversas anteriores sem perder objetividade."
       },
       ...history
-        .map(m => ({
+        .map(m => (({
           role: m.role,
           content: typeof m.content === "string" ? m.content.trim() : ""
-        }))
+        })))
         .filter(m => m.content !== ""),
       { role: "user", content: prompt?.trim() || "" }
     ];
 
-    // 🗣️ Envio para a API da OpenAI
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -211,21 +189,18 @@ async function askGPT(prompt, history = []) {
       },
       {
         headers: {
-          Authorization: `Bearer ${GPT_API_KEY}`, // ✅ corrigido aqui (faltavam crases)
+          Authorization: `Bearer ${GPT_API_KEY}`,
           "Content-Type": "application/json"
         }
       }
     );
 
-    // ✅ Retorna a resposta principal
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
     console.error("❌ Erro GPT:", err.response?.data || err.message);
     return "❌ Ocorreu um erro ao gerar a resposta.";
   }
 }
-
-
 
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
@@ -234,13 +209,9 @@ async function sendMessage(to, message) {
   if (typeof message === "string") {
     textBody = message;
   } else if (typeof message === "object") {
-    if (message.resposta && typeof message.resposta === "string") {
-      textBody = message.resposta;
-    } else if (message.texto && typeof message.texto === "string") {
-      textBody = message.texto;
-    } else {
-      textBody = JSON.stringify(message, null, 2);
-    }
+    if (message.resposta && typeof message.resposta === "string") textBody = message.resposta;
+    else if (message.texto && typeof message.texto === "string") textBody = message.texto;
+    else textBody = JSON.stringify(message, null, 2);
   } else {
     textBody = String(message);
   }
@@ -257,7 +228,6 @@ async function sendMessage(to, message) {
   }
 }
 
-// ===== Outras funções auxiliares =====
 async function getUserName(number) {
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
@@ -294,7 +264,6 @@ async function saveMemory(userId, role, content) {
   }
 }
 
-// ===== Recupera memória contextual antes de responder =====
 async function recuperarContexto(userId, novaMensagem) {
   try {
     const memorias = await db.collection("semanticMemory")
@@ -313,7 +282,6 @@ async function recuperarContexto(userId, novaMensagem) {
     return novaMensagem;
   }
 }
-
 
 async function transcribeAudio(audioBuffer) {
   try {
@@ -352,7 +320,7 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-// ===== Webhook WhatsApp (interação direta) =====
+// ===== Webhook WhatsApp (único e consolidado) =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -362,103 +330,23 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let isAudioResponse = false;
 
-    if (messageObj.type === "text") {
-      body = messageObj.text.body;
-    }
-
-    // 🧠 Busca histórico recente
-    const memories = await getUserMemory(from, 20);
-    const chatHistory = memories.reverse()
-      .map(m => ({
-        role: m.role,
-        content: m.content || ""
-      }))
-      .filter(m => m.content.trim() !== "");
-
-    // 🔹 Gera resposta com contexto
-    const resposta = await askGPT(body, chatHistory);
-
-    // 💾 Salva nova interação
-    await saveMemory(from, "user", body);
-    await saveMemory(from, "assistant", resposta);
-
-    // 📤 Responde no WhatsApp
-    await sendMessage(from, resposta);
-
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("Erro no webhook:", err);
-    res.sendStatus(500);
-  }
-});
-
-
-    // 🧩 Captura com segurança o texto da mensagem
-    if (messageObj.text?.body) {
-      body = messageObj.text.body.trim();
-    } else if (messageObj?.type === "audio") {
-      isAudioResponse = true;
-    } else {
-      console.warn("⚠️ Mensagem recebida sem texto (pode ser mídia ou botão):", messageObj);
-      return res.sendStatus(200);
-    }
-
-    if (!body) {
-      console.warn("⚠️ Mensagem sem conteúdo textual.");
-      return res.sendStatus(200);
-    }
-
-
-    // Somente números autorizados
+    // verifica autorização
     if (!numerosAutorizados.includes(from)) {
       console.log(`🚫 Número não autorizado ignorado: ${from}`);
       return res.sendStatus(200);
     }
 
-    // ===== Tipos de mensagem =====
+    // captura texto/áudio/documento/imagem
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
-
-      // 👇 COMANDO PERSONALIZADO: "minhas memórias"
-      if (body.toLowerCase().startsWith("minhas memórias")) {
-        const memorias = await db.collection("semanticMemory")
-          .find({ userId: from })
-          .sort({ timestamp: -1 })
-          .limit(5)
-          .toArray();
-
-        if (memorias.length === 0) {
-          await sendMessage(from, "🧠 Você ainda não tem memórias salvas.");
-        } else {
-          const resumo = memorias.map((m, i) => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n");
-          await sendMessage(from, `🗂️ Aqui estão suas últimas memórias:\n\n${resumo}`);
-        }
-
-        return res.sendStatus(200);
-      }
-
-      // 👇 COMANDO PERSONALIZADO: salvar nome
-      if (body.toLowerCase().startsWith("meu nome é")) {
-        const nome = body.split("meu nome é")[1].trim();
-        await setUserName(from, nome);
-        await sendMessage(from, `✅ Nome salvo: ${nome}`);
-        return res.sendStatus(200);
-      }
-
-      // 👇 COMANDO PERSONALIZADO: consultar nome
-      if (body.toLowerCase().includes("qual é meu nome")) {
-        const nome = await getUserName(from);
-        await sendMessage(from, nome ? `📛 Seu nome é ${nome}` : `❌ Ainda não sei seu nome. Quer me dizer?`);
-        return res.sendStatus(200);
-      }
-
-      if (body.toLowerCase().startsWith("fala ")) {
-        body = body.slice(5).trim();
-        isAudioResponse = true;
-      }
     } else if (messageObj.type === "audio") {
+      // baixa áudio e transcreve
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = await transcribeAudio(audioBuffer);
+      if (audioBuffer) {
+        body = await transcribeAudio(audioBuffer);
+      } else {
+        body = "❌ Não consegui processar seu áudio. Envie como texto.";
+      }
       isAudioResponse = true;
     } else if (messageObj.type === "document") {
       const document = messageObj.document;
@@ -467,167 +355,171 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      try {
-        const pdfBuffer = await downloadMedia(document.id);
-        if (!pdfBuffer) {
-          await sendMessage(from, "❌ Não consegui baixar o arquivo PDF.");
-          return res.sendStatus(200);
-        }
-
-        const pdfsDir = "./src/utils/pdfs";
-        if (!fs.existsSync(pdfsDir)) fs.mkdirSync(pdfsDir, { recursive: true });
-        const caminhoPDF = `${pdfsDir}/${document.filename}`;
-        fs.writeFileSync(caminhoPDF, pdfBuffer);
-
-        await processarPdf(caminhoPDF);
-        await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
-      } catch (err) {
-        console.error("❌ Erro ao processar PDF do WhatsApp:", err);
-        await sendMessage(from, "❌ Ocorreu um erro ao processar seu PDF.");
-      }
-
-      return res.sendStatus(200);
-    } else {
-      await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
-      return res.sendStatus(200);
-    }
-
-    // 🔹 Pega o conteúdo da mensagem recebida
-    const promptBody = (messageObj?.text?.body || body || "").trim();
-
-    // 🔹 Verifica se a mensagem é válida
-    if (!promptBody || promptBody.length < 2) {
-      await sendMessage(from, "❌ Por favor, digite uma mensagem completa.");
-      return res.sendStatus(200);
-    }
-
-    // ===== Verifica comando de papéis =====
-    const comandoPapel = verificarComandoProfissao(promptBody);
-    if (comandoPapel) {
-      await sendMessage(from, comandoPapel.resposta);
-      return res.sendStatus(200);
-    }
-
-    // 👇 COMANDO PERSONALIZADO: buscar memória por palavra
-    if (body.toLowerCase().startsWith("buscar memória")) {
-      const termo = body.split("buscar memória")[1].trim();
-
-      if (!termo) {
-        await sendMessage(from, "⚠️ Diga o que quer buscar. Exemplo: 'buscar memória benefícios'");
+      const pdfBuffer = await downloadMedia(document.id);
+      if (!pdfBuffer) {
+        await sendMessage(from, "❌ Não consegui baixar o arquivo PDF.");
         return res.sendStatus(200);
       }
 
-      const resultados = await db.collection("semanticMemory").find({
-        userId: from,
-        content: { $regex: new RegExp(termo, "i") }
-      })
-        .sort({ timestamp: -1 })
-        .limit(5)
-        .toArray();
+      const pdfsDir = "./src/utils/pdfs";
+      if (!fs.existsSync(pdfsDir)) fs.mkdirSync(pdfsDir, { recursive: true });
+      const caminhoPDF = `${pdfsDir}/${document.filename}`;
+      fs.writeFileSync(caminhoPDF, pdfBuffer);
 
-      if (resultados.length === 0) {
-        await sendMessage(from, `❌ Nenhuma memória encontrada com o termo: ${termo}`);
+      // usa seu processador de PDF (ajuste se o nome do util for outro)
+      if (typeof processarPdf === "function") {
+        await processarPdf(caminhoPDF);
+        await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
       } else {
-        const resumo = resultados.map(m => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n\n");
-        await sendMessage(from, `🧠 Memórias que encontrei sobre *${termo}*:\n\n${resumo}`);
+        await sendMessage(from, `✅ PDF salvo em ${caminhoPDF} (processamento não disponível).`);
       }
 
       return res.sendStatus(200);
+    } else if (messageObj.type === "image") {
+      body = "📷 Imagem recebida. Analisando...";
+      // se quiser baixar/imagens, implemente aqui
+    } else {
+      await sendMessage(from, "Só consigo responder mensagens de texto, áudio ou documentos PDF por enquanto 😉");
+      return res.sendStatus(200);
     }
 
-    // 👇 COMANDO PERSONALIZADO: salvar informações de empresa
+    body = (body || "").trim();
+    if (!body) {
+      console.log("Mensagem sem conteúdo válido, ignorando.");
+      return res.sendStatus(200);
+    }
+
+    // salva histórico básico
+    await db.collection("conversations").insertOne({ from, role: 'user', content: body, createdAt: new Date() });
+    await saveMemory(from, 'user', body);
+
+    // comandos rápidos
+    if (/^minhas mem[oó]rias/i.test(body)) {
+      const memorias = await db.collection("semanticMemory").find({ userId: from }).sort({ timestamp: -1 }).limit(5).toArray();
+      if (!memorias.length) {
+        await sendMessage(from, "🧠 Você ainda não tem memórias salvas.");
+      } else {
+        const resumo = memorias.map(m => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n");
+        await sendMessage(from, `🗂️ Aqui estão suas últimas memórias:\n\n${resumo}`);
+      }
+      return res.sendStatus(200);
+    }
+
+    if (/^meu nome é\s+/i.test(body)) {
+      const match = body.match(/^meu nome é\s+(.+)/i);
+      if (match) {
+        const nome = match[1].trim();
+        await setUserName(from, nome);
+        await saveMemory(from, "user", `O nome do usuário é ${nome}`);
+        await sendMessage(from, `✅ Nome salvo: ${nome}`);
+      } else {
+        await sendMessage(from, `❌ Use: "Meu nome é [seu nome]"`);
+      }
+      return res.sendStatus(200);
+    }
+
+    if (/qual (é )?meu nome/i.test(body)) {
+      const nome = await getUserName(from);
+      await sendMessage(from, nome ? `📛 Seu nome é ${nome}` : `❌ Ainda não sei seu nome. Diga: 'Meu nome é [seu nome]'`);
+      return res.sendStatus(200);
+    }
+
+    // comandos de empresa
     if (body.toLowerCase().startsWith("empresa")) {
       try {
         const partes = body.split("empresa")[1].trim();
         const nomeEmpresa = partes.split(" ")[0].toLowerCase();
         const info = partes.replace(nomeEmpresa, "").trim();
-
         if (!info) {
-          await sendMessage(from, "⚠️ Por favor, informe algo sobre a empresa, ex: 'empresa Brink tem plano de saúde e VR'");
+          await sendMessage(from, "⚠️ Informe algo sobre a empresa, ex: 'empresa Brink tem plano de saúde e VR'");
           return res.sendStatus(200);
         }
-
         await db.collection("empresas").updateOne(
           { nome: nomeEmpresa },
           { $set: { beneficios: info, atualizadoEm: new Date() } },
           { upsert: true }
         );
-
-        console.log(`treinoDonna: informações salvas no DB para empresa -> ${nomeEmpresa}`);
         await sendMessage(from, `🏢 Informações salvas para ${nomeEmpresa}: ${info}`);
-        return res.sendStatus(200);
       } catch (error) {
         console.error("❌ Erro ao salvar informações da empresa:", error);
         await sendMessage(from, "⚠️ Ocorreu um erro ao salvar as informações da empresa.");
-        return res.sendStatus(500);
       }
+      return res.sendStatus(200);
     }
 
-    // 👇 COMANDO PERSONALIZADO: consultar informações de empresa
     if (body.toLowerCase().startsWith("info da empresa")) {
       try {
         const partes = body.split("info da empresa");
         const nomeEmpresa = partes[1] ? partes[1].trim().toLowerCase() : null;
-
         if (!nomeEmpresa) {
           await sendMessage(from, "⚠️ Informe o nome da empresa, ex: 'info da empresa Brink'");
           return res.sendStatus(200);
         }
-
         const empresa = await db.collection("empresas").findOne({ nome: nomeEmpresa });
-
-        if (empresa) {
-          console.log(`treinoDonna: consulta de informações para empresa -> ${nomeEmpresa}`);
-          await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
-        } else {
-          await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
-        }
-
-        return res.sendStatus(200);
+        if (empresa) await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
+        else await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
       } catch (error) {
         console.error("❌ Erro ao consultar informações da empresa:", error);
         await sendMessage(from, "⚠️ Ocorreu um erro ao buscar informações da empresa.");
-        return res.sendStatus(500);
       }
+      return res.sendStatus(200);
     }
 
-    // ===== Memória e GPT =====
-    const memories = await getUserMemory(from, 20);
-    const chatHistory = memories.reverse()
-      .map(m => ({
-        role: m.role,
-        content: m.content || ""
-      }))
-      .filter(m => m.content.trim() !== "");
+    // lembretes estilo "lembre-me de X em YYYY-MM-DD HH:mm"
+    const lembreteRegex = /lembre-me de (.+) (em|para|às|as) (.+)/i;
+    if (lembreteRegex.test(body)) {
+      const match = body.match(lembreteRegex);
+      const text = match[1];
+      const dateStr = match[3];
+      const date = new Date(dateStr);
+      if (isNaN(date)) {
+        await sendMessage(from, "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'");
+        return res.sendStatus(200);
+      }
+      await db.collection("reminders").insertOne({ from, text, date, createdAt: new Date() });
+      await sendMessage(from, `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`);
+      return res.sendStatus(200);
+    }
 
-    const systemMessage = {
-      role: "system",
-      content: `Você é a Donna, assistente pessoal do usuário.
-- Use o nome do usuário quando souber.
-- Responda de forma objetiva, clara, direta e amigável.
-- Priorize respostas curtas e práticas.
-- Se precisar listar opções, limite a no máximo 3 itens.
-- Nunca escreva parágrafos longos.
-- Adapte o tom para ser acolhedora e prestativa.
-- Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa.
-- Não invente informações; se não souber, admita de forma educada.`
-    };
+    // Intent fallback: montar contexto e chamar Donna/GPT
+    const history = await db.collection("conversations").find({ from }).sort({ createdAt: 1 }).toArray();
+    const conversationContext = history
+      .filter(h => h.content)
+      .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
+      .join("\n");
 
-    let reply = await funcoesExtras(from, promptBody);
-    if (!reply) reply = await obterResposta(promptBody, from);
+    // busca memórias relevantes com sua função util (se existir)
+    let shortTerm = [];
+    if (typeof getDonnaResponse.getRelevantMemory === "function") {
+      try { shortTerm = await getDonnaResponse.getRelevantMemory(from, body, 3); } catch(e){/* ignora */}
+    }
+
+    const seteDiasAtras = DateTime.now().minus({ days: 7 }).toJSDate();
+    const medioPrazo = await db.collection("semanticMemory").find({ userId: from, timestamp: { $gte: seteDiasAtras } }).limit(5).toArray();
+    const longoPrazo = await db.collection("semanticMemory").find({ userId: from }).sort({ timestamp: 1 }).limit(5).toArray();
+
+    const todasMemorias = [...(shortTerm || []), ...medioPrazo, ...longoPrazo];
+    const memoryContext = todasMemorias
+      .filter(m => m.content)
+      .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+      .join("\n");
+
+    // gera resposta
+    let reply = await funcoesExtras(from, body);
+    if (!reply) reply = await obterResposta(body, from);
 
     if (!reply) {
-      const pdfTrechos = await buscarPergunta(promptBody);
-      const promptFinal = pdfTrechos
-        ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
-        : promptBody;
-
-      reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
-      await treinarDonna(promptBody, reply, from);
+      const pdfTrechos = await buscarPergunta(body);
+      const promptFinal = pdfTrechos ? `${body}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}` : body;
+      reply = await askGPT(promptFinal, [{ role: "system", content: `Você é a Donna...` }, ...history]);
+      await treinarDonna(body, reply, from);
     }
 
-    await saveMemory(from, "user", promptBody);
+    // salva e responde
+    await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
+
+    await db.collection("conversations").insertOne({ from, role: 'assistant', content: reply, createdAt: new Date() });
 
     if (isAudioResponse) {
       try {
@@ -641,27 +533,27 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, reply);
     }
 
-    res.sendStatus(200);
+    return res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro no webhook:", err);
-    res.sendStatus(500);
+    console.error("❌ Erro no webhook:", err.response?.data || err.message || err);
+    return res.sendStatus(500);
   }
 });
 
-// ===== ROTA DE SAÚDE PARA RENDER DETECTAR A PORTA =====
+// healthcheck
 app.get("/", (req, res) => {
   res.send("✅ Donna está online!");
 });
 
-// ===== INICIA O SERVIDOR =====
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-
+// export helpers se necessário
 export {
   askGPT,
   getTodayEvents,
   addEvent,
   saveMemory,
+  getUserMemory,
   db
 };
 
