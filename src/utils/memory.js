@@ -1,41 +1,70 @@
-import SemanticMemory, { querySemanticMemory, addSemanticMemory } from "../models/semanticMemory.js";
-import { getEmbedding } from "./embeddingService.js";
+import Memoria from "../models/memory.js";
+import { MongoClient } from "mongodb";
 
-// Salva memória com embedding
-export async function saveMemory(userId, role, content) {
-  if (!content || !userId) return null;
+const MONGO_URI = process.env.MONGO_URI;
+let db = null;
+
+/**
+ * Conecta ao MongoDB (versão correta)
+ */
+export async function connectDB() {
+  if (db) return db;
 
   try {
-    await addSemanticMemory(content, content, userId, role);
-    return true;
+    console.log("🔹 Tentando conectar ao MongoDB...");
+
+    const client = new MongoClient(MONGO_URI);
+    await client.connect();
+
+    db = client.db("donna");
+    console.log("✅ Conectado ao MongoDB (memória estruturada)");
+
+    return db;
   } catch (err) {
-    console.error("❌ Erro ao salvar memória:", err);
-    return null;
+    console.error("❌ Erro ao conectar ao MongoDB (memória estruturada):", err);
+    throw err;
   }
 }
 
-// Busca memórias relevantes usando similaridade
-export async function getRelevantMemory(userId, userMessage, limit = 3) {
-  try {
-    const results = await querySemanticMemory(userMessage, userId, limit);
-    return results || [];
-  } catch (err) {
-    console.error("❌ Erro ao buscar memória relevante:", err);
-    return [];
+/**
+ * Salvar dados na memória estruturada do usuário
+ * @param {String} userId
+ * @param {Object} dados - dados a serem armazenados (ex.: { nome, empresa, papeis })
+ */
+export async function salvarMemoria(userId, dados) {
+  await connectDB();
+
+  let memoria = await Memoria.findOne({ userId });
+
+  if (!memoria) {
+    memoria = new Memoria({ userId, memoria: dados });
+  } else {
+    memoria.memoria = { ...memoria.memoria, ...dados };
   }
+
+  await memoria.save();
+  console.log(`💾 Memória estruturada atualizada para ${userId}`);
+
+  return memoria;
 }
 
-// Recupera últimas memórias por tempo (curto prazo)
-export async function getRecentMemory(userId, limit = 5) {
-  try {
-    const memories = await SemanticMemory.find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(limit);
-
-    return memories.map(m => m.content);
-  } catch (err) {
-    console.error("❌ Erro ao pegar últimas memórias:", err);
-    return [];
-  }
+/**
+ * Buscar memória estruturada do usuário
+ * @param {String} userId
+ * @returns {Object|null} - memória armazenada
+ */
+export async function buscarMemoria(userId) {
+  await connectDB();
+  return await Memoria.findOne({ userId });
 }
 
+/**
+ * Apagar memória do usuário
+ * @param {String} userId
+ */
+export async function limparMemoria(userId) {
+  await connectDB();
+  await Memoria.deleteOne({ userId });
+
+  console.log(`🗑️ Memória do usuário ${userId} apagada`);
+}
