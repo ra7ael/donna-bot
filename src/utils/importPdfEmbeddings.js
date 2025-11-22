@@ -27,16 +27,12 @@ async function importarPDFs() {
     const data = await pdf(dataBuffer);
     const texto = data.text.replace(/\s+/g, " ").trim();
 
-    // Quebrar texto em trechos de ~500 caracteres
     const trechos = [];
     for (let i = 0; i < texto.length; i += 500) {
       trechos.push(texto.slice(i, i + 500));
     }
 
-    for (let i = 0; i < trechos.length; i++) {
-      const trecho = trechos[i];
-
-      // Criar embedding
+    for (const trecho of trechos) {
       const embeddingRes = await openai.embeddings.create({
         model: "text-embedding-3-small",
         input: trecho
@@ -59,4 +55,5 @@ async function importarPDFs() {
   await client.close();
 }
 
-importarPDFs();
+// 👉 AQUI (exportação correta!)
+export { importarPDFs as processarPdf };
