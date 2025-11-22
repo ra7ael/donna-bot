@@ -29,9 +29,6 @@ import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
 
-// se você tem um util que processa PDFs, importe-o; se o arquivo for outro, ajuste o caminho
-import { processarPdf } from "./utils/importPdfEmbeddings.js";
-
 const MONGO_URI = process.env.MONGO_URI;
 if (!MONGO_URI) {
   console.error("❌ MONGO_URI não definido em .env");
@@ -57,12 +54,13 @@ export async function connectDB() {
     if (!names.includes("agenda")) await db.createCollection("agenda");
     if (!names.includes("empresas")) await db.createCollection("empresas");
 
+    // usamos "timestamp" consistentemente no código
     await db.collection("semanticMemory").createIndex({ userId: 1, timestamp: -1 });
     await db.collection("semanticMemory").createIndex({ content: "text" });
     await db.collection("users").createIndex({ userId: 1 });
 
     console.log("✅ Conectado ao MongoDB (histórico, usuários, agenda)");
-    // inicie cron apenas depois da conexão
+    // inicie cron apenas depois da conexão (sendMessage é function declaration, hoisted)
     startReminderCron(db, sendMessage);
 
     return db;
@@ -241,27 +239,45 @@ async function setUserName(number, name) {
   );
 }
 
+/**
+ * saveMemory: salva conteúdo em semanticMemory e tenta gerar embedding se houver util disponível.
+ * usa import dinâmico para não quebrar se o util não existir no ambiente (ex: em testes).
+ */
+async function saveMemory(userId, role, content) {
+  if (!content?.trim()) return;
+  try {
+    let embedding = [];
+    try {
+      // import dinâmico — funciona em runtime e evita erro se arquivo estiver ausente
+      const mod = await import("./utils/embeddingService.js");
+      if (mod && typeof mod.getEmbedding === "function") {
+        embedding = await mod.getEmbedding(content);
+        console.log("🧠 Embedding gerado (salvando memória) - len:", embedding?.length || 0);
+      }
+    } catch (e) {
+      // embeddingService não disponível ou falhou — prossegue salvando sem embedding
+      // console.warn("⚠️ embeddingService não disponível:", e.message);
+    }
+
+    await db.collection("semanticMemory").insertOne({
+      userId,
+      role,
+      content,
+      embedding,
+      timestamp: new Date()
+    });
+    console.log("💾 Memória salva:", { userId, role, content: content.slice(0, 80) + (content.length > 80 ? "..." : "") });
+  } catch (err) {
+    console.error("❌ Erro ao salvar memória:", err);
+  }
+}
+
 async function getUserMemory(userId, limit = 20) {
   return await db.collection("semanticMemory")
     .find({ userId })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
-}
-
-async function saveMemory(userId, role, content) {
-  if (!content?.trim()) return;
-  try {
-    await db.collection("semanticMemory").insertOne({
-      userId,
-      role,
-      content,
-      timestamp: new Date()
-    });
-    console.log("💾 Memória salva:", { userId, role, content });
-  } catch (err) {
-    console.error("❌ Erro ao salvar memória:", err);
-  }
 }
 
 async function recuperarContexto(userId, novaMensagem) {
@@ -299,6 +315,25 @@ async function transcribeAudio(audioBuffer) {
   } catch (err) {
     console.error("❌ Erro na transcrição:", err.response?.data || err.message);
     return "";
+  }
+}
+
+// Wrapper dinâmico para processamento de PDFs.
+// Evita falha no import estático: sempre que precisar processar, tenta importar o util.
+async function processarPdfWrapper(caminhoPDF) {
+  try {
+    const mod = await import("./utils/importPdfEmbeddings.js");
+    const fn = mod.processarPdf || mod.default || mod.processarPDF;
+    if (typeof fn === "function") {
+      await fn(caminhoPDF);
+      return true;
+    } else {
+      console.warn("⚠️ util de importPdfEmbeddings encontrado, mas não exporta função processarPdf.");
+      return false;
+    }
+  } catch (e) {
+    console.warn("⚠️ Não foi possível importar ./utils/importPdfEmbeddings.js — pulando processamento de PDF.", e.message);
+    return false;
   }
 }
 
@@ -366,9 +401,9 @@ app.post("/webhook", async (req, res) => {
       const caminhoPDF = `${pdfsDir}/${document.filename}`;
       fs.writeFileSync(caminhoPDF, pdfBuffer);
 
-      // usa seu processador de PDF (ajuste se o nome do util for outro)
-      if (typeof processarPdf === "function") {
-        await processarPdf(caminhoPDF);
+      // usa wrapper dinâmico para processar PDFs
+      const processed = await processarPdfWrapper(caminhoPDF);
+      if (processed) {
         await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
       } else {
         await sendMessage(from, `✅ PDF salvo em ${caminhoPDF} (processamento não disponível).`);
@@ -556,4 +591,3 @@ export {
   getUserMemory,
   db
 };
-
