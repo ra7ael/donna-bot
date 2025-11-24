@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { embedding } from "../services/embeddingService.js";
+import { embedding } from "../utils/embeddingService.js";
 
 const semanticSchema = new mongoose.Schema({
   userId: { type: String, required: true },
@@ -73,7 +73,6 @@ export async function querySemanticMemory(query, userId, limit = 1) {
 
     if (results.length === 0) return null;
 
-    // devolve só a resposta
     return results.map(r => r.answer);
   } catch (err) {
     console.error("❌ Erro ao buscar memória semântica:", err.message);
