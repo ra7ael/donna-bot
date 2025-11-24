@@ -11,85 +11,61 @@ async function initDB() {
   return client;
 }
 
-/**
- * Gera embedding usando OpenAI
- */
-export async function createEmbedding(text) {
-  const response = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: text
+// Extrai memória automaticamente usando GPT
+export async function extractAutoMemoryGPT(userId, text) {
+  const prompt = `
+Você é um extrator de memórias pessoais. Extraia TODAS as informações
+citadas no texto abaixo e devolva em um JSON. Apenas fatos.
+Exemplos de categorias:
+- nome_usuario
+- idade
+- cidade
+- profissão
+- nomes_dos_filhos
+- nome_da_esposa
+- alergias
+- metas
+- preferências
+- datas importantes
+- gostos pessoais
+- informações de saúde leves
+- hábitos
+- qualquer fato mencionável
+
+Texto: "${text}"
+
+Retorne somente um JSON e nada mais.
+Se não houver informação pessoal, retorne: {}
+`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0,
   });
-  return response.data[0].embedding;
-}
 
-/**
- * Analisa texto e retorna memória automática, com chave e valor.
- * Ex: "O nome dos meus filhos é Miguel e Nicolli" => { key: "nomes_dos_filhos", value: "Miguel e Nicolli" }
- */
-export async function extractAutoMemory(text) {
-  const lower = text.toLowerCase();
-
-  let key, value;
-
-  // exemplos de padrões
-  if (lower.includes("meus filhos") || lower.includes("meu filho") || lower.includes("minha filha")) {
-    const match = text.match(/meus filhos? é[s]? (.+)/i);
-    if (match) {
-      key = "nomes_dos_filhos";
-      value = match[1].trim();
-    }
-  } else if (lower.includes("meu nome é")) {
-    const match = text.match(/meu nome é (.+)/i);
-    if (match) {
-      key = "nome_usuario";
-      value = match[1].trim();
-    }
+  let dados;
+  try {
+    dados = JSON.parse(response.choices[0].message.content);
+  } catch {
+    dados = {};
   }
 
-  if (!key) return null;
+  if (!dados || Object.keys(dados).length === 0) return {};
 
-  // cria embedding
-  const embedding = await createEmbedding(value);
-
-  // salva direto no MongoDB
+  // salva no MongoDB
   const client = await initDB();
   const db = client.db(process.env.DONNA_DB_NAME || "donna");
-  const semanticMemory = db.collection("semanticMemory");
+  const memory = db.collection("semanticMemory");
 
-  await semanticMemory.insertOne({
-    userId: "pending", // substituir pelo userId na chamada do webhook
+  const items = Object.keys(dados).map(key => ({
+    userId,
     role: key,
-    content: value,
-    embedding,
+    content: dados[key],
     timestamp: new Date()
-  });
+  }));
 
-  return { key, value, embedding };
-}
+  await memory.insertMany(items);
 
-/**
- * Busca memórias mais relevantes por embedding
- */
-export async function findRelevantMemory(userId, query, topK = 3) {
-  const client = await initDB();
-  const db = client.db(process.env.DONNA_DB_NAME || "donna");
-  const semanticMemory = db.collection("semanticMemory");
-
-  const queryEmbedding = await createEmbedding(query);
-
-  // busca todas memórias do usuário
-  const allMemory = await semanticMemory.find({ userId }).toArray();
-
-  // calcula similaridade (cosine)
-  const similarities = allMemory.map(m => {
-    const dot = m.embedding.reduce((sum, val, i) => sum + val * queryEmbedding[i], 0);
-    const magA = Math.sqrt(m.embedding.reduce((sum, val) => sum + val * val, 0));
-    const magB = Math.sqrt(queryEmbedding.reduce((sum, val) => sum + val * val, 0));
-    const cosine = dot / (magA * magB);
-    return { ...m, similarity: cosine };
-  });
-
-  // retorna topK mais relevantes
-  similarities.sort((a, b) => b.similarity - a.similarity);
-  return similarities.slice(0, topK);
+  return dados;
 }
