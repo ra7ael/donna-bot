@@ -639,9 +639,19 @@ app.post("/webhook", async (req, res) => {
       await treinarDonna(body, reply, from);
     }
 
-    // salva e responde
-    await saveMemory(from, "user", body);
-    await saveMemory(from, "assistant", reply);
+// 🧠 Memória inteligente automática
+const { extractAutoMemory } = require("./utils/autoMemory");
+
+const autoMem = await extractAutoMemory(body);
+
+if (autoMem) {
+  console.log("💾 Memória relevante detectada:", autoMem);
+  await saveMemory(from, autoMem.key, autoMem.value);
+} else {
+  // salva apenas como contexto curto
+  await saveMemory(from, "userMessage", body);
+}
+    await saveMemory(from, "assistantMessage", reply);
 
     await db.collection("conversations").insertOne({ from, role: 'assistant', content: reply, createdAt: new Date() });
 
