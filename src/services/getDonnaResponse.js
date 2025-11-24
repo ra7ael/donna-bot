@@ -83,7 +83,6 @@ export async function getDonnaResponse(userMessage, userId, conversationContext 
 - Papéis ativos: ${papeis.length ? papeis.join(", ") : "nenhum"}.
 - Seja sempre objetiva, prática e acolhedora.
 - Use no máximo 2 frases por resposta.
-- Em temas de saúde, inclua: "Consulte um especialista."
 - Nunca invente informações.
 - Utilize memórias relevantes quando existirem.`
   };
