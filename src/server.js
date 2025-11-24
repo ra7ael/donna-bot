@@ -274,10 +274,8 @@ app.post("/webhook", async (req, res) => {
 const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
 if (Object.keys(dadosMemorizados).length > 0) {
-  await sendMessage(
-    from,
-    `Entendido! Memorizado: ${JSON.stringify(dadosMemorizados)}`
-  );
+  // Apenas salva a memória, sem enviar JSON
+  await saveMemory(from, "assistant", "Memória atualizada."); 
 }
 
   // Exemplo de confirmação
