@@ -437,7 +437,6 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-// ===== Webhook WhatsApp (único e consolidado) =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -457,7 +456,6 @@ app.post("/webhook", async (req, res) => {
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
     } else if (messageObj.type === "audio") {
-      // baixa áudio e transcreve
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) {
         body = await transcribeAudio(audioBuffer);
@@ -483,7 +481,6 @@ app.post("/webhook", async (req, res) => {
       const caminhoPDF = `${pdfsDir}/${document.filename}`;
       fs.writeFileSync(caminhoPDF, pdfBuffer);
 
-      // usa wrapper dinâmico para processar PDFs
       const processed = await processarPdfWrapper(caminhoPDF);
       if (processed) {
         await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
@@ -494,25 +491,21 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     } else if (messageObj.type === "image") {
       body = "📷 Imagem recebida. Analisando...";
-      // se quiser baixar/imagens, implemente aqui
     } else {
       await sendMessage(from, "Só consigo responder mensagens de texto, áudio ou documentos PDF por enquanto 😉");
       return res.sendStatus(200);
     }
 
     body = (body || "").trim();
-    if (!body) {
-      console.log("Mensagem sem conteúdo válido, ignorando.");
-      return res.sendStatus(200);
-    }
+    if (!body) return res.sendStatus(200);
 
     // salva histórico básico
     await db.collection("conversations").insertOne({ from, role: 'user', content: body, createdAt: new Date() });
     await saveMemory(from, 'user', body);
 
-    // comandos rápidos
+    // ===== Comandos rápidos =====
     if (/^minhas mem[oó]rias/i.test(body)) {
-      const memorias = await db.collection("semanticMemory").find({ userId: from }).sort({ timestamp: -1 }).limit(5).toArray();
+      const memorias = await db.collection("semanticMemory").find({ userId: from }).sort({ timestamp: -1 }).limit(5).toArray() || [];
       if (!memorias.length) {
         await sendMessage(from, "🧠 Você ainda não tem memórias salvas.");
       } else {
@@ -541,114 +534,21 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // comandos de empresa
-    if (body.toLowerCase().startsWith("empresa")) {
-      try {
-        const partes = body.split("empresa")[1].trim();
-        const nomeEmpresa = partes.split(" ")[0].toLowerCase();
-        const info = partes.replace(nomeEmpresa, "").trim();
-        if (!info) {
-          await sendMessage(from, "⚠️ Informe algo sobre a empresa, ex: 'empresa Brink tem plano de saúde e VR'");
-          return res.sendStatus(200);
-        }
-        await db.collection("empresas").updateOne(
-          { nome: nomeEmpresa },
-          { $set: { beneficios: info, atualizadoEm: new Date() } },
-          { upsert: true }
-        );
-        await sendMessage(from, `🏢 Informações salvas para ${nomeEmpresa}: ${info}`);
-      } catch (error) {
-        console.error("❌ Erro ao salvar informações da empresa:", error);
-        await sendMessage(from, "⚠️ Ocorreu um erro ao salvar as informações da empresa.");
-      }
-      return res.sendStatus(200);
-    }
-
-    if (body.toLowerCase().startsWith("info da empresa")) {
-      try {
-        const partes = body.split("info da empresa");
-        const nomeEmpresa = partes[1] ? partes[1].trim().toLowerCase() : null;
-        if (!nomeEmpresa) {
-          await sendMessage(from, "⚠️ Informe o nome da empresa, ex: 'info da empresa Brink'");
-          return res.sendStatus(200);
-        }
-        const empresa = await db.collection("empresas").findOne({ nome: nomeEmpresa });
-        if (empresa) await sendMessage(from, `🏢 ${nomeEmpresa.toUpperCase()}:\n${empresa.beneficios}`);
-        else await sendMessage(from, `❌ Não encontrei informações sobre ${nomeEmpresa}.`);
-      } catch (error) {
-        console.error("❌ Erro ao consultar informações da empresa:", error);
-        await sendMessage(from, "⚠️ Ocorreu um erro ao buscar informações da empresa.");
-      }
-      return res.sendStatus(200);
-    }
-
-    // lembretes estilo "lembre-me de X em YYYY-MM-DD HH:mm" - agora usa addReminder()
-    const lembreteRegex = /lembre-me de (.+) (em|para|às|as) (.+)/i;
-    if (lembreteRegex.test(body)) {
-      const match = body.match(lembreteRegex);
-      const text = match[1].trim();
-      const dateStr = match[3].trim();
-
-      const parsed = parseDateTime(dateStr);
-      if (!parsed) {
-        await sendMessage(from, "❌ Não consegui interpretar a data/hora. Use formatos: 'YYYY-MM-DD HH:mm', 'DD/MM/YYYY HH:mm', 'hoje às 14:00' ou 'amanhã às 09:00'.");
-        return res.sendStatus(200);
-      }
-
-      try {
-        await addReminder(db, from, text, parsed.date, parsed.time);
-        await sendMessage(from, `✅ Lembrete salvo: "${text}" para ${parsed.date} às ${parsed.time}`);
-      } catch (err) {
-        console.error("❌ Erro ao salvar lembrete:", err);
-        await sendMessage(from, "❌ Ocorreu um erro ao salvar o lembrete.");
-      }
-
-      return res.sendStatus(200);
-    }
-
-    // ===== BUSCAR MEMÓRIA ESPECÍFICA =====
-if (/^buscar mem[oó]ria/i.test(body)) {
-  const chave = body.replace(/^buscar mem[oó]ria/i, "").trim().toLowerCase();
-
-  if (!chave) {
-    await sendMessage(from, "🧠 Diga o que você quer buscar. Ex: 'buscar memória nome do filho'");
-    return res.sendStatus(200);
-  }
-
-  const mem = await db.collection("semanticMemory").findOne({ userId: from, key: new RegExp(chave, "i") });
-
-  if (!mem) {
-    await sendMessage(from, `❌ Não encontrei memória relacionada a: ${chave}`);
-  } else {
-    await sendMessage(from, `🗂️ Encontrei:\n• **${mem.key}** → ${mem.content}`);
-  }
-
-  return res.sendStatus(200);
-}
-
-
-    // Intent fallback: montar contexto e chamar Donna/GPT
-    const history = await db.collection("conversations").find({ from }).sort({ createdAt: 1 }).toArray();
-    const conversationContext = history
+    // ===== Processamento de contexto e memórias =====
+    const history = (await db.collection("conversations").find({ from }).sort({ createdAt: 1 }).toArray()) || [];
+    const conversationContext = (history || [])
       .filter(h => h.content)
       .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
       .join("\n");
 
-    // busca memórias relevantes com sua função util (se existir)
-    let shortTerm = [];
-    if (typeof getDonnaResponse.getRelevantMemory === "function") {
-      try { shortTerm = await getDonnaResponse.getRelevantMemory(from, body, 3); } catch(e){/* ignora */}
-    }
+    const relevantMemories = (await findRelevantMemory(from, body, 3)) || [];
+    const memoryContext = relevantMemories.length
+      ? relevantMemories.map(m => `• ${m.role}: ${m.content}`).join("\n")
+      : "";
 
-    const seteDiasAtras = DateTime.now().minus({ days: 7 }).toJSDate();
-    const medioPrazo = await db.collection("semanticMemory").find({ userId: from, timestamp: { $gte: seteDiasAtras } }).limit(5).toArray();
-    const longoPrazo = await db.collection("semanticMemory").find({ userId: from }).sort({ timestamp: 1 }).limit(5).toArray();
-
-
-    // gera resposta
+    // ===== Geração de resposta =====
     let reply = await funcoesExtras(from, body);
     if (!reply) reply = await obterResposta(body, from);
-
     if (!reply) {
       const pdfTrechos = await buscarPergunta(body);
       const promptFinal = pdfTrechos ? `${body}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}` : body;
@@ -656,57 +556,47 @@ if (/^buscar mem[oó]ria/i.test(body)) {
       await treinarDonna(body, reply, from);
     }
 
-// 🧠 Memória inteligente automática
-const autoMem = await extractAutoMemory(body);
+    // 🧠 Memória automática
+    const autoMem = await extractAutoMemory(body);
+    if (autoMem) {
+      console.log("💾 Memória relevante detectada:", autoMem);
+      await db.collection("semanticMemory").updateOne(
+        { userId: from, role: autoMem.key },
+        { $set: { content: autoMem.value, embedding: autoMem.embedding, timestamp: new Date() } },
+        { upsert: true }
+      );
+    } else {
+      await saveMemory(from, "userMessage", body);
+    }
 
-if (autoMem) {
-  console.log("💾 Memória relevante detectada:", autoMem);
-  // salva no MongoDB com userId correto e embedding
-  await db.collection("semanticMemory").updateOne(
-    { userId: from, role: autoMem.key },
-    { $set: { content: autoMem.value, embedding: autoMem.embedding, timestamp: new Date() } },
-    { upsert: true }
-  );
-} else {
-  await saveMemory(from, "userMessage", body);
-}
+    await saveMemory(from, "assistantMessage", reply);
+    await db.collection("conversations").insertOne({
+      from,
+      role: 'assistant',
+      content: reply,
+      createdAt: new Date()
+    });
 
-// busca memórias semânticas relevantes antes de gerar resposta
-const relevantMemories = await findRelevantMemory(from, body, 3);
-let memoryContext = ""; // declarada apenas uma vez
+    // envio
+    if (isAudioResponse) {
+      try {
+        const audioBuffer = await falar(reply, "./resposta.mp3");
+        await sendAudio(from, audioBuffer);
+      } catch (err) {
+        console.error("❌ Erro ao gerar/enviar áudio:", err);
+        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
+      }
+    } else {
+      await sendMessage(from, reply);
+    }
 
-if (relevantMemories && relevantMemories.length > 0) {
-  memoryContext = relevantMemories.map(m => `• ${m.role}: ${m.content}`).join("\n");
-}
-
-// aqui continua seu código normal de gerar resposta
-await saveMemory(from, "assistantMessage", reply);
-
-await db.collection("conversations").insertOne({
-  from,
-  role: 'assistant',
-  content: reply,
-  createdAt: new Date()
-});
-
-if (isAudioResponse) {
-  try {
-    const audioBuffer = await falar(reply, "./resposta.mp3");
-    await sendAudio(from, audioBuffer);
-  } catch (err) {
-    console.error("❌ Erro ao gerar/enviar áudio:", err);
-    await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
-  }
-} else {
-  await sendMessage(from, reply);
-}
-
-return res.sendStatus(200);
+    return res.sendStatus(200);
   } catch (err) {
     console.error("❌ Erro no webhook:", err.response?.data || err.message || err);
     return res.sendStatus(500);
   }
 });
+
 
 // healthcheck
 app.get("/", (req, res) => {
