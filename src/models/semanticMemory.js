@@ -1,103 +1,84 @@
 import mongoose from "mongoose";
-import { getEmbedding } from "../utils/embeddingService.js";
+import { embedding } from "../services/embeddingService.js";
 
-const SemanticMemorySchema = new mongoose.Schema({
+const semanticSchema = new mongoose.Schema({
   userId: { type: String, required: true },
+  prompt: { type: String, required: true },
+  answer: { type: String, required: true },
   role: { type: String, enum: ["user", "assistant"], required: true },
-  content: { type: String, required: true },
-  contentType: { type: String, default: "text" },
-  embedding: { type: [Number], default: [] },
+  vector: { type: [Number], required: true },
   createdAt: { type: Date, default: Date.now }
 });
 
-SemanticMemorySchema.index({ userId: 1, createdAt: -1 });
+// 🔍 Evita memórias repetidas (mesmo prompt, mesmo usuário)
+semanticSchema.index({ userId: 1, prompt: 1 }, { unique: true });
 
-const SemanticMemory =
-  mongoose.models.SemanticMemory ||
-  mongoose.model("SemanticMemory", SemanticMemorySchema);
+const SemanticMemory = mongoose.model("SemanticMemory", semanticSchema);
 
+// 🧠 Cria embedding + salva memória
+export async function addSemanticMemory(prompt, answer, userId, role) {
+  try {
+    const vector = await embedding(`${prompt} ${answer}`);
 
-// =============================
-//  SIMILARIDADE COSENO
-// =============================
-function cosineSimilarity(vecA, vecB) {
-  if (!vecA || !vecB || !vecA.length || !vecB.length) return 0;
+    await SemanticMemory.findOneAndUpdate(
+      { userId, prompt },
+      { userId, prompt, answer, role, vector },
+      { upsert: true, new: true }
+    );
 
-  const len = Math.min(vecA.length, vecB.length);
-  let dot = 0,
-    normA = 0,
-    normB = 0;
-
-  for (let i = 0; i < len; i++) {
-    dot += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
+    console.log("🧠 Memória semântica salva:", prompt);
+  } catch (err) {
+    console.error("❌ Erro ao salvar memória semântica:", err.message);
   }
-
-  if (normA === 0 || normB === 0) return 0;
-
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+// 🧠 Busca memória por similaridade
+export async function querySemanticMemory(query, userId, limit = 1) {
+  try {
+    const queryVector = await embedding(query);
 
-// =============================
-//  CONSULTA SEMÂNTICA
-// =============================
-export async function querySemanticMemory(userMessage, userId, limit = 1) {
-  if (!userMessage || !userId) return null;
+    const results = await SemanticMemory.aggregate([
+      { $match: { userId } },
+      {
+        $addFields: {
+          similarity: {
+            $let: {
+              vars: {
+                dot: {
+                  $reduce: {
+                    input: { $range: [0, { $size: "$vector" }] },
+                    initialValue: 0,
+                    in: {
+                      $add: [
+                        "$$value",
+                        {
+                          $multiply: [
+                            queryVector["$$this"],
+                            { $arrayElemAt: ["$vector", "$$this"] }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              in: "$$dot"
+            }
+          }
+        }
+      },
+      { $sort: { similarity: -1, createdAt: -1 } },
+      { $limit: limit }
+    ]);
 
-  const queryEmbedding = await getEmbedding(userMessage);
-  const memories = await SemanticMemory.find({ userId }).lean();
+    if (results.length === 0) return null;
 
-  if (!memories || memories.length === 0) return null;
-
-  const ranked = memories
-    .map((m) => ({
-      _id: m._id,
-      content: m.content,
-      role: m.role,
-      score: cosineSimilarity(queryEmbedding, m.embedding || [])
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-
-  return ranked.length
-    ? limit === 1
-      ? ranked[0].content
-      : ranked.map((r) => r.content)
-    : null;
-}
-
-
-// =============================
-//  GRAVAÇÃO DE MEMÓRIA (CORRIGIDO)
-// =============================
-export async function addSemanticMemory(userMessage, userId) {
-  if (!userMessage || !userId) return null;
-
-  // Embedding gerado do conteúdo do usuário
-  const embedding = await getEmbedding(userMessage);
-
-  const memory = new SemanticMemory({
-    userId,
-    role: "user", // sempre user
-    content: userMessage,
-    embedding
-  });
-
-  await memory.save();
-  return memory;
-}
-
-
-// =============================
-//  MEMÓRIAS RECENTES
-// =============================
-export async function getRecentMemories(userId, limit = 5) {
-  return await SemanticMemory.find({ userId })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .lean();
+    // devolve só a resposta
+    return results.map(r => r.answer);
+  } catch (err) {
+    console.error("❌ Erro ao buscar memória semântica:", err.message);
+    return null;
+  }
 }
 
 export default SemanticMemory;
