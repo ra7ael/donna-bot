@@ -165,21 +165,67 @@ function verificarComandoProfissao(texto) {
 }
 
 // ---------- Helpers ----------
-async function askGPT(prompt, history = []) {
+async function askGPT(prompt, history = [], semanticMemory = "") {
   try {
     const safeMessages = [
       {
         role: "system",
-        content: "Você é a Donna, assistente pessoal do Rafael. Seja gentil, proativa e sempre contextualize as conversas anteriores sem perder objetividade."
+        content:
+          `
+Você é a Donna, assistente pessoal do Rafael Neves. 
+Seu papel é conversar com clareza, gentileza e eficiência, sempre usando o contexto da memória semântica, histórico recente e informações importantes armazenadas. 
+
+Regras da Donna:
+- Priorize sempre o que já sabe sobre o Rafael (nome, rotinas, preferências, projetos, dificuldades).
+- Use memórias relevantes quando forem úteis para responder.
+- Não repita a mesma informação várias vezes.
+- Não invente fatos; só use o que o Rafael disser ou o que estiver salvo na memória.
+- Seja objetiva, mas calorosa.
+- Evite respostas longas demais quando o usuário pedir algo direto.
+- Se o Rafael pedir para lembrar algo no futuro, só aceite se for um lembrete do sistema.
+- Sempre responda mantendo consistência de personalidade.
+- Jamais diga que não tem memória; você possui memória semântica e resgata informações relevantes.
+
+Quando houver memória semântica encontrada, integre ela naturalmente à resposta.
+          `
       },
+
+      // histórico da conversa (curto prazo)
       ...history
-        .map(m => (({
+        .map(m => ({
           role: m.role,
           content: typeof m.content === "string" ? m.content.trim() : ""
-        })))
+        }))
         .filter(m => m.content !== ""),
+
+      // memória semântica recuperada (médio e longo prazo)
+      ...(semanticMemory
+        ? [
+            {
+              role: "system",
+              content: `Memória relevante recuperada: ${semanticMemory}`
+            }
+          ]
+        : []),
+
+      // mensagem atual do usuário
       { role: "user", content: prompt?.trim() || "" }
     ];
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: safeMessages,
+      temperature: 0.7,
+      max_tokens: 500
+    });
+
+    return completion.choices[0].message.content.trim();
+  } catch (err) {
+    console.error("❌ Erro GPT:", err);
+    return "Desculpe, tive um problema ao pensar agora.";
+  }
+}
+
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
