@@ -271,13 +271,14 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Memoriza automaticamente qualquer informação
-    const dadosMemorizados = await extractAutoMemoryGPT(from, body);
+const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
-    // Mensagem de confirmação para dados importantes
-    if (body.toLowerCase().includes("meus filhos são")) {
-      await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.filhos.join(" e ")}`);
-      return res.sendStatus(200);
-    }
+if (Object.keys(dadosMemorizados).length > 0) {
+  await sendMessage(
+    from,
+    `Entendido! Memorizado: ${JSON.stringify(dadosMemorizados)}`
+  );
+}
 
   // Exemplo de confirmação
   if (dadosMemorizados.nomes_dos_filhos?.length) {
