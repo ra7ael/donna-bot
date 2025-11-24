@@ -678,25 +678,22 @@ if (autoMem) {
 
 // busca memórias semânticas relevantes antes de gerar resposta
 const relevantMemories = await findRelevantMemory(from, body, 3);
-let memoryContext = "";
+let memoryContext = ""; // declarada apenas uma vez
+
 if (relevantMemories && relevantMemories.length > 0) {
   memoryContext = relevantMemories.map(m => `• ${m.role}: ${m.content}`).join("\n");
 }
 
-// monta o prompt final incluindo memórias relevantes
-let promptFinal = body;
-if (memoryContext) {
-  promptFinal = `${body}\n\nMemórias relevantes:\n${memoryContext}`;
-}
-
-// gera a resposta usando GPT/treinoDonna
-let reply = await obterResposta(promptFinal, from);
-
-// salva histórico de assistant
+// aqui continua seu código normal de gerar resposta
 await saveMemory(from, "assistantMessage", reply);
-await db.collection("conversations").insertOne({ from, role: 'assistant', content: reply, createdAt: new Date() });
 
-// envia áudio ou mensagem normal
+await db.collection("conversations").insertOne({
+  from,
+  role: 'assistant',
+  content: reply,
+  createdAt: new Date()
+});
+
 if (isAudioResponse) {
   try {
     const audioBuffer = await falar(reply, "./resposta.mp3");
@@ -710,7 +707,6 @@ if (isAudioResponse) {
 }
 
 return res.sendStatus(200);
-
   } catch (err) {
     console.error("❌ Erro no webhook:", err.response?.data || err.message || err);
     return res.sendStatus(500);
