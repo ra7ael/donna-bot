@@ -1,13 +1,7 @@
-const OpenAI = require("openai");
+import OpenAI from "openai";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/**
- * Usa IA para detectar informações importantes na frase.
- * Retorna:
- *   { key: "...", value: "..." }
- * ou null se não houver nada útil
- */
-async function extractAutoMemory(message) {
+export async function extractAutoMemory(message) {
   try {
     const prompt = `
 Analise a frase abaixo e determine se ela contém alguma informação pessoal relevante que deveria ser armazenada como memória permanente.
@@ -32,7 +26,6 @@ Aqui está a frase:
     });
 
     let content = result.choices[0].message.content.trim();
-
     if (content === "null") return null;
 
     return JSON.parse(content);
@@ -42,4 +35,3 @@ Aqui está a frase:
   }
 }
 
-module.exports = { extractAutoMemory };
