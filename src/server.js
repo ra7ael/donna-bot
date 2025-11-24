@@ -28,6 +28,7 @@ import * as cacheService from './services/cacheService.js';
 import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
+import { extractAutoMemory } from "./utils/autoMemory.js";
 
 // Nota: import estático removido para import dinâmico no wrapper
 // import { processarPdf } from "./utils/importPdfEmbeddings.js";
