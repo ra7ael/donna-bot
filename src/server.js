@@ -644,11 +644,6 @@ if (/^buscar mem[oó]ria/i.test(body)) {
     const medioPrazo = await db.collection("semanticMemory").find({ userId: from, timestamp: { $gte: seteDiasAtras } }).limit(5).toArray();
     const longoPrazo = await db.collection("semanticMemory").find({ userId: from }).sort({ timestamp: 1 }).limit(5).toArray();
 
-    const todasMemorias = [...(shortTerm || []), ...medioPrazo, ...longoPrazo];
-    const memoryContext = todasMemorias
-      .filter(m => m.content)
-      .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
-      .join("\n");
 
     // gera resposta
     let reply = await funcoesExtras(from, body);
