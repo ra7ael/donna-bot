@@ -164,14 +164,13 @@ function verificarComandoProfissao(texto) {
   return null;
 }
 
-// ---------- Helpers ----------
+        // ---------- Helpers ----------
 async function askGPT(prompt, history = [], semanticMemory = "") {
   try {
     const safeMessages = [
       {
         role: "system",
-        content:
-          `
+        content: `
 Você é a Donna, assistente pessoal do Rafael Neves. 
 Seu papel é conversar com clareza, gentileza e eficiência, sempre usando o contexto da memória semântica, histórico recente e informações importantes armazenadas. 
 
@@ -187,10 +186,9 @@ Regras da Donna:
 - Jamais diga que não tem memória; você possui memória semântica e resgata informações relevantes.
 
 Quando houver memória semântica encontrada, integre ela naturalmente à resposta.
-          `
+`
       },
 
-      // histórico da conversa (curto prazo)
       ...history
         .map(m => ({
           role: m.role,
@@ -198,7 +196,6 @@ Quando houver memória semântica encontrada, integre ela naturalmente à respos
         }))
         .filter(m => m.content !== ""),
 
-      // memória semântica recuperada (médio e longo prazo)
       ...(semanticMemory
         ? [
             {
@@ -208,25 +205,10 @@ Quando houver memória semântica encontrada, integre ela naturalmente à respos
           ]
         : []),
 
-      // mensagem atual do usuário
       { role: "user", content: prompt?.trim() || "" }
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: safeMessages,
-      temperature: 0.7,
-      max_tokens: 500
-    });
-
-    return completion.choices[0].message.content.trim();
-  } catch (err) {
-    console.error("❌ Erro GPT:", err);
-    return "Desculpe, tive um problema ao pensar agora.";
-  }
-}
-
-
+    // ---- AQUI FICAM AS REQUISIÇÕES GPT ----
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -243,12 +225,15 @@ Quando houver memória semântica encontrada, integre ela naturalmente à respos
       }
     );
 
-    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
+    return (
+      response.data.choices?.[0]?.message?.content ||
+      "Hmm… ainda estou pensando!"
+    );
   } catch (err) {
     console.error("❌ Erro GPT:", err.response?.data || err.message);
     return "❌ Ocorreu um erro ao gerar a resposta.";
   }
-}
+}  
 
 // sendMessage é declaração de função — hoisted — pode ser usada antes da definição.
 async function sendMessage(to, message) {
