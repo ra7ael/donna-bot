@@ -1,16 +1,14 @@
 // src/server.js
-import dotenv from "dotenv";
-dotenv.config(); // garantir que variáveis estejam carregadas antes de usar
-
 import express from 'express';
 import OpenAI from "openai";
 import { MongoClient } from 'mongodb';
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import bodyParser from "body-parser";
 import axios from 'axios';
+import dotenv from 'dotenv';
 import mongoose from "mongoose";
 import { DateTime } from 'luxon';
-import { startReminderCron, addReminder } from "./cron/reminders.js";
+import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from './utils/downloadMedia.js';
 import cron from "node-cron";
@@ -24,80 +22,11 @@ import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/tre
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
-import * as cacheService from './services/cacheService.js';
-import * as datasetService from './services/datasetService.js';
-import * as getDonnaResponse from './services/getDonnaResponse.js';
-import * as gptService from './services/gptService.js';
-import { extractAutoMemory, findRelevantMemory } from "./utils/autoMemory.js";
 
-// Nota: import estático removido para import dinâmico no wrapper
-// import { processarPdf } from "./utils/importPdfEmbeddings.js";
-
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error("❌ MONGO_URI não definido em .env");
-  process.exit(1);
-}
-
-let db;
-
-export async function connectDB() {
-  if (db) return db;
-
-  try {
-    console.log("🔹 Tentando conectar ao MongoDB...");
-    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-    db = client.db("donna");
-
-    // garante coleções e índices mínimos
-    const collections = await db.listCollections().toArray();
-    const names = collections.map(c => c.name);
-
-    if (!names.includes("semanticMemory")) await db.createCollection("semanticMemory");
-    if (!names.includes("users")) await db.createCollection("users");
-    if (!names.includes("agenda")) await db.createCollection("agenda");
-    if (!names.includes("empresas")) await db.createCollection("empresas");
-    if (!names.includes("lembretes")) await db.createCollection("lembretes");
-
-    // usamos "timestamp" consistentemente no código
-    await db.collection("semanticMemory").createIndex({ userId: 1, timestamp: -1 });
-    await db.collection("semanticMemory").createIndex({ content: "text" });
-    await db.collection("users").createIndex({ userId: 1 });
-
-    console.log("✅ Conectado ao MongoDB (histórico, usuários, agenda, lembretes)");
-    // inicie cron apenas depois da conexão (sendMessage é function declaration, hoisted)
-    startReminderCron(db, sendMessage);
-
-    return db;
-  } catch (error) {
-    console.error("❌ Erro ao conectar ao MongoDB:", error);
-    process.exit(1);
-  }
-}
-
-export function getDB() {
-  if (!db) throw new Error("Banco de dados não conectado!");
-  return db;
-}
-
-// inicializa conexão
-connectDB().catch(err => console.error("Erro na conexão DB:", err));
-
+dotenv.config();
 const app = express();
 app.use(bodyParser.json());
-
 const upload = multer({ dest: "uploads/" });
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
-
-const PORT = process.env.PORT || 3000;
-const GPT_API_KEY = process.env.OPENAI_API_KEY;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
-
-const openai = new OpenAI({ apiKey: GPT_API_KEY });
 
 // ===== Papéis Profissionais =====
 const profissoes = [
@@ -114,9 +43,10 @@ const profissoes = [
   "Pediatra", "Oftalmologista", "Dentista", "Barista", "Coach de Inteligência Emocional"
 ];
 
-let papelAtual = null;
+let papelAtual = null; // Papel profissional atual
 let papeisCombinados = [];
 
+// ===== Função para checar comandos de papéis =====
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
@@ -165,78 +95,70 @@ function verificarComandoProfissao(texto) {
   return null;
 }
 
-        // ---------- Helpers ----------
-async function askGPT(prompt, history = [], semanticMemory = "") {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
+
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI;
+const GPT_API_KEY = process.env.OPENAI_API_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+
+const openai = new OpenAI({ apiKey: GPT_API_KEY });
+let db;
+
+async function connectDB() {
   try {
-    const safeMessages = [
-      {
-        role: "system",
-        content: `
-Você é a Donna, assistente pessoal do Rafael Neves. 
-Seu papel é conversar com clareza, gentileza e eficiência, sempre usando o contexto da memória semântica, histórico recente e informações importantes armazenadas. 
+    console.log("🔹 Tentando conectar ao MongoDB...");
+    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
+    db = client.db();
+    console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
+    startReminderCron(db, sendMessage);
+  } catch (err) {
+    console.error('❌ Erro ao conectar ao MongoDB:', err.message);
+  }
+}
+connectDB();
 
-Regras da Donna:
-- Priorize sempre o que já sabe sobre o Rafael (nome, rotinas, preferências, projetos, dificuldades).
-- Use memórias relevantes quando forem úteis para responder.
-- Não repita a mesma informação várias vezes.
-- Não invente fatos; só use o que o Rafael disser ou o que estiver salvo na memória.
-- Seja objetiva, mas calorosa.
-- Evite respostas longas demais quando o usuário pedir algo direto.
-- Se o Rafael pedir para lembrar algo no futuro, só aceite se for um lembrete do sistema.
-- Sempre responda mantendo consistência de personalidade.
-- Jamais diga que não tem memória; você possui memória semântica e resgata informações relevantes.
+const empresasPath = path.resolve("./src/data/empresa.json");
+const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
+const userStates = {};
 
-Quando houver memória semântica encontrada, integre ela naturalmente à resposta.
-`
-      },
 
-      ...history
-        .map(m => ({
-          role: m.role,
-          content: typeof m.content === "string" ? m.content.trim() : ""
-        }))
-        .filter(m => m.content !== ""),
+// ===== ROTA PARA RECEBER PDFs =====
+app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
+  try {
+    console.log(`📥 Recebido PDF: ${req.file.originalname}`);
+    await processarPdf(req.file.path);
+    res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
+  } catch (err) {
+    console.error("❌ Erro ao processar PDF:", err);
+    res.status(500).send("Erro ao processar PDF");
+  }
+});
 
-      ...(semanticMemory
-        ? [
-            {
-              role: "system",
-              content: `Memória relevante recuperada: ${semanticMemory}`
-            }
-          ]
-        : []),
+// ===== Funções de GPT, WhatsApp, Memória, etc =====
+async function askGPT(prompt, history = []) {
+  try {
+    const safeMessages = history
+      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
+      .filter(m => m.content.trim() !== "");
+    safeMessages.push({ role: "user", content: prompt || "" });
 
-      { role: "user", content: prompt?.trim() || "" }
-    ];
-
-    // ---- AQUI FICAM AS REQUISIÇÕES GPT ----
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-5-mini",
-        messages: safeMessages,
-        temperature: 0.7,
-        max_tokens: 500
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${GPT_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
+      { model: "gpt-5-mini", messages: safeMessages },
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
     );
 
-    return (
-      response.data.choices?.[0]?.message?.content ||
-      "Hmm… ainda estou pensando!"
-    );
+    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
-    console.error("❌ Erro GPT:", err.response?.data || err.message);
-    return "❌ Ocorreu um erro ao gerar a resposta.";
+    console.error("❌ Erro GPT:", err.response?.data || err);
+    return "Hmm… ainda estou pensando!";
   }
-}  
+}
 
-// sendMessage é declaração de função — hoisted — pode ser usada antes da definição.
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
 
@@ -244,9 +166,13 @@ async function sendMessage(to, message) {
   if (typeof message === "string") {
     textBody = message;
   } else if (typeof message === "object") {
-    if (message.resposta && typeof message.resposta === "string") textBody = message.resposta;
-    else if (message.texto && typeof message.texto === "string") textBody = message.texto;
-    else textBody = JSON.stringify(message, null, 2);
+    if (message.resposta && typeof message.resposta === "string") {
+      textBody = message.resposta;
+    } else if (message.texto && typeof message.texto === "string") {
+      textBody = message.texto;
+    } else {
+      textBody = JSON.stringify(message, null, 2);
+    }
   } else {
     textBody = String(message);
   }
@@ -263,6 +189,7 @@ async function sendMessage(to, message) {
   }
 }
 
+// ===== Outras funções auxiliares =====
 async function getUserName(number) {
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
@@ -276,64 +203,17 @@ async function setUserName(number, name) {
   );
 }
 
-/**
- * saveMemory: salva conteúdo em semanticMemory e tenta gerar embedding se houver util disponível.
- * usa import dinâmico para não quebrar se o util não existir no ambiente (ex: em testes).
- */
-async function saveMemory(userId, role, content) {
-  if (!content?.trim()) return;
-  try {
-    let embedding = [];
-    try {
-      // import dinâmico — funciona em runtime e evita erro se arquivo estiver ausente
-      const mod = await import("./utils/embeddingService.js");
-      if (mod && typeof mod.getEmbedding === "function") {
-        embedding = await mod.getEmbedding(content);
-        console.log("🧠 Embedding gerado (salvando memória) - len:", embedding?.length || 0);
-      }
-    } catch (e) {
-      // embeddingService não disponível ou falhou — prossegue salvando sem embedding
-      // console.warn("⚠️ embeddingService não disponível:", e.message);
-    }
-
-    await db.collection("semanticMemory").insertOne({
-      userId,
-      role,
-      content,
-      embedding,
-      timestamp: new Date()
-    });
-    console.log("💾 Memória salva:", { userId, role, content: content.slice(0, 80) + (content.length > 80 ? "..." : "") });
-  } catch (err) {
-    console.error("❌ Erro ao salvar memória:", err);
-  }
-}
-
-async function getUserMemory(userId, limit = 20) {
+async function getUserMemory(number, limit = 5) {
   return await db.collection("semanticMemory")
-    .find({ userId })
+    .find({ numero: number })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
 }
 
-async function recuperarContexto(userId, novaMensagem) {
-  try {
-    const memorias = await db.collection("semanticMemory")
-      .find({ userId })
-      .sort({ timestamp: -1 })
-      .limit(10)
-      .toArray();
-
-    const contexto = memorias
-      .map(m => `${m.role === "user" ? "Usuário" : "Donna"}: ${m.content}`)
-      .join("\n");
-
-    return `Contexto anterior:\n${contexto}\n\nNova mensagem: ${novaMensagem}`;
-  } catch (err) {
-    console.error("❌ Erro ao recuperar contexto:", err);
-    return novaMensagem;
-  }
+async function saveMemory(number, role, content) {
+  if (!content || !content.trim()) return;
+  await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
 }
 
 async function transcribeAudio(audioBuffer) {
@@ -355,70 +235,6 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
-// Wrapper dinâmico para processamento de PDFs.
-// Evita falha no import estático: sempre que precisar processar, tenta importar o util.
-async function processarPdfWrapper(caminhoPDF) {
-  try {
-    const mod = await import("./utils/importPdfEmbeddings.js");
-    const fn = mod.processarPdf || mod.default || mod.processarPDF;
-    if (typeof fn === "function") {
-      await fn(caminhoPDF);
-      return true;
-    } else {
-      console.warn("⚠️ util de importPdfEmbeddings encontrado, mas não exporta função processarPdf.");
-      return false;
-    }
-  } catch (e) {
-    console.warn("⚠️ Não foi possível importar ./utils/importPdfEmbeddings.js — pulando processamento de PDF.", e.message);
-    return false;
-  }
-}
-
-/**
- * Tenta interpretar uma string de data/hora em formatos comuns.
- * Retorna { date: 'YYYY-MM-DD', time: 'HH:mm' } ou null se falhar.
- */
-function parseDateTime(raw) {
-  if (!raw || typeof raw !== "string") return null;
-  raw = raw.trim();
-
-  // tenta ISO
-  let dt = DateTime.fromISO(raw, { zone: "America/Sao_Paulo" });
-  if (dt.isValid) {
-    return { date: dt.toFormat("yyyy-MM-dd"), time: dt.toFormat("HH:mm") };
-  }
-
-  // tenta formatos com espaço: "yyyy-MM-dd HH:mm" ou "dd/MM/yyyy HH:mm"
-  dt = DateTime.fromFormat(raw, "yyyy-MM-dd HH:mm", { zone: "America/Sao_Paulo" });
-  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: dt.toFormat("HH:mm") };
-
-  dt = DateTime.fromFormat(raw, "dd/MM/yyyy HH:mm", { zone: "America/Sao_Paulo" });
-  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: dt.toFormat("HH:mm") };
-
-  // tenta só data
-  dt = DateTime.fromFormat(raw, "yyyy-MM-dd", { zone: "America/Sao_Paulo" });
-  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: "09:00" }; // default 09:00
-
-  dt = DateTime.fromFormat(raw, "dd/MM/yyyy", { zone: "America/Sao_Paulo" });
-  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: "09:00" };
-
-  // tenta "amanhã às 14:00", "hoje às 18:00"
-  if (/hoje/i.test(raw)) {
-    const match = raw.match(/(\d{1,2}:\d{2})/);
-    const time = match ? match[1] : "09:00";
-    const today = DateTime.now().setZone("America/Sao_Paulo").toFormat("yyyy-MM-dd");
-    return { date: today, time };
-  }
-  if (/amanh/i.test(raw)) {
-    const match = raw.match(/(\d{1,2}:\d{2})/);
-    const time = match ? match[1] : "09:00";
-    const tomorrow = DateTime.now().setZone("America/Sao_Paulo").plus({ days: 1 }).toFormat("yyyy-MM-dd");
-    return { date: tomorrow, time };
-  }
-
-  return null;
-}
-
 // ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
   await db.collection("agenda").insertOne({
@@ -437,6 +253,7 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
+// ===== Webhook WhatsApp =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -446,22 +263,21 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let isAudioResponse = false;
 
-    // verifica autorização
     if (!numerosAutorizados.includes(from)) {
       console.log(`🚫 Número não autorizado ignorado: ${from}`);
       return res.sendStatus(200);
     }
 
-    // captura texto/áudio/documento/imagem
+    // ===== Tipos de mensagem =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
+      if (body.toLowerCase().startsWith("fala ")) {
+        body = body.slice(5).trim();
+        isAudioResponse = true;
+      }
     } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) {
-        body = await transcribeAudio(audioBuffer);
-      } else {
-        body = "❌ Não consegui processar seu áudio. Envie como texto.";
-      }
+      if (audioBuffer) body = await transcribeAudio(audioBuffer);
       isAudioResponse = true;
     } else if (messageObj.type === "document") {
       const document = messageObj.document;
@@ -470,114 +286,172 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const pdfBuffer = await downloadMedia(document.id);
-      if (!pdfBuffer) {
-        await sendMessage(from, "❌ Não consegui baixar o arquivo PDF.");
+      try {
+        // Baixa o PDF
+        const pdfBuffer = await downloadMedia(document.id);
+        if (!pdfBuffer) {
+          await sendMessage(from, "❌ Não consegui baixar o arquivo PDF.");
+          return res.sendStatus(200);
+        }
+
+        // Pasta de PDFs (cria se não existir)
+        const pdfsDir = "./src/utils/pdfs";
+        if (!fs.existsSync(pdfsDir)) fs.mkdirSync(pdfsDir, { recursive: true });
+
+        // Salva o PDF na pasta definida
+        const caminhoPDF = `${pdfsDir}/${document.filename}`;
+        fs.writeFileSync(caminhoPDF, pdfBuffer);
+
+        // Processa o PDF
+        await processarPdf(caminhoPDF);
+
+        // Confirmação
+        await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
+      } catch (err) {
+        console.error("❌ Erro ao processar PDF do WhatsApp:", err);
+        await sendMessage(from, "❌ Ocorreu um erro ao processar seu PDF.");
+      }
+
+      return res.sendStatus(200);
+    } else {
+      await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
+      return res.sendStatus(200);
+    }
+
+    const promptBody = (body || "").trim();
+    const state = userStates[from] || {};
+
+    if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
+      await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
+      return res.sendStatus(200);
+    }
+
+    const keywords = ["EMPRESA", "BANCO", "PAGAMENTO", "BENEFICIOS", "FOLHA PONTO", "HOLERITE"];
+    if (keywords.includes(promptBody.toUpperCase())) {
+      if (!state.nome) {
+        userStates[from] = { step: "PEDIR_NOME", key: promptBody.toUpperCase() };
+        await sendMessage(from, "Por favor, digite seu NOME completo:");
+      } else {
+        userStates[from].step = "PEDIR_EMPRESA";
+        userStates[from].key = promptBody.toUpperCase();
+        await sendMessage(from, "Digite o NOME da empresa em que você trabalha:");
+      }
+      return res.sendStatus(200);
+    }
+
+    const comandoPapel = verificarComandoProfissao(promptBody);
+    if (comandoPapel) {
+      await sendMessage(from, comandoPapel.resposta);
+      return res.sendStatus(200);
+    }
+
+    if (state.step === "PEDIR_NOME") {
+      userStates[from].nome = promptBody;
+      await setUserName(from, promptBody);
+      userStates[from].step = "PEDIR_EMPRESA";
+      await sendMessage(from, "Agora digite o NOME da empresa em que você trabalha:");
+      return res.sendStatus(200);
+    }
+
+    if (state.step === "PEDIR_EMPRESA") {
+      const empresaInput = promptBody.toUpperCase();
+      const empresasEncontradas = empresas.filter(e => e.nome.toUpperCase().includes(empresaInput));
+      if (empresasEncontradas.length === 0) {
+        await sendMessage(from, "❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.");
         return res.sendStatus(200);
       }
 
-      const pdfsDir = "./src/utils/pdfs";
-      if (!fs.existsSync(pdfsDir)) fs.mkdirSync(pdfsDir, { recursive: true });
-      const caminhoPDF = `${pdfsDir}/${document.filename}`;
-      fs.writeFileSync(caminhoPDF, pdfBuffer);
+      if (empresasEncontradas.length === 1) {
+        const empresa = empresasEncontradas[0];
+        userStates[from].empresa = empresa.nome;
+        userStates[from].step = null;
+        const { nome, key } = userStates[from];
 
-      const processed = await processarPdfWrapper(caminhoPDF);
-      if (processed) {
-        await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
-      } else {
-        await sendMessage(from, `✅ PDF salvo em ${caminhoPDF} (processamento não disponível).`);
+        await sendMessage(from, `✅ Cadastro confirmado para ${nome} na empresa ${empresa.nome}`);
+        return res.sendStatus(200);
       }
 
-      return res.sendStatus(200);
-    } else if (messageObj.type === "image") {
-      body = "📷 Imagem recebida. Analisando...";
-    } else {
-      await sendMessage(from, "Só consigo responder mensagens de texto, áudio ou documentos PDF por enquanto 😉");
+      userStates[from].empresasOpcoes = empresasEncontradas;
+      userStates[from].step = "ESCOLHER_EMPRESA";
+      let listaMsg = "🔎 Encontramos mais de uma empresa correspondente:\n";
+      empresasEncontradas.forEach((e, i) => {
+        listaMsg += `${i + 1}. ${e.nome}\n`;
+      });
+      listaMsg += "\nDigite apenas o número da empresa desejada.";
+      await sendMessage(from, listaMsg);
       return res.sendStatus(200);
     }
 
-    body = (body || "").trim();
-    if (!body) return res.sendStatus(200);
+    if (state.step === "ESCOLHER_EMPRESA") {
+      const escolha = parseInt(promptBody.trim(), 10);
+      const opcoes = state.empresasOpcoes || [];
 
-    // salva histórico básico
-    await db.collection("conversations").insertOne({ from, role: 'user', content: body, createdAt: new Date() });
-    await saveMemory(from, 'user', body);
-
-    // ===== Comandos rápidos =====
-    if (/^minhas mem[oó]rias/i.test(body)) {
-      const memorias = await db.collection("semanticMemory").find({ userId: from }).sort({ timestamp: -1 }).limit(5).toArray() || [];
-      if (!memorias.length) {
-        await sendMessage(from, "🧠 Você ainda não tem memórias salvas.");
-      } else {
-        const resumo = memorias.map(m => `• ${m.role === "user" ? "Você disse" : "Donna respondeu"}: ${m.content}`).join("\n");
-        await sendMessage(from, `🗂️ Aqui estão suas últimas memórias:\n\n${resumo}`);
+      if (isNaN(escolha) || escolha < 1 || escolha > opcoes.length) {
+        await sendMessage(from, "❌ Opção inválida. Digite apenas o número da empresa listado.");
+        return res.sendStatus(200);
       }
+
+      const empresaEscolhida = opcoes[escolha - 1];
+      userStates[from].empresa = empresaEscolhida.nome;
+      userStates[from].step = null;
+      delete userStates[from].empresasOpcoes;
+
+      const { nome, key } = state;
+      await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
       return res.sendStatus(200);
     }
 
-    if (/^meu nome é\s+/i.test(body)) {
-      const match = body.match(/^meu nome é\s+(.+)/i);
-      if (match) {
-        const nome = match[1].trim();
-        await setUserName(from, nome);
-        await saveMemory(from, "user", `O nome do usuário é ${nome}`);
-        await sendMessage(from, `✅ Nome salvo: ${nome}`);
-      } else {
-        await sendMessage(from, `❌ Use: "Meu nome é [seu nome]"`);
-      }
+    let userName = await getUserName(from);
+    const nameMatch = promptBody.match(/meu nome é (\w+)/i);
+    if (nameMatch) {
+      userName = nameMatch[1];
+      await setUserName(from, userName);
+      await sendMessage(from, `Ótimo! Agora vou te chamar de ${userName} 😊`);
       return res.sendStatus(200);
     }
 
-    if (/qual (é )?meu nome/i.test(body)) {
-      const nome = await getUserName(from);
-      await sendMessage(from, nome ? `📛 Seu nome é ${nome}` : `❌ Ainda não sei seu nome. Diga: 'Meu nome é [seu nome]'`);
-      return res.sendStatus(200);
-    }
+    const memories = await getUserMemory(from, 6);
+    const chatHistory = memories.reverse()
+      .map(m => ({ role: m.role, content: m.content || "" }))
+      .filter(m => m.content.trim() !== "");
 
-    // ===== Processamento de contexto e memórias =====
-    const history = (await db.collection("conversations").find({ from }).sort({ createdAt: 1 }).toArray()) || [];
-    const conversationContext = (history || [])
-      .filter(h => h.content)
-      .map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.content}`)
-      .join("\n");
+    const systemMessage = {
+      role: "system",
+      content: `Você é a Donna, assistente pessoal do usuário.
+- Use o nome do usuário quando souber.
+- Responda de forma objetiva, clara, direta e amigável.
+- Priorize respostas curtas e práticas.
+- Responda de forma **curta, clara e direta** (máx. 2 a 3 frases).
+- Se precisar listar opções, limite a no máximo 3 itens.
+- Nunca escreva parágrafos longos.
+- Adapte o tom para ser acolhedora e prestativa.
+- Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa.
+- Não invente informações; se não souber, admita de forma educada.`
+    };
 
-    const relevantMemories = (await findRelevantMemory(from, body, 3)) || [];
-    const memoryContext = relevantMemories.length
-      ? relevantMemories.map(m => `• ${m.role}: ${m.content}`).join("\n")
-      : "";
+    // ===== Verifica se o texto se encaixa em alguma função extra =====
+  let reply = await funcoesExtras(from, body);
 
-    // ===== Geração de resposta =====
-    let reply = await funcoesExtras(from, body);
-    if (!reply) reply = await obterResposta(body, from);
-    if (!reply) {
-      const pdfTrechos = await buscarPergunta(body);
-      const promptFinal = pdfTrechos ? `${body}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}` : body;
-      reply = await askGPT(promptFinal, [{ role: "system", content: `Você é a Donna...` }, ...history]);
-      await treinarDonna(body, reply, from);
-    }
+  if (!reply) {
+  // ===== Se não for função extra, verifica resposta treinada =====
+  reply = await obterResposta(promptBody);
 
-    // 🧠 Memória automática
-    const autoMem = await extractAutoMemory(body);
-    if (autoMem) {
-      console.log("💾 Memória relevante detectada:", autoMem);
-      await db.collection("semanticMemory").updateOne(
-        { userId: from, role: autoMem.key },
-        { $set: { content: autoMem.value, embedding: autoMem.embedding, timestamp: new Date() } },
-        { upsert: true }
-      );
-    } else {
-      await saveMemory(from, "userMessage", body);
-    }
+  if (!reply) {
+    // ===== Buscar trechos do PDF =====
+    const pdfTrechos = await buscarPergunta(promptBody);
+    const promptFinal = pdfTrechos
+      ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
+      : promptBody;
 
-    await saveMemory(from, "assistantMessage", reply);
-    await db.collection("conversations").insertOne({
-      from,
-      role: 'assistant',
-      content: reply,
-      createdAt: new Date()
-    });
+    // Se não tem resposta treinada, usa GPT
+    reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
+    await treinarDonna(promptBody, reply);
+  }
+}
 
-    // envio
+    await saveMemory(from, "user", promptBody);
+    await saveMemory(from, "assistant", reply);
+
     if (isAudioResponse) {
       try {
         const audioBuffer = await falar(reply, "./resposta.mp3");
@@ -590,27 +464,19 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, reply);
     }
 
-    return res.sendStatus(200);
+    res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro no webhook:", err.response?.data || err.message || err);
-    return res.sendStatus(500);
+    console.error("❌ Erro no webhook:", err);
+    res.sendStatus(500);
   }
-});
-
-
-// healthcheck
-app.get("/", (req, res) => {
-  res.send("✅ Donna está online!");
 });
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-// export helpers se necessário
-export {
+export { 
   askGPT,
-  getTodayEvents,
-  addEvent,
-  saveMemory,
-  getUserMemory,
-  db
+  getTodayEvents, 
+  addEvent, 
+  saveMemory, 
+  db 
 };
