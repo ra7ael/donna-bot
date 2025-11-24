@@ -28,7 +28,7 @@ import * as cacheService from './services/cacheService.js';
 import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
-import { extractAutoMemory } from "./utils/autoMemory.js";
+import { extractAutoMemory, findRelevantMemory } from "./utils/autoMemory.js";
 
 // Nota: import estático removido para import dinâmico no wrapper
 // import { processarPdf } from "./utils/importPdfEmbeddings.js";
@@ -662,33 +662,55 @@ if (/^buscar mem[oó]ria/i.test(body)) {
     }
 
 // 🧠 Memória inteligente automática
-
 const autoMem = await extractAutoMemory(body);
 
 if (autoMem) {
   console.log("💾 Memória relevante detectada:", autoMem);
-  await saveMemory(from, autoMem.key, autoMem.value);
+  // salva no MongoDB com userId correto e embedding
+  await db.collection("semanticMemory").updateOne(
+    { userId: from, role: autoMem.key },
+    { $set: { content: autoMem.value, embedding: autoMem.embedding, timestamp: new Date() } },
+    { upsert: true }
+  );
 } else {
-  // salva apenas como contexto curto
   await saveMemory(from, "userMessage", body);
 }
-    await saveMemory(from, "assistantMessage", reply);
 
-    await db.collection("conversations").insertOne({ from, role: 'assistant', content: reply, createdAt: new Date() });
+// busca memórias semânticas relevantes antes de gerar resposta
+const relevantMemories = await findRelevantMemory(from, body, 3);
+let memoryContext = "";
+if (relevantMemories && relevantMemories.length > 0) {
+  memoryContext = relevantMemories.map(m => `• ${m.role}: ${m.content}`).join("\n");
+}
 
-    if (isAudioResponse) {
-      try {
-        const audioBuffer = await falar(reply, "./resposta.mp3");
-        await sendAudio(from, audioBuffer);
-      } catch (err) {
-        console.error("❌ Erro ao gerar/enviar áudio:", err);
-        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
-      }
-    } else {
-      await sendMessage(from, reply);
-    }
+// monta o prompt final incluindo memórias relevantes
+let promptFinal = body;
+if (memoryContext) {
+  promptFinal = `${body}\n\nMemórias relevantes:\n${memoryContext}`;
+}
 
-    return res.sendStatus(200);
+// gera a resposta usando GPT/treinoDonna
+let reply = await obterResposta(promptFinal, from);
+
+// salva histórico de assistant
+await saveMemory(from, "assistantMessage", reply);
+await db.collection("conversations").insertOne({ from, role: 'assistant', content: reply, createdAt: new Date() });
+
+// envia áudio ou mensagem normal
+if (isAudioResponse) {
+  try {
+    const audioBuffer = await falar(reply, "./resposta.mp3");
+    await sendAudio(from, audioBuffer);
+  } catch (err) {
+    console.error("❌ Erro ao gerar/enviar áudio:", err);
+    await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
+  }
+} else {
+  await sendMessage(from, reply);
+}
+
+return res.sendStatus(200);
+
   } catch (err) {
     console.error("❌ Erro no webhook:", err.response?.data || err.message || err);
     return res.sendStatus(500);
