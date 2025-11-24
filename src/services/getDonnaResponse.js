@@ -5,20 +5,19 @@ import { getGPTResponse } from "./gptService.js";
 import { getUserName } from "../models/user.js";
 import { getPapeis } from "../utils/treinoDonna.js";
 
-/** 
- * Busca nome salvo em memória semântica ("O nome do usuário é X")
+/**
+ * Busca nome salvo em memória semântica
  */
 async function getUserNameFromMemory(userId) {
   const memory = await querySemanticMemory("O nome do usuário é", userId, 3);
-  if (memory) {
-    const match = memory.match(/O nome do usuário é\s+([^\s.]+)/i);
-    return match ? match[1] : null;
-  }
-  return null;
+  if (!memory) return null;
+
+  const match = memory.match(/O nome do usuário é\s+([^\s.]+)/i);
+  return match ? match[1] : null;
 }
 
 /**
- * Principal gerador de resposta da Donna
+ * Sistema principal de resposta da Donna
  */
 export async function getDonnaResponse(userMessage, userId, conversationContext = "", memoryContext = "") {
   const prompt = userMessage?.trim();
@@ -37,19 +36,23 @@ export async function getDonnaResponse(userMessage, userId, conversationContext 
     return datasetAnswer;
   }
 
-  // 3️⃣ Verifica se o usuário informou seu nome ("meu nome é X")
+  // 3️⃣ Detecta se o usuário está dizendo seu nome
   let userName = await getUserNameFromMemory(userId);
+
   if (!userName && /meu nome é/i.test(prompt)) {
     const match = prompt.match(/meu nome é\s+([^\s.]+)/i);
     if (match) {
       userName = match[1];
-      await addSemanticMemory(prompt, `O nome do usuário é ${userName}.`, userId, "user");
+
+      await addSemanticMemory(prompt, `O nome do usuário é ${userName}.`, userId, "assistant");
+
       console.log(`💾 Nome aprendido: ${userName}`);
+
       return `Prazer, ${userName}! Vou lembrar disso.`;
     }
   }
 
-  // 4️⃣ Se perguntar "qual meu nome"
+  // 4️⃣ Perguntas do tipo: "qual meu nome"
   if (/qual (é )?meu nome/i.test(prompt)) {
     if (userName) {
       return `Seu nome é ${userName}!`;
@@ -58,18 +61,19 @@ export async function getDonnaResponse(userMessage, userId, conversationContext 
     }
   }
 
-  // 5️⃣ Busca em memória semântica
-let semanticAnswer = await querySemanticMemory(prompt, userId);
-if (semanticAnswer) {
-  // querySemanticMemory pode retornar array ou string
-  if (Array.isArray(semanticAnswer)) semanticAnswer = semanticAnswer[0];
-  if (semanticAnswer) {
-    cacheSet(cacheKey, semanticAnswer);
-    return semanticAnswer;
-  }
-}
+  // 5️⃣ Tentativa de resposta via memória semântica
+  let semanticAnswer = await querySemanticMemory(prompt, userId);
 
-  // 6️⃣ GPT com contexto personalizado
+  if (semanticAnswer) {
+    if (Array.isArray(semanticAnswer)) semanticAnswer = semanticAnswer[0];
+
+    if (semanticAnswer) {
+      cacheSet(cacheKey, semanticAnswer);
+      return semanticAnswer;
+    }
+  }
+
+  // 6️⃣ Preparar contexto do GPT
   const nome = userName || (await getUserName(userId));
   const papeis = getPapeis();
 
@@ -77,10 +81,11 @@ if (semanticAnswer) {
     role: "system",
     content: `Você é Donna, assistente pessoal de ${nome || "usuário"}.
 - Papéis ativos: ${papeis.length ? papeis.join(", ") : "nenhum"}.
-- Seja objetiva, prática e acolhedora.
-- Use até 2 frases por resposta.
-- Se o tema for saúde, inclua: "Consulte um especialista."
-- Nunca invente informações.`
+- Seja sempre objetiva, prática e acolhedora.
+- Use no máximo 2 frases por resposta.
+- Em temas de saúde, inclua: "Consulte um especialista."
+- Nunca invente informações.
+- Utilize memórias relevantes quando existirem.`
   };
 
   const messages = [
@@ -90,13 +95,20 @@ if (semanticAnswer) {
     { role: "user", content: prompt }
   ];
 
+  // 7️⃣ GPT resolve
   const gptAnswer = await getGPTResponse(messages);
 
-  // 7️⃣ Armazenamento na memória semântica
-  await addSemanticMemory(prompt, gptAnswer, userId, "user");
+  // 8️⃣ Armazenamento inteligente em memória semântica
+  // Guarda o que o usuário disse
+  await addSemanticMemory(prompt, prompt, userId, "user");
+
+  // Guarda o que a Donna respondeu
   await addSemanticMemory(prompt, gptAnswer, userId, "assistant");
+
+  // 9️⃣ Cache
   cacheSet(cacheKey, gptAnswer);
 
   return gptAnswer;
 }
+
 
