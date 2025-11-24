@@ -10,7 +10,7 @@ import bodyParser from "body-parser";
 import axios from 'axios';
 import mongoose from "mongoose";
 import { DateTime } from 'luxon';
-import { startReminderCron } from "./cron/reminders.js";
+import { startReminderCron, addReminder } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from './utils/downloadMedia.js';
 import cron from "node-cron";
@@ -28,6 +28,9 @@ import * as cacheService from './services/cacheService.js';
 import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
+
+// Nota: import estático removido para import dinâmico no wrapper
+// import { processarPdf } from "./utils/importPdfEmbeddings.js";
 
 const MONGO_URI = process.env.MONGO_URI;
 if (!MONGO_URI) {
@@ -53,13 +56,14 @@ export async function connectDB() {
     if (!names.includes("users")) await db.createCollection("users");
     if (!names.includes("agenda")) await db.createCollection("agenda");
     if (!names.includes("empresas")) await db.createCollection("empresas");
+    if (!names.includes("lembretes")) await db.createCollection("lembretes");
 
     // usamos "timestamp" consistentemente no código
     await db.collection("semanticMemory").createIndex({ userId: 1, timestamp: -1 });
     await db.collection("semanticMemory").createIndex({ content: "text" });
     await db.collection("users").createIndex({ userId: 1 });
 
-    console.log("✅ Conectado ao MongoDB (histórico, usuários, agenda)");
+    console.log("✅ Conectado ao MongoDB (histórico, usuários, agenda, lembretes)");
     // inicie cron apenas depois da conexão (sendMessage é function declaration, hoisted)
     startReminderCron(db, sendMessage);
 
@@ -200,6 +204,7 @@ async function askGPT(prompt, history = []) {
   }
 }
 
+// sendMessage é declaração de função — hoisted — pode ser usada antes da definição.
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
 
@@ -335,6 +340,51 @@ async function processarPdfWrapper(caminhoPDF) {
     console.warn("⚠️ Não foi possível importar ./utils/importPdfEmbeddings.js — pulando processamento de PDF.", e.message);
     return false;
   }
+}
+
+/**
+ * Tenta interpretar uma string de data/hora em formatos comuns.
+ * Retorna { date: 'YYYY-MM-DD', time: 'HH:mm' } ou null se falhar.
+ */
+function parseDateTime(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  raw = raw.trim();
+
+  // tenta ISO
+  let dt = DateTime.fromISO(raw, { zone: "America/Sao_Paulo" });
+  if (dt.isValid) {
+    return { date: dt.toFormat("yyyy-MM-dd"), time: dt.toFormat("HH:mm") };
+  }
+
+  // tenta formatos com espaço: "yyyy-MM-dd HH:mm" ou "dd/MM/yyyy HH:mm"
+  dt = DateTime.fromFormat(raw, "yyyy-MM-dd HH:mm", { zone: "America/Sao_Paulo" });
+  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: dt.toFormat("HH:mm") };
+
+  dt = DateTime.fromFormat(raw, "dd/MM/yyyy HH:mm", { zone: "America/Sao_Paulo" });
+  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: dt.toFormat("HH:mm") };
+
+  // tenta só data
+  dt = DateTime.fromFormat(raw, "yyyy-MM-dd", { zone: "America/Sao_Paulo" });
+  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: "09:00" }; // default 09:00
+
+  dt = DateTime.fromFormat(raw, "dd/MM/yyyy", { zone: "America/Sao_Paulo" });
+  if (dt.isValid) return { date: dt.toFormat("yyyy-MM-dd"), time: "09:00" };
+
+  // tenta "amanhã às 14:00", "hoje às 18:00"
+  if (/hoje/i.test(raw)) {
+    const match = raw.match(/(\d{1,2}:\d{2})/);
+    const time = match ? match[1] : "09:00";
+    const today = DateTime.now().setZone("America/Sao_Paulo").toFormat("yyyy-MM-dd");
+    return { date: today, time };
+  }
+  if (/amanh/i.test(raw)) {
+    const match = raw.match(/(\d{1,2}:\d{2})/);
+    const time = match ? match[1] : "09:00";
+    const tomorrow = DateTime.now().setZone("America/Sao_Paulo").plus({ days: 1 }).toFormat("yyyy-MM-dd");
+    return { date: tomorrow, time };
+  }
+
+  return null;
 }
 
 // ===== Funções de Agenda =====
@@ -500,19 +550,27 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // lembretes estilo "lembre-me de X em YYYY-MM-DD HH:mm"
+    // lembretes estilo "lembre-me de X em YYYY-MM-DD HH:mm" - agora usa addReminder()
     const lembreteRegex = /lembre-me de (.+) (em|para|às|as) (.+)/i;
     if (lembreteRegex.test(body)) {
       const match = body.match(lembreteRegex);
-      const text = match[1];
-      const dateStr = match[3];
-      const date = new Date(dateStr);
-      if (isNaN(date)) {
-        await sendMessage(from, "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'");
+      const text = match[1].trim();
+      const dateStr = match[3].trim();
+
+      const parsed = parseDateTime(dateStr);
+      if (!parsed) {
+        await sendMessage(from, "❌ Não consegui interpretar a data/hora. Use formatos: 'YYYY-MM-DD HH:mm', 'DD/MM/YYYY HH:mm', 'hoje às 14:00' ou 'amanhã às 09:00'.");
         return res.sendStatus(200);
       }
-      await db.collection("reminders").insertOne({ from, text, date, createdAt: new Date() });
-      await sendMessage(from, `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`);
+
+      try {
+        await addReminder(db, from, text, parsed.date, parsed.time);
+        await sendMessage(from, `✅ Lembrete salvo: "${text}" para ${parsed.date} às ${parsed.time}`);
+      } catch (err) {
+        console.error("❌ Erro ao salvar lembrete:", err);
+        await sendMessage(from, "❌ Ocorreu um erro ao salvar o lembrete.");
+      }
+
       return res.sendStatus(200);
     }
 
