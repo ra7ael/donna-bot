@@ -22,7 +22,7 @@ import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/tre
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
-import { memorizarAutomatico } from "./utils/memorizarAutomatico.js";
+import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 
 dotenv.config();
 const app = express();
@@ -271,7 +271,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Memoriza automaticamente qualquer informação
-    const dadosMemorizados = await memorizarAutomatico(from, body, db);
+    const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
     // Mensagem de confirmação para dados importantes
     if (body.toLowerCase().includes("meus filhos são")) {
@@ -279,15 +279,11 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Exemplo de consulta futura
-    if (/qual o nome dos meus filhos/i.test(body)) {
-      if (dadosMemorizados.filhos?.length) {
-        await sendMessage(from, `Seus filhos são: ${dadosMemorizados.filhos.join(" e ")}`);
-      } else {
-        await sendMessage(from, "Ainda não sei os nomes dos seus filhos. Pode me informar?");
-      }
-      return res.sendStatus(200);
-    }
+  // Exemplo de confirmação
+  if (dadosMemorizados.nomes_dos_filhos?.length) {
+    await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
+    return res.sendStatus(200);
+  }
 
     // Se não for comando específico, responde normalmente usando GPT
     const memories = await db.collection("semanticMemory")
