@@ -64,13 +64,17 @@ export async function getDonnaResponse(userMessage, userId, conversationContext 
   // 5️⃣ Tentativa de resposta via memória semântica
   let semanticAnswer = await querySemanticMemory(prompt, userId);
 
-  if (semanticAnswer) {
-    if (Array.isArray(semanticAnswer)) semanticAnswer = semanticAnswer[0];
+  // garante que seja sempre array para evitar erro com reduce
+  const answersArray = Array.isArray(semanticAnswer)
+    ? semanticAnswer
+    : semanticAnswer
+      ? [semanticAnswer]
+      : [];
 
-    if (semanticAnswer) {
-      cacheSet(cacheKey, semanticAnswer);
-      return semanticAnswer;
-    }
+  if (answersArray.length > 0) {
+    const answer = answersArray[0];
+    cacheSet(cacheKey, answer);
+    return answer;
   }
 
   // 6️⃣ Preparar contexto do GPT
@@ -109,5 +113,3 @@ export async function getDonnaResponse(userMessage, userId, conversationContext 
 
   return gptAnswer;
 }
-
-
