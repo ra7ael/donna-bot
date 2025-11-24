@@ -22,6 +22,7 @@ import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/tre
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
+import { memorizarAutomatico } from "./utils/memorizarAutomatico.js";
 
 dotenv.config();
 const app = express();
@@ -253,7 +254,7 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-// ===== Webhook WhatsApp =====
+
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -261,210 +262,56 @@ app.post("/webhook", async (req, res) => {
 
     const from = messageObj.from;
     let body = "";
-    let isAudioResponse = false;
 
-    if (!numerosAutorizados.includes(from)) {
-      console.log(`🚫 Número não autorizado ignorado: ${from}`);
-      return res.sendStatus(200);
-    }
-
-    // ===== Tipos de mensagem =====
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
-      if (body.toLowerCase().startsWith("fala ")) {
-        body = body.slice(5).trim();
-        isAudioResponse = true;
-      }
     } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
-      isAudioResponse = true;
-    } else if (messageObj.type === "document") {
-      const document = messageObj.document;
-      if (!document) {
-        await sendMessage(from, "❌ Não consegui processar o arquivo enviado.");
-        return res.sendStatus(200);
-      }
+    }
 
-      try {
-        // Baixa o PDF
-        const pdfBuffer = await downloadMedia(document.id);
-        if (!pdfBuffer) {
-          await sendMessage(from, "❌ Não consegui baixar o arquivo PDF.");
-          return res.sendStatus(200);
-        }
+    // Memoriza automaticamente qualquer informação
+    const dadosMemorizados = await memorizarAutomatico(from, body, db);
 
-        // Pasta de PDFs (cria se não existir)
-        const pdfsDir = "./src/utils/pdfs";
-        if (!fs.existsSync(pdfsDir)) fs.mkdirSync(pdfsDir, { recursive: true });
-
-        // Salva o PDF na pasta definida
-        const caminhoPDF = `${pdfsDir}/${document.filename}`;
-        fs.writeFileSync(caminhoPDF, pdfBuffer);
-
-        // Processa o PDF
-        await processarPdf(caminhoPDF);
-
-        // Confirmação
-        await sendMessage(from, `✅ PDF "${document.filename}" processado com sucesso!`);
-      } catch (err) {
-        console.error("❌ Erro ao processar PDF do WhatsApp:", err);
-        await sendMessage(from, "❌ Ocorreu um erro ao processar seu PDF.");
-      }
-
-      return res.sendStatus(200);
-    } else {
-      await sendMessage(from, "Só consigo responder mensagens de texto ou áudio 😉");
+    // Mensagem de confirmação para dados importantes
+    if (body.toLowerCase().includes("meus filhos são")) {
+      await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.filhos.join(" e ")}`);
       return res.sendStatus(200);
     }
 
-    const promptBody = (body || "").trim();
-    const state = userStates[from] || {};
-
-    if ((!promptBody || promptBody.length < 2) && state.step !== "ESCOLHER_EMPRESA") {
-      await sendMessage(from, "❌ Por favor, digite uma mensagem completa ou uma palavra-chave válida.");
-      return res.sendStatus(200);
-    }
-
-    const keywords = ["EMPRESA", "BANCO", "PAGAMENTO", "BENEFICIOS", "FOLHA PONTO", "HOLERITE"];
-    if (keywords.includes(promptBody.toUpperCase())) {
-      if (!state.nome) {
-        userStates[from] = { step: "PEDIR_NOME", key: promptBody.toUpperCase() };
-        await sendMessage(from, "Por favor, digite seu NOME completo:");
+    // Exemplo de consulta futura
+    if (/qual o nome dos meus filhos/i.test(body)) {
+      if (dadosMemorizados.filhos?.length) {
+        await sendMessage(from, `Seus filhos são: ${dadosMemorizados.filhos.join(" e ")}`);
       } else {
-        userStates[from].step = "PEDIR_EMPRESA";
-        userStates[from].key = promptBody.toUpperCase();
-        await sendMessage(from, "Digite o NOME da empresa em que você trabalha:");
+        await sendMessage(from, "Ainda não sei os nomes dos seus filhos. Pode me informar?");
       }
       return res.sendStatus(200);
     }
 
-    const comandoPapel = verificarComandoProfissao(promptBody);
-    if (comandoPapel) {
-      await sendMessage(from, comandoPapel.resposta);
-      return res.sendStatus(200);
-    }
+    // Se não for comando específico, responde normalmente usando GPT
+    const memories = await db.collection("semanticMemory")
+      .find({ numero: from })
+      .sort({ timestamp: -1 })
+      .limit(6)
+      .toArray();
 
-    if (state.step === "PEDIR_NOME") {
-      userStates[from].nome = promptBody;
-      await setUserName(from, promptBody);
-      userStates[from].step = "PEDIR_EMPRESA";
-      await sendMessage(from, "Agora digite o NOME da empresa em que você trabalha:");
-      return res.sendStatus(200);
-    }
-
-    if (state.step === "PEDIR_EMPRESA") {
-      const empresaInput = promptBody.toUpperCase();
-      const empresasEncontradas = empresas.filter(e => e.nome.toUpperCase().includes(empresaInput));
-      if (empresasEncontradas.length === 0) {
-        await sendMessage(from, "❌ Empresa não encontrada. Digite exatamente o nome da empresa ou confira a grafia.");
-        return res.sendStatus(200);
-      }
-
-      if (empresasEncontradas.length === 1) {
-        const empresa = empresasEncontradas[0];
-        userStates[from].empresa = empresa.nome;
-        userStates[from].step = null;
-        const { nome, key } = userStates[from];
-
-        await sendMessage(from, `✅ Cadastro confirmado para ${nome} na empresa ${empresa.nome}`);
-        return res.sendStatus(200);
-      }
-
-      userStates[from].empresasOpcoes = empresasEncontradas;
-      userStates[from].step = "ESCOLHER_EMPRESA";
-      let listaMsg = "🔎 Encontramos mais de uma empresa correspondente:\n";
-      empresasEncontradas.forEach((e, i) => {
-        listaMsg += `${i + 1}. ${e.nome}\n`;
-      });
-      listaMsg += "\nDigite apenas o número da empresa desejada.";
-      await sendMessage(from, listaMsg);
-      return res.sendStatus(200);
-    }
-
-    if (state.step === "ESCOLHER_EMPRESA") {
-      const escolha = parseInt(promptBody.trim(), 10);
-      const opcoes = state.empresasOpcoes || [];
-
-      if (isNaN(escolha) || escolha < 1 || escolha > opcoes.length) {
-        await sendMessage(from, "❌ Opção inválida. Digite apenas o número da empresa listado.");
-        return res.sendStatus(200);
-      }
-
-      const empresaEscolhida = opcoes[escolha - 1];
-      userStates[from].empresa = empresaEscolhida.nome;
-      userStates[from].step = null;
-      delete userStates[from].empresasOpcoes;
-
-      const { nome, key } = state;
-      await sendMessage(from, `✅ Cadastro confirmado!\nNome: ${nome}\nEmpresa: ${empresaEscolhida.nome}`);
-      return res.sendStatus(200);
-    }
-
-    let userName = await getUserName(from);
-    const nameMatch = promptBody.match(/meu nome é (\w+)/i);
-    if (nameMatch) {
-      userName = nameMatch[1];
-      await setUserName(from, userName);
-      await sendMessage(from, `Ótimo! Agora vou te chamar de ${userName} 😊`);
-      return res.sendStatus(200);
-    }
-
-    const memories = await getUserMemory(from, 6);
     const chatHistory = memories.reverse()
       .map(m => ({ role: m.role, content: m.content || "" }))
       .filter(m => m.content.trim() !== "");
 
     const systemMessage = {
       role: "system",
-      content: `Você é a Donna, assistente pessoal do usuário.
-- Use o nome do usuário quando souber.
-- Responda de forma objetiva, clara, direta e amigável.
-- Priorize respostas curtas e práticas.
-- Responda de forma **curta, clara e direta** (máx. 2 a 3 frases).
-- Se precisar listar opções, limite a no máximo 3 itens.
-- Nunca escreva parágrafos longos.
-- Adapte o tom para ser acolhedora e prestativa.
-- Se a pergunta for sobre horário, data, clima ou lembretes, responda de forma precisa.
-- Não invente informações; se não souber, admita de forma educada.`
+      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
-    // ===== Verifica se o texto se encaixa em alguma função extra =====
-  let reply = await funcoesExtras(from, body);
-
-  if (!reply) {
-  // ===== Se não for função extra, verifica resposta treinada =====
-  reply = await obterResposta(promptBody);
-
-  if (!reply) {
-    // ===== Buscar trechos do PDF =====
-    const pdfTrechos = await buscarPergunta(promptBody);
-    const promptFinal = pdfTrechos
-      ? `${promptBody}\n\nBaseado nestes trechos de PDF:\n${pdfTrechos}`
-      : promptBody;
-
-    // Se não tem resposta treinada, usa GPT
-    reply = await askGPT(promptFinal, [systemMessage, ...chatHistory]);
-    await treinarDonna(promptBody, reply);
-  }
-}
-
-    await saveMemory(from, "user", promptBody);
+    let reply = await askGPT(body, [systemMessage, ...chatHistory]);
+    await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    if (isAudioResponse) {
-      try {
-        const audioBuffer = await falar(reply, "./resposta.mp3");
-        await sendAudio(from, audioBuffer);
-      } catch (err) {
-        console.error("❌ Erro ao gerar/enviar áudio:", err);
-        await sendMessage(from, "❌ Não consegui gerar o áudio no momento.");
-      }
-    } else {
-      await sendMessage(from, reply);
-    }
-
+    await sendMessage(from, reply);
     res.sendStatus(200);
+
   } catch (err) {
     console.error("❌ Erro no webhook:", err);
     res.sendStatus(500);
