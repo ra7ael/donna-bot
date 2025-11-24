@@ -606,6 +606,27 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // ===== BUSCAR MEMÓRIA ESPECÍFICA =====
+if (/^buscar mem[oó]ria/i.test(body)) {
+  const chave = body.replace(/^buscar mem[oó]ria/i, "").trim().toLowerCase();
+
+  if (!chave) {
+    await sendMessage(from, "🧠 Diga o que você quer buscar. Ex: 'buscar memória nome do filho'");
+    return res.sendStatus(200);
+  }
+
+  const mem = await db.collection("semanticMemory").findOne({ userId: from, key: new RegExp(chave, "i") });
+
+  if (!mem) {
+    await sendMessage(from, `❌ Não encontrei memória relacionada a: ${chave}`);
+  } else {
+    await sendMessage(from, `🗂️ Encontrei:\n• **${mem.key}** → ${mem.content}`);
+  }
+
+  return res.sendStatus(200);
+}
+
+
     // Intent fallback: montar contexto e chamar Donna/GPT
     const history = await db.collection("conversations").find({ from }).sort({ createdAt: 1 }).toArray();
     const conversationContext = history
