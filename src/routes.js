@@ -150,22 +150,41 @@ router.post('/', async (req, res) => {
       const city = cityMatch[1];
       responseText = await getWeather(city);
     } else {
-      // ===== Lembretes =====
-      const lembreteRegex = /lembre-me de (.+) (em|para|às) (.+)/i;
-      if (lembreteRegex.test(userMessage)) {
-        const match = userMessage.match(lembreteRegex);
-        const text = match[1];
-        const dateStr = match[3];
-        const date = new Date(dateStr);
-
-        if (isNaN(date)) {
-          responseText = "❌ Não consegui entender a data/hora do lembrete. Use formato: 'Lembre-me de reunião em 2025-09-18 14:00'";
-        } else {
-          await Reminder.create({ from, text, date });
-          responseText = `✅ Lembrete salvo: "${text}" para ${date.toLocaleString('pt-BR')}`;
+      
+        // ===== Lembretes =====
+        const lembreteRegex = /(me lembre|me lembra|lembre de|lembre-me|lembra de|avisa|manda (um )?lembrete)(.*?)(às|as|a|para|pra)?\s?(\d{1,2}[:h]\d{2}|\d{1,2}h|\d{1,2}:\d{2})/i;
+        
+        if (lembreteRegex.test(userMessage)) {
+          const match = userMessage.match(lembreteRegex);
+        
+          const textoLembrete = match[3].trim();
+          let horarioStr = match[5];
+        
+          // Normalizar horário (ex: 8h → 08:00 | 8h30 → 08:30)
+          horarioStr = horarioStr.replace('h', ':');
+          if (/^\d{1,2}:$/.test(horarioStr)) horarioStr += "00";
+        
+          const now = DateTime.now().setZone("America/Sao_Paulo");
+          let lembreteDate = now;
+        
+          // Define data hoje com horário informado
+          const [h, m] = horarioStr.split(':');
+          lembreteDate = lembreteDate.set({ hour: Number(h), minute: Number(m) });
+        
+          // Se horário já passou hoje → agenda para amanhã
+          if (lembreteDate < now) {
+            lembreteDate = lembreteDate.plus({ days: 1 });
+          }
+        
+          await Reminder.create({
+            from,
+            text: textoLembrete,
+            date: lembreteDate.toJSDate()
+          });
+        
+          responseText = `✅ Lembrete criado: "${textoLembrete}" às ${lembreteDate.toFormat("HH:mm")} (${lembreteDate.toFormat("dd/MM")})`;
         }
 
-      } else {
         // ===== Histórico curto e memória =====
         const history = await Conversation.find({ from }).sort({ createdAt: 1 });
         const conversationContext = history
