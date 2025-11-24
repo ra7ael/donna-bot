@@ -28,6 +28,7 @@ import * as cacheService from './services/cacheService.js';
 import * as datasetService from './services/datasetService.js';
 import * as getDonnaResponse from './services/getDonnaResponse.js';
 import * as gptService from './services/gptService.js';
+import { extractAutoMemory } from "./utils/autoMemory.js";
 
 // Nota: import estático removido para import dinâmico no wrapper
 // import { processarPdf } from "./utils/importPdfEmbeddings.js";
@@ -640,7 +641,6 @@ app.post("/webhook", async (req, res) => {
     }
 
 // 🧠 Memória inteligente automática
-import { extractAutoMemory } from "./utils/autoMemory.js";
 
 const autoMem = await extractAutoMemory(body);
 
