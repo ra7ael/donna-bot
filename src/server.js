@@ -264,6 +264,7 @@ async function getTodayEvents(number) {
     const from = messageObj.from;
     let body = "";
 
+    // 🔊 Transcrição de áudio ou texto
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
     } else if (messageObj.type === "audio") {
@@ -271,7 +272,7 @@ async function getTodayEvents(number) {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // 🔒 Evitar spam: checa se já respondemos recentemente à mesma mensagem
+    // 🔒 Evitar spam: checa se já respondemos recentemente
     const recentReply = await db.collection("semanticMemory").findOne({
       userId: from,
       content: body,
@@ -280,42 +281,53 @@ async function getTodayEvents(number) {
     });
     if (recentReply) return res.sendStatus(200);
 
-    // Extrair informações automaticamente
+    // 🔍 Extrair informações automáticas
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
-    // Salva memórias automáticas importantes (sem enviar várias mensagens)
+    // Salvar memórias importantes sem spam
+    const memToSave = [];
     if (dadosMemorizados.nomes_dos_filhos?.length) {
-      await saveMemory(from, "assistant", `Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
+      memToSave.push(`Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
     }
     if (dadosMemorizados.trabalho?.empresa) {
-      await saveMemory(from, "assistant", `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`);
+      memToSave.push(`Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`);
     }
     if (dadosMemorizados.nome) {
-      await saveMemory(from, "assistant", `Nome: ${dadosMemorizados.nome}`);
+      memToSave.push(`Nome: ${dadosMemorizados.nome}`);
+    }
+    for (const mem of memToSave) {
+      await saveMemory(from, "assistant", mem);
     }
 
-    // 🔍 Buscar memórias semânticas com timeout
-    let memoriaRelevante = [];
-    try {
-      memoriaRelevante = await Promise.race([
-        querySemanticMemory(body, from, 3), // 3 memórias mais relevantes
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout memória")), 5000)) // 5s max
-      ]) || [];
-    } catch (err) {
-      console.warn("⚠️ Memórias semânticas ignoradas:", err.message);
+    // 🔹 Função auxiliar para buscar memórias semânticas por prazo
+    async function getSemanticMemoriesByPeriod(periodDays) {
+      const fromDate = new Date(Date.now() - periodDays*24*60*60*1000);
+      try {
+        return await querySemanticMemory(body, from, 5, fromDate); // retorna top 5 memórias do período
+      } catch (err) {
+        console.warn(`⚠️ Memórias ${periodDays} dias ignoradas:`, err.message);
+        return [];
+      }
     }
 
+    // 🔹 Memórias semânticas curto/médio/longo prazo
+    const memoriaCurto = await getSemanticMemoriesByPeriod(1);   // 1 dia
+    const memoriaMedio = await getSemanticMemoriesByPeriod(7);   // 7 dias
+    const memoriaLongo = await getSemanticMemoriesByPeriod(30);  // 30 dias
+
+    // Combina e prioriza memórias mais recentes primeiro
+    const memoriaRelevante = [...memoriaCurto, ...memoriaMedio, ...memoriaLongo];
     const memoriaTexto = memoriaRelevante.length ? memoriaRelevante.join("\n") : "";
 
-    // Consultar memórias recentes
+    // 🔹 Histórico recente
     const memories = await db.collection("semanticMemory")
       .find({ userId: from })
       .sort({ createdAt: -1 })
-      .limit(6)
+      .limit(10)
       .toArray();
 
     const chatHistory = memories
-      .map(m => ({ role: m.role, content: m.content || "" }))
+      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
       .filter(m => m.content.trim() !== "");
 
     const systemMessage = {
@@ -323,20 +335,23 @@ async function getTodayEvents(number) {
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
-    // Consulta GPT incluindo memórias relevantes
-    const reply = await askGPT(body, [
+    // 🔹 Monta prompt pro GPT
+    const messagesToGPT = [
       systemMessage,
-      memoriaTexto ? { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` } : null,
+      memoriaTexto ? { role: "assistant", content: `Memórias relevantes (curto, médio, longo prazo):\n${memoriaTexto}` } : null,
       ...chatHistory
-    ].filter(Boolean)); // Remove nulos
+    ].filter(Boolean);
 
-    // Salva mensagens
+    // 🔹 Consulta GPT
+    const reply = await askGPT(body, messagesToGPT);
+
+    // 🔹 Salva mensagens
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    // Envia a resposta (texto ou áudio)
+    // 🔹 Envia resposta
     if (messageObj.type === "audio") {
-      await sendAudio(from, reply); // função que envia MP3 ou TTS
+      await sendAudio(from, reply); // MP3/TTS
     } else {
       await sendMessage(from, reply);
     }
