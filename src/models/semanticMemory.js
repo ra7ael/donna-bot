@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { embedding } from "../utils/embeddingService.js";
 
+// Definição do Schema para as Memórias Semânticas
 const semanticSchema = new mongoose.Schema({
   userId: { type: String, required: true },
   prompt: { type: String, required: true },
@@ -15,11 +16,12 @@ semanticSchema.index({ userId: 1, prompt: 1 }, { unique: true });
 
 const SemanticMemory = mongoose.model("SemanticMemory", semanticSchema);
 
-// 🧠 Cria embedding + salva memória
+// 🧠 Função para salvar memória semântica com o embedding
 export async function addSemanticMemory(prompt, answer, userId, role) {
   try {
     const vector = await embedding(`${prompt} ${answer}`);
 
+    // Atualiza ou insere a memória semântica com o vetor de embedding
     await SemanticMemory.findOneAndUpdate(
       { userId, prompt },
       { userId, prompt, answer, role, vector },
@@ -32,11 +34,21 @@ export async function addSemanticMemory(prompt, answer, userId, role) {
   }
 }
 
-// 🧠 Busca memória por similaridade
+// 🧠 Função para calcular a Similaridade de Coseno
+function cosineSimilarity(vecA, vecB) {
+  const dotProduct = vecA.reduce((sum, val, i) => sum + val * vecB[i], 0);
+  const magnitudeA = Math.sqrt(vecA.reduce((sum, val) => sum + val * val, 0));
+  const magnitudeB = Math.sqrt(vecB.reduce((sum, val) => sum + val * val, 0));
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+
+// 🧠 Função para buscar memória por similaridade de coseno
 export async function querySemanticMemory(query, userId, limit = 1) {
   try {
+    // Gera o vetor de embedding para a consulta
     const queryVector = await embedding(query);
 
+    // Busca as memórias armazenadas no banco
     const results = await SemanticMemory.aggregate([
       { $match: { userId } },
       {
@@ -60,9 +72,32 @@ export async function querySemanticMemory(query, userId, limit = 1) {
                       ]
                     }
                   }
+                },
+                magnitudeQuery: {
+                  $sqrt: {
+                    $reduce: {
+                      input: { $range: [0, { $size: "$$queryVector" }] },
+                      initialValue: 0,
+                      in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
+                    }
+                  }
+                },
+                magnitudeMemory: {
+                  $sqrt: {
+                    $reduce: {
+                      input: { $range: [0, { $size: "$vector" }] },
+                      initialValue: 0,
+                      in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
+                    }
+                  }
                 }
               },
-              in: "$$dot"
+              in: {
+                $divide: [
+                  "$$dot",
+                  { $multiply: ["$$magnitudeQuery", "$$magnitudeMemory"] }
+                ]
+              }
             }
           }
         }
@@ -71,8 +106,10 @@ export async function querySemanticMemory(query, userId, limit = 1) {
       { $limit: limit }
     ]);
 
+    // Se não encontrar nenhum resultado, retorna null
     if (results.length === 0) return null;
 
+    // Retorna as respostas mais relevantes com base na similaridade
     return results.map(r => r.answer);
   } catch (err) {
     console.error("❌ Erro ao buscar memória semântica:", err.message);
