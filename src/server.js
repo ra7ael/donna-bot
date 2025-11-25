@@ -215,9 +215,11 @@ async function getUserMemory(number, limit = 5) {
 
 async function saveMemory(number, role, content) {
   if (!content || !content.trim()) return;
+  // Mantendo o esquema já utilizado no seu projeto: campo 'numero' e 'timestamp'
   await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
 }
 
+// transcrição (mantive sua implementação)
 async function transcribeAudio(audioBuffer) {
   try {
     const form = new FormData();
@@ -256,7 +258,39 @@ async function getTodayEvents(number) {
 }
 
 
-    app.post("/webhook", async (req, res) => {
+// ===== WEBHOOK OTIMIZADO =====
+// cache curto para reduzir chamadas pesadas
+const semanticCache = new Map();
+
+// utilitário: busca memórias semânticas com timeout + cache
+async function fetchSemanticMemoriesWithTimeout(query, numero, limit = 5, maxWindowDays = 30, timeoutMs = 4000) {
+  try {
+    const cacheKey = `${numero}:${query}:${limit}:${maxWindowDays}`;
+    if (semanticCache.has(cacheKey)) return semanticCache.get(cacheKey);
+
+    const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
+
+    const mems = await Promise.race([
+      // querySemanticMemory(existing) espera (query, userId, limit) e retorna array de respostas (strings)
+      querySemanticMemory(query, numero, limit, fromDate),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout memória semântica")), timeoutMs))
+    ]).catch(err => {
+      console.warn("⚠️ fetchSemanticMemoriesWithTimeout:", err.message);
+      return [];
+    });
+
+    // garantir array e limitar novamente
+    const results = Array.isArray(mems) ? mems.slice(0, limit) : [];
+    semanticCache.set(cacheKey, results);
+    setTimeout(() => semanticCache.delete(cacheKey), 5 * 60 * 1000); // 5 min
+    return results;
+  } catch (err) {
+    console.warn("⚠️ Erro fetchSemanticMemoriesWithTimeout:", err.message);
+    return [];
+  }
+}
+
+app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
@@ -264,7 +298,7 @@ async function getTodayEvents(number) {
     const from = messageObj.from;
     let body = "";
 
-    // 🔊 Transcrição de áudio ou texto
+    // Captura texto ou transcreve áudio
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
     } else if (messageObj.type === "audio") {
@@ -272,95 +306,92 @@ async function getTodayEvents(number) {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // 🔒 Evitar spam: checa se já respondemos recentemente
-    const recentReply = await db.collection("semanticMemory").findOne({
-      userId: from,
-      content: body,
-      role: "assistant",
-      createdAt: { $gt: new Date(Date.now() - 60*1000) } // última 1 min
+    // Proteção anti-spam correta: verifica se o usuário já enviou a mesma mensagem nos últimos 60s
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const lastUserMessage = await db.collection("semanticMemory").findOne({
+      numero: from,
+      role: "user",
+      timestamp: { $gt: oneMinuteAgo }
     });
-    if (recentReply) return res.sendStatus(200);
 
-    // 🔍 Extrair informações automáticas
+    if (lastUserMessage && typeof lastUserMessage.content === "string" && lastUserMessage.content.trim() === (body || "").trim()) {
+      // Já processamos essa mensagem recentemente — evitar duplicate processing
+      return res.sendStatus(200);
+    }
+
+    // Salva a mensagem do usuário imediatamente (histórico)
+    await saveMemory(from, "user", body);
+
+    // Extrair automaticamente possíveis dados a salvar (nomes, trabalho, etc)
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
-    // Salvar memórias importantes sem spam
+    // Salvar memórias importantes sem enviar confirmações extras
     const memToSave = [];
-    if (dadosMemorizados.nomes_dos_filhos?.length) {
-      memToSave.push(`Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
-    }
-    if (dadosMemorizados.trabalho?.empresa) {
-      memToSave.push(`Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`);
-    }
-    if (dadosMemorizados.nome) {
-      memToSave.push(`Nome: ${dadosMemorizados.nome}`);
-    }
+    if (dadosMemorizados.nomes_dos_filhos?.length) memToSave.push(`Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
+    if (dadosMemorizados.trabalho?.empresa) memToSave.push(`Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`);
+    if (dadosMemorizados.nome) memToSave.push(`Nome: ${dadosMemorizados.nome}`);
     for (const mem of memToSave) {
       await saveMemory(from, "assistant", mem);
     }
 
-    // 🔹 Função auxiliar para buscar memórias semânticas por prazo
-    async function getSemanticMemoriesByPeriod(periodDays) {
-      const fromDate = new Date(Date.now() - periodDays*24*60*60*1000);
-      try {
-        return await querySemanticMemory(body, from, 5, fromDate); // retorna top 5 memórias do período
-      } catch (err) {
-        console.warn(`⚠️ Memórias ${periodDays} dias ignoradas:`, err.message);
-        return [];
-      }
-    }
+    // Buscar memórias semânticas (apenas UMA chamada global por mensagem, com timeout e cache)
+    // Retorna array de strings (ou array vazio)
+    const memoriaRelevanteArr = await fetchSemanticMemoriesWithTimeout(body, from, 5, 30, 4000); // top 5 dentro de 30 dias
+    const memoriaTexto = Array.isArray(memoriaRelevanteArr) && memoriaRelevanteArr.length ? memoriaRelevanteArr.join("\n") : "";
 
-    // 🔹 Memórias semânticas curto/médio/longo prazo
-    const memoriaCurto = await getSemanticMemoriesByPeriod(1);   // 1 dia
-    const memoriaMedio = await getSemanticMemoriesByPeriod(7);   // 7 dias
-    const memoriaLongo = await getSemanticMemoriesByPeriod(30);  // 30 dias
-
-    // Combina e prioriza memórias mais recentes primeiro
-    const memoriaRelevante = [...memoriaCurto, ...memoriaMedio, ...memoriaLongo];
-    const memoriaTexto = memoriaRelevante.length ? memoriaRelevante.join("\n") : "";
-
-    // 🔹 Histórico recente
+    // Consultar histórico recente para contexto (mantendo esquema 'numero' e 'timestamp')
     const memories = await db.collection("semanticMemory")
-      .find({ userId: from })
-      .sort({ createdAt: -1 })
+      .find({ numero: from })
+      .sort({ timestamp: -1 })
       .limit(10)
       .toArray();
 
     const chatHistory = memories
       .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
-      .filter(m => m.content.trim() !== "");
+      .filter(m => m.content && m.content.trim() !== "");
 
     const systemMessage = {
       role: "system",
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
-    // 🔹 Monta prompt pro GPT
+    // Monta as mensagens pro GPT: sistema, memórias relevantes (se existirem) e histórico
     const messagesToGPT = [
       systemMessage,
-      memoriaTexto ? { role: "assistant", content: `Memórias relevantes (curto, médio, longo prazo):\n${memoriaTexto}` } : null,
+      memoriaTexto ? { role: "assistant", content: `Memórias relevantes:\n${memoriaTexto}` } : null,
       ...chatHistory
     ].filter(Boolean);
 
-    // 🔹 Consulta GPT
+    // Chama o GPT
     const reply = await askGPT(body, messagesToGPT);
 
-    // 🔹 Salva mensagens
-    await saveMemory(from, "user", body);
+    // Salva resposta da assistente
     await saveMemory(from, "assistant", reply);
 
-    // 🔹 Envia resposta
+    // Envia resposta: se o usuário enviou áudio, tentar enviar áudio (TTS) com fallback pra texto
     if (messageObj.type === "audio") {
-      await sendAudio(from, reply); // MP3/TTS
+      try {
+        // 'falar' deve retornar buffer/stream compatível com sendAudio
+        const audioOut = await falar(reply);
+        if (audioOut) {
+          await sendAudio(from, audioOut);
+        } else {
+          // fallback
+          await sendMessage(from, reply);
+        }
+      } catch (err) {
+        console.warn("⚠️ Erro ao gerar/enviar áudio, enviando texto:", err.message);
+        await sendMessage(from, reply);
+      }
     } else {
       await sendMessage(from, reply);
     }
 
-    res.sendStatus(200);
+    return res.sendStatus(200);
 
   } catch (err) {
     console.error("❌ Erro no webhook:", err);
-    res.sendStatus(500);
+    return res.sendStatus(500);
   }
 });
 
