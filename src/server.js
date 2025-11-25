@@ -263,73 +263,82 @@ app.post("/webhook", async (req, res) => {
 
     const from = messageObj.from;
     let body = "";
+    let isAudio = false;
 
+    // Captura texto ou áudio
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
     } else if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = await transcribeAudio(audioBuffer);
+      if (audioBuffer) {
+        body = await transcribeAudio(audioBuffer);
+        isAudio = true;
+      }
     }
 
-    // Extrair informações automaticamente
+    // Extrai memórias automáticas
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
+    if (Object.keys(dadosMemorizados).length > 0) {
+      await saveMemory(from, "assistant", "Memória atualizada automaticamente.");
+    }
 
-    // Salva memórias detalhadas
+    // Recupera memórias semânticas relevantes e resume
+    const memoriaRelevante = await querySemanticMemory(body, from, 5);
+    let contextMessage = "";
+    if (memoriaRelevante && memoriaRelevante.length) {
+      contextMessage = await askGPT(
+        "Resuma estas memórias importantes em poucas linhas para contexto:\n" + memoriaRelevante.join("\n"),
+        [{ role: "system", content: "Resuma de forma clara e objetiva." }]
+      );
+    }
+
+    // Inclui dados automáticos importantes no contexto resumido
     if (dadosMemorizados.nomes_dos_filhos?.length) {
-      await saveMemory(from, "assistant", `Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
-      await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
+      contextMessage += `\nFilhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`;
     }
     if (dadosMemorizados.trabalho?.empresa) {
-      await saveMemory(from, "assistant", `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`);
-      await sendMessage(from, `Salvei seu cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa}`);
+      contextMessage += `\nCargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa}`;
     }
     if (dadosMemorizados.nome) {
-      await saveMemory(from, "assistant", `Nome: ${dadosMemorizados.nome}`);
+      contextMessage += `\nNome: ${dadosMemorizados.nome}`;
     }
 
-    // Recupera memórias semânticas relevantes via embeddings
-    const memoriaRelevante = await querySemanticMemory(body, from, 3); // 3 memórias mais relevantes
-    const memoriaTexto = memoriaRelevante ? memoriaRelevante.join("\n") : "";
-
-    // Consultar memórias recentes (lógica antiga)
+    // Histórico recente de chat
     const memories = await db.collection("semanticMemory")
       .find({ numero: from })
       .sort({ timestamp: -1 })
       .limit(6)
       .toArray();
 
-    const yesterday = DateTime.now().minus({ days: 1 }).toJSDate();
-    const olderMemories = await db.collection("semanticMemory")
-      .find({ numero: from, timestamp: { $lt: yesterday } })
-      .sort({ timestamp: -1 })
-      .limit(5)
-      .toArray();
-
-    const allMemories = [...memories.reverse(), ...olderMemories.reverse()];
-
-    // Histórico de chat
-    const chatHistory = allMemories
+    const chatHistory = memories
       .map(m => ({ role: m.role, content: m.content || "" }))
       .filter(m => m.content.trim() !== "");
 
     const systemMessage = {
       role: "system",
-      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
+      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta, usando o contexto disponível."
     };
 
-    // Consulta ao GPT incluindo memórias relevantes antes do histórico
+    // Consulta ao GPT
     const reply = await askGPT(body, [
       systemMessage,
-      { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
+      { role: "assistant", content: contextMessage },
       ...chatHistory
     ]);
 
-    // Salva as mensagens do usuário e da assistente
+    // Salva mensagens do usuário e da assistente
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    // Envia a resposta
+    // Envia resposta
     await sendMessage(from, reply);
+
+    // Converte para áudio apenas se o usuário enviou áudio
+    if (isAudio) {
+      const audioReply = await falar(reply);
+      await sendAudio(from, audioReply);
+    }
+
     res.sendStatus(200);
 
   } catch (err) {
