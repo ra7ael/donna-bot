@@ -274,17 +274,16 @@ app.post("/webhook", async (req, res) => {
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
     if (Object.keys(dadosMemorizados).length > 0) {
-      // Apenas salva a memória, sem enviar JSON
+      // Salva a memória automaticamente
       await saveMemory(from, "assistant", "Memória atualizada.");
     }
 
     // Exemplo de confirmação
     if (dadosMemorizados.nomes_dos_filhos?.length) {
       await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
-      return res.sendStatus(200);
     }
 
-    // Melhorar a consulta para ir além das últimas mensagens (memórias passadas)
+    // Consultar memórias anteriores
     const memories = await db.collection("semanticMemory")
       .find({ numero: from })
       .sort({ timestamp: -1 })  // Ordenando por data de criação mais recente
@@ -302,6 +301,7 @@ app.post("/webhook", async (req, res) => {
     // Concatenando ambas as memórias (as mais recentes e as antigas)
     const allMemories = [...memories.reverse(), ...olderMemories.reverse()];
 
+    // Preparando o histórico de chat para passar ao GPT
     const chatHistory = allMemories
       .map(m => ({ role: m.role, content: m.content || "" }))
       .filter(m => m.content.trim() !== "");
@@ -311,6 +311,7 @@ app.post("/webhook", async (req, res) => {
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
+    // Fazendo a consulta com o histórico de chat
     let reply = await askGPT(body, [systemMessage, ...chatHistory]);
     
     // Salva as mensagens de usuário e assistente
