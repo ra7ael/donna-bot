@@ -271,27 +271,38 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Memoriza automaticamente qualquer informação
-const dadosMemorizados = await extractAutoMemoryGPT(from, body);
+    const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
-if (Object.keys(dadosMemorizados).length > 0) {
-  // Apenas salva a memória, sem enviar JSON
-  await saveMemory(from, "assistant", "Memória atualizada."); 
-}
+    if (Object.keys(dadosMemorizados).length > 0) {
+      // Apenas salva a memória, sem enviar JSON
+      await saveMemory(from, "assistant", "Memória atualizada.");
+    }
 
-  // Exemplo de confirmação
-  if (dadosMemorizados.nomes_dos_filhos?.length) {
-    await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
-    return res.sendStatus(200);
-  }
+    // Exemplo de confirmação
+    if (dadosMemorizados.nomes_dos_filhos?.length) {
+      await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
+      return res.sendStatus(200);
+    }
 
-    // Se não for comando específico, responde normalmente usando GPT
+    // Melhorar a consulta para ir além das últimas mensagens (memórias passadas)
     const memories = await db.collection("semanticMemory")
       .find({ numero: from })
-      .sort({ timestamp: -1 })
-      .limit(6)
+      .sort({ timestamp: -1 })  // Ordenando por data de criação mais recente
+      .limit(6)  // Limita as últimas 6 memórias
       .toArray();
 
-    const chatHistory = memories.reverse()
+    // Agora, buscar também memória de uma semana atrás (exemplo de período maior)
+    const yesterday = DateTime.now().minus({ days: 1 }).toJSDate();
+    const olderMemories = await db.collection("semanticMemory")
+      .find({ numero: from, timestamp: { $lt: yesterday } })
+      .sort({ timestamp: -1 })  // Ordena as memórias mais antigas para mais recentes
+      .limit(5)  // Limita o número de memórias antigas
+      .toArray();
+
+    // Concatenando ambas as memórias (as mais recentes e as antigas)
+    const allMemories = [...memories.reverse(), ...olderMemories.reverse()];
+
+    const chatHistory = allMemories
       .map(m => ({ role: m.role, content: m.content || "" }))
       .filter(m => m.content.trim() !== "");
 
@@ -301,9 +312,12 @@ if (Object.keys(dadosMemorizados).length > 0) {
     };
 
     let reply = await askGPT(body, [systemMessage, ...chatHistory]);
+    
+    // Salva as mensagens de usuário e assistente
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
+    // Envia a resposta
     await sendMessage(from, reply);
     res.sendStatus(200);
 
