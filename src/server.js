@@ -123,31 +123,29 @@ let mongoClientInstance = null;
 
 // ===== Conectar ao Mongo com retry (resiliente) =====
 async function connectDB() {
-  while (true) {
-    try {
-      if (!MONGO_URI) throw new Error("MONGO_URI não configurado");
-      console.log("🔹 Tentando conectar ao MongoDB...");
-      // Use MongoClient diretamente para compatibilidade com seu uso atual
-      const client = await MongoClient.connect(MONGO_URI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        // conecta com timeout razoável
-        serverSelectionTimeoutMS: 5000
-      });
-      mongoClientInstance = client;
-      db = client.db();
-      console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
-      try {
-        startReminderCron(db, sendMessage);
-      } catch (err) {
-        console.warn("⚠️ startReminderCron falhou ao iniciar:", err?.message || err);
-      }
-      break;
-    } catch (err) {
-      console.error('❌ Erro ao conectar ao MongoDB:', err.message || err);
-      // espera e tenta novamente (evita crash)
-      await new Promise(r => setTimeout(r, 3000));
-    }
+  try {
+    if (!MONGO_URI) throw new Error("MONGO_URI não configurado");
+
+    console.log("🔹 Tentando conectar ao MongoDB...");
+    const client = await MongoClient.connect(MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000
+    });
+
+    db = client.db();
+    mongoClientInstance = client;
+    console.log("✅ Conectado ao MongoDB");
+
+    // 🚀 Só inicia o cron depois da conexão REAL existir
+    startReminderCron(db, sendMessage);
+
+    // 🚀 Só sobe o servidor agora, depois do mongo + cron
+    app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
+
+  } catch (err) {
+    console.error("❌ Falha ao conectar Mongo:", err.message || err);
+    process.exit(1);
   }
 }
 connectDB();
