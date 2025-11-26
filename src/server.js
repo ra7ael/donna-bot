@@ -350,31 +350,21 @@ async function getTodayEvents(number) {
 const semanticCache = new Map();
 
 async function fetchSemanticMemoriesWithTimeout(query, numero, limit = 5, maxWindowDays = 30, timeoutMs = 4000) {
-  const useEmbeddings = (process.env.USE_EMBEDDINGS || "false").toLowerCase() === "true";
-  if (!useEmbeddings) return [];
+  try {
+    const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
 
-  const cacheKey = `${numero}:${query}:${limit}:${maxWindowDays}`;
-  if (semanticCache.has(cacheKey)) return semanticCache.get(cacheKey);
+    const mems = await querySemanticMemory(query, numero, limit, fromDate);
 
-  const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
+    const results = Array.isArray(mems) ? mems.slice(0, limit) : [];
 
-  const queryPromise = querySemanticMemory
-    ? querySemanticMemory(query, numero, limit, fromDate)
-    : Promise.resolve([]);
+    semanticCache.set(cacheKey, results);
+    setTimeout(() => semanticCache.delete(cacheKey), 5 * 60 * 1000);
 
-  const mems = await Promise.race([
-    queryPromise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout memória semântica")), timeoutMs))
-  ]).catch(err => {
-    console.warn("⚠️ fetchSemanticMemoriesWithTimeout:", err.message);
+    return results;
+  } catch (err) {
+    console.warn("⚠️ Erro fetchSemanticMemoriesWithTimeout:", err.message || err);
     return [];
-  });
-
-  const results = Array.isArray(mems) ? mems.slice(0, limit) : [];
-  semanticCache.set(cacheKey, results);
-  setTimeout(() => semanticCache.delete(cacheKey), 5 * 60 * 1000);
-
-  return results;
+  }
 }
 
     const mems = await Promise.race([
