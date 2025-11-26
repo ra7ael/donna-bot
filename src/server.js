@@ -188,11 +188,25 @@ app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
 
 // ===== Funções de GPT, WhatsApp, Memória, etc =====
 // askGPT usa axios para compatibilidade com seu fluxo atual. Adicionei timeout e persona mínima.
-async function askGPT(prompt, history = []) {
+async function askGPT(messages, timeoutMs = 10000) {
   try {
-    const safeMessages = history
-      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
-      .filter(m => m.content.trim() !== "");
+    if (!Array.isArray(messages)) {
+      console.warn("⚠️ askGPT: esperado array de mensagens.");
+      return "Desculpa — algo deu errado no contexto da conversa.";
+    }
+
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      { model: "gpt-4o-mini", messages, max_tokens: 300, temperature: 0.7 },
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" }, timeout: timeoutMs }
+    );
+
+    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
+  } catch (err) {
+    console.error("❌ askGPT falhou:", err.message || err);
+    return "Desculpa — não consegui processar a resposta agora.";
+  }
+}
 
     // garante persona Donna se não estiver presente
     if (!safeMessages.some(m => m.role === "system")) {
