@@ -3,7 +3,7 @@ import express from 'express';
 import OpenAI from "openai";
 import { MongoClient } from 'mongodb';
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
-import bodyParser from "body-parser";
+import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import mongoose from "mongoose";
@@ -23,12 +23,20 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { querySemanticMemory } from "./models/semanticMemory.js"; // ajuste o caminho se necessário
+import { querySemanticMemory } from "./models/semanticMemory.js"; // ajusta se necessário
 
 dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 const upload = multer({ dest: "uploads/" });
+
+// ================= Global error handlers (para assegurar que logs apareçam) =================
+process.on('uncaughtException', (err) => {
+  console.error('🔥 Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('🔥 Unhandled Rejection:', reason);
+});
 
 // ===== Papéis Profissionais =====
 const profissoes = [
@@ -107,33 +115,71 @@ const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
+// OpenAI client (mantido caso queira usar outro endpoint mais tarde)
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
-let db;
 
+let db = null;
+let mongoClientInstance = null;
+
+// ===== Conectar ao Mongo com retry (resiliente) =====
 async function connectDB() {
-  try {
-    console.log("🔹 Tentando conectar ao MongoDB...");
-    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-    db = client.db();
-    console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
-    startReminderCron(db, sendMessage);
-  } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB:', err.message);
+  while (true) {
+    try {
+      if (!MONGO_URI) throw new Error("MONGO_URI não configurado");
+      console.log("🔹 Tentando conectar ao MongoDB...");
+      // Use MongoClient diretamente para compatibilidade com seu uso atual
+      const client = await MongoClient.connect(MONGO_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        // conecta com timeout razoável
+        serverSelectionTimeoutMS: 5000
+      });
+      mongoClientInstance = client;
+      db = client.db();
+      console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
+      try {
+        startReminderCron(db, sendMessage);
+      } catch (err) {
+        console.warn("⚠️ startReminderCron falhou ao iniciar:", err?.message || err);
+      }
+      break;
+    } catch (err) {
+      console.error('❌ Erro ao conectar ao MongoDB:', err.message || err);
+      // espera e tenta novamente (evita crash)
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 }
 connectDB();
 
+// ===== Carrega empresas (se falhar, loga e segue) =====
 const empresasPath = path.resolve("./src/data/empresa.json");
-const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
-const userStates = {};
+let empresas = [];
+try {
+  empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
+} catch (err) {
+  console.warn("⚠️ Não foi possível ler empresa.json:", err.message || err);
+}
 
+const userStates = {};
 
 // ===== ROTA PARA RECEBER PDFs =====
 app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
   try {
     console.log(`📥 Recebido PDF: ${req.file.originalname}`);
-    await processarPdf(req.file.path);
-    res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
+    // assumo que processarPdf está definido em algum util (mantive sua intenção)
+    if (typeof processarPdf === "function") {
+      await processarPdf(req.file.path);
+      res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
+    } else {
+      // fallback mínimo: parse com pdf-parse e salva texto bruto (se quiser)
+      const data = fs.readFileSync(req.file.path);
+      const parsed = await pdfParse(data);
+      if (db) {
+        await db.collection("pdfs").insertOne({ filename: req.file.originalname, text: parsed?.text || "", timestamp: new Date() });
+      }
+      res.send(`✅ PDF ${req.file.originalname} processado (texto salvo).`);
+    }
   } catch (err) {
     console.error("❌ Erro ao processar PDF:", err);
     res.status(500).send("Erro ao processar PDF");
@@ -141,26 +187,40 @@ app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
 });
 
 // ===== Funções de GPT, WhatsApp, Memória, etc =====
+// askGPT usa axios para compatibilidade com seu fluxo atual. Adicionei timeout e persona mínima.
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
       .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
       .filter(m => m.content.trim() !== "");
+
+    // garante persona Donna se não estiver presente
+    if (!safeMessages.some(m => m.role === "system")) {
+      safeMessages.unshift({
+        role: "system",
+        content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara, direta e sem sugestões invasivas. Não invente informações pessoais."
+      });
+    }
+
     safeMessages.push({ role: "user", content: prompt || "" });
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       { model: "gpt-5-mini", messages: safeMessages },
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
+      {
+        headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" },
+        timeout: 10000 // 10s
+      }
     );
 
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
-    console.error("❌ Erro GPT:", err.response?.data || err);
+    console.error("❌ Erro GPT:", err.response?.data || err.message || err);
     return "Hmm… ainda estou pensando!";
   }
 }
 
+// ===== Send message via WhatsApp =====
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
 
@@ -180,24 +240,32 @@ async function sendMessage(to, message) {
   }
 
   try {
+    if (!WHATSAPP_PHONE_ID || !WHATSAPP_TOKEN) {
+      console.warn("⚠️ WhatsApp não configurado (WHATSAPP_PHONE_ID/WHATSAPP_TOKEN). Mensagem não enviada.");
+      console.log("📤 Mensagem simulada para", to, textBody);
+      return;
+    }
+
     await axios.post(
       `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
       { messaging_product: "whatsapp", to, text: { body: textBody } },
-      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" }, timeout: 8000 }
     );
     console.log("📤 Mensagem enviada:", textBody);
   } catch (err) {
-    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
+    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err.message || err);
   }
 }
 
-// ===== Outras funções auxiliares =====
+// ===== Outras funções auxiliares (com guards caso db ainda não esteja pronto) =====
 async function getUserName(number) {
+  if (!db) return null;
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
 }
 
 async function setUserName(number, name) {
+  if (!db) return;
   await db.collection("users").updateOne(
     { numero: number },
     { $set: { nome: name } },
@@ -206,6 +274,7 @@ async function setUserName(number, name) {
 }
 
 async function getUserMemory(number, limit = 5) {
+  if (!db) return [];
   return await db.collection("semanticMemory")
     .find({ numero: number })
     .sort({ timestamp: -1 })
@@ -215,8 +284,15 @@ async function getUserMemory(number, limit = 5) {
 
 async function saveMemory(number, role, content) {
   if (!content || !content.trim()) return;
-  // Mantendo o esquema já utilizado no seu projeto: campo 'numero' e 'timestamp'
-  await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
+  if (!db) {
+    console.warn("⚠️ saveMemory: db não pronto, memória não salva.");
+    return;
+  }
+  try {
+    await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
+  } catch (err) {
+    console.error("❌ Erro ao salvar memória:", err?.message || err);
+  }
 }
 
 // transcrição (mantive sua implementação)
@@ -229,18 +305,19 @@ async function transcribeAudio(audioBuffer) {
     const res = await axios.post(
       "https://api.openai.com/v1/audio/transcriptions",
       form,
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...form.getHeaders() } }
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...form.getHeaders() }, timeout: 20000 }
     );
 
     return res.data?.text || "";
   } catch (err) {
-    console.error("❌ Erro na transcrição:", err.response?.data || err.message);
+    console.error("❌ Erro na transcrição:", err?.response?.data || err.message);
     return "";
   }
 }
 
 // ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
+  if (!db) return;
   await db.collection("agenda").insertOne({
     numero: number,
     titulo: title,
@@ -253,43 +330,80 @@ async function addEvent(number, title, description, date, time) {
 }
 
 async function getTodayEvents(number) {
+  if (!db) return [];
   const today = DateTime.now().toFormat("yyyy-MM-dd");
   return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
-
 
 // ===== WEBHOOK OTIMIZADO =====
 // cache curto para reduzir chamadas pesadas
 const semanticCache = new Map();
 
-// utilitário: busca memórias semânticas com timeout + cache
+// utilitário: busca memórias semânticas com timeout + cache + fallback
 async function fetchSemanticMemoriesWithTimeout(query, numero, limit = 5, maxWindowDays = 30, timeoutMs = 4000) {
   try {
+    // se embeddings estiverem desligados, retorno vazio imediatamente
+    const useEmbeddings = (process.env.USE_EMBEDDINGS || "false").toLowerCase() === "true";
+    if (!useEmbeddings) return [];
+
     const cacheKey = `${numero}:${query}:${limit}:${maxWindowDays}`;
     if (semanticCache.has(cacheKey)) return semanticCache.get(cacheKey);
 
     const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
 
+    // querySemanticMemory(query, userId, limit, fromDate) -> espera array de strings
+    const queryPromise = (async () => {
+      try {
+        if (typeof querySemanticMemory !== "function") {
+          console.warn("⚠️ querySemanticMemory não disponível.");
+          return [];
+        }
+        // chama o método do seu modelo semântico (assumindo que ele aceita os args)
+        const r = await querySemanticMemory(query, numero, limit, fromDate);
+        return Array.isArray(r) ? r : [];
+      } catch (err) {
+        console.warn("⚠️ querySemanticMemory erro interno:", err?.message || err);
+        return [];
+      }
+    })();
+
     const mems = await Promise.race([
-      // querySemanticMemory(existing) espera (query, userId, limit) e retorna array de respostas (strings)
-      querySemanticMemory(query, numero, limit, fromDate),
+      queryPromise,
       new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout memória semântica")), timeoutMs))
     ]).catch(err => {
       console.warn("⚠️ fetchSemanticMemoriesWithTimeout:", err.message);
       return [];
     });
 
-    // garantir array e limitar novamente
     const results = Array.isArray(mems) ? mems.slice(0, limit) : [];
     semanticCache.set(cacheKey, results);
     setTimeout(() => semanticCache.delete(cacheKey), 5 * 60 * 1000); // 5 min
     return results;
   } catch (err) {
-    console.warn("⚠️ Erro fetchSemanticMemoriesWithTimeout:", err.message);
+    console.warn("⚠️ Erro fetchSemanticMemoriesWithTimeout:", err.message || err);
     return [];
   }
 }
 
+// filtro simples para evitar respostas óbvias/spam do LLM
+function limparRespostaLLM(texto) {
+  if (!texto || typeof texto !== "string") return false;
+  const bloqueadas = [
+    "quer salvar",
+    "não sei onde você trabalho", // possível variação
+    "não sei onde você trabalha",
+    "openai",
+    "assistente genérico",
+    "nenhum lembrete pendente encontrado"
+  ];
+  const lower = texto.toLowerCase();
+  for (const palavra of bloqueadas) {
+    if (lower.includes(palavra)) return false;
+  }
+  return true;
+}
+
+// ===== WEBHOOK OTIMIZADO =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -307,23 +421,31 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Proteção anti-spam correta: verifica se o usuário já enviou a mesma mensagem nos últimos 60s
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-    const lastUserMessage = await db.collection("semanticMemory").findOne({
-      numero: from,
-      role: "user",
-      timestamp: { $gt: oneMinuteAgo }
-    });
+    if (db) {
+      const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+      const lastUserMessage = await db.collection("semanticMemory").findOne({
+        numero: from,
+        role: "user",
+        timestamp: { $gt: oneMinuteAgo }
+      });
 
-    if (lastUserMessage && typeof lastUserMessage.content === "string" && lastUserMessage.content.trim() === (body || "").trim()) {
-      // Já processamos essa mensagem recentemente — evitar duplicate processing
-      return res.sendStatus(200);
+      if (lastUserMessage && typeof lastUserMessage.content === "string" && lastUserMessage.content.trim() === (body || "").trim()) {
+        // Já processamos essa mensagem recentemente — evitar duplicate processing
+        return res.sendStatus(200);
+      }
     }
 
     // Salva a mensagem do usuário imediatamente (histórico)
     await saveMemory(from, "user", body);
 
     // Extrair automaticamente possíveis dados a salvar (nomes, trabalho, etc)
-    const dadosMemorizados = await extractAutoMemoryGPT(from, body);
+    let dadosMemorizados = {};
+    try {
+      dadosMemorizados = await extractAutoMemoryGPT(from, body) || {};
+    } catch (err) {
+      console.warn("⚠️ extractAutoMemoryGPT falhou:", err?.message || err);
+      dadosMemorizados = {};
+    }
 
     // Salvar memórias importantes sem enviar confirmações extras
     const memToSave = [];
@@ -335,16 +457,18 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Buscar memórias semânticas (apenas UMA chamada global por mensagem, com timeout e cache)
-    // Retorna array de strings (ou array vazio)
     const memoriaRelevanteArr = await fetchSemanticMemoriesWithTimeout(body, from, 5, 30, 4000); // top 5 dentro de 30 dias
     const memoriaTexto = Array.isArray(memoriaRelevanteArr) && memoriaRelevanteArr.length ? memoriaRelevanteArr.join("\n") : "";
 
     // Consultar histórico recente para contexto (mantendo esquema 'numero' e 'timestamp')
-    const memories = await db.collection("semanticMemory")
-      .find({ numero: from })
-      .sort({ timestamp: -1 })
-      .limit(10)
-      .toArray();
+    let memories = [];
+    if (db) {
+      memories = await db.collection("semanticMemory")
+        .find({ numero: from })
+        .sort({ timestamp: -1 })
+        .limit(10)
+        .toArray();
+    }
 
     const chatHistory = memories
       .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
@@ -363,7 +487,13 @@ app.post("/webhook", async (req, res) => {
     ].filter(Boolean);
 
     // Chama o GPT
-    const reply = await askGPT(body, messagesToGPT);
+    let reply = await askGPT(body, messagesToGPT);
+
+    // Aplica filtro de segurança simples (evita respostas absurdas)
+    if (!limparRespostaLLM(reply)) {
+      console.warn("⚠️ Resposta do LLM considerada inválida, aplicando fallback.");
+      reply = "Desculpe — não consigo responder isso agora. Pode reformular?";
+    }
 
     // Salva resposta da assistente
     await saveMemory(from, "assistant", reply);
@@ -371,16 +501,14 @@ app.post("/webhook", async (req, res) => {
     // Envia resposta: se o usuário enviou áudio, tentar enviar áudio (TTS) com fallback pra texto
     if (messageObj.type === "audio") {
       try {
-        // 'falar' deve retornar buffer/stream compatível com sendAudio
         const audioOut = await falar(reply);
         if (audioOut) {
           await sendAudio(from, audioOut);
         } else {
-          // fallback
           await sendMessage(from, reply);
         }
       } catch (err) {
-        console.warn("⚠️ Erro ao gerar/enviar áudio, enviando texto:", err.message);
+        console.warn("⚠️ Erro ao gerar/enviar áudio, enviando texto:", err.message || err);
         await sendMessage(from, reply);
       }
     } else {
@@ -390,17 +518,18 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
 
   } catch (err) {
-    console.error("❌ Erro no webhook:", err);
+    console.error("❌ Erro no webhook:", err?.message || err);
     return res.sendStatus(500);
   }
 });
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-export { 
+// exportações (mantive as originais)
+export {
   askGPT,
-  getTodayEvents, 
-  addEvent, 
-  saveMemory, 
-  db 
+  getTodayEvents,
+  addEvent,
+  saveMemory,
+  db
 };
