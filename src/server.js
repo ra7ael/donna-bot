@@ -499,7 +499,11 @@ app.post("/webhook", async (req, res) => {
     ].filter(Boolean);
 
     // Chama o GPT
-    let reply = await askGPT(body, messagesToGPT);
+    let reply = await askGPT([
+      ...messagesToGPT,
+      { role: "user", content: body }
+    ]);
+
 
     // Aplica filtro de segurança simples (evita respostas absurdas)
     if (!limparRespostaLLM(reply)) {
