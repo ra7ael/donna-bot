@@ -13,7 +13,7 @@ export function startReminderCron(db, sendMessage) {
 
     try {
       const now = DateTime.now().setZone("America/Sao_Paulo").startOf("minute");
-      const oneMinuteAgo = now.minus({ minutes: 1 }).toJSDate();
+      const oneMinuteAgo = now.minus({ minutes: 3 }).toJSDate();
       const nowDate = now.toJSDate();
 
       console.log(`⏰ Buscando lembretes com horário == ${now.toFormat("yyyy-MM-dd HH:mm")}`);
