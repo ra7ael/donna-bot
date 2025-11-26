@@ -53,22 +53,26 @@ export async function addReminder(db, numero, titulo, data, hora) {
     throw new Error("Campos obrigatórios faltando.");
   }
 
-  const horario = DateTime.fromFormat(
-    `${data} ${hora}`,
-    "yyyy-MM-dd HH:mm",
-    { zone: "America/Sao_Paulo" }
-  ).startOf("minute").toJSDate();
+ const horario = DateTime.fromFormat(
+  `${data} ${hora}`,
+  "yyyy-MM-dd HH:mm", // ou "dd/MM/yyyy HH:mm" dependendo do formato
+  { zone: "America/Sao_Paulo" }
+).startOf("minute");
 
-  await db.collection("lembretes").insertOne({
-    numero,
-    titulo,
-    descricao: titulo,
-    data,
-    hora,
-    horario,
-    sent: false,
-    criadoEm: new Date()
-  });
+if (!horario.isValid) {
+  throw new Error("Data ou hora inválida.");
+}
+
+await db.collection("lembretes").insertOne({
+  numero,
+  titulo,
+  descricao: titulo,
+  data,
+  hora,
+  horario: horario.toJSDate(), // salvar como Date
+  sent: false,
+  criadoEm: new Date()
+});
 
   console.log(`✅ Lembrete agendado: ${data} ${hora} -> ${numero}`);
 }
