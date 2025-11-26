@@ -187,7 +187,7 @@ app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
 });
 
 // ===== Funções de GPT, WhatsApp, Memória, etc =====
-// askGPT usa axios para compatibilidade com seu fluxo atual. Adicionei timeout e persona mínima.
+
 async function askGPT(messages, timeoutMs = 10000) {
   try {
     if (!Array.isArray(messages)) {
@@ -195,44 +195,42 @@ async function askGPT(messages, timeoutMs = 10000) {
       return "Desculpa — algo deu errado no contexto da conversa.";
     }
 
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      { model: "gpt-4o-mini", messages, max_tokens: 300, temperature: 0.7 },
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" }, timeout: timeoutMs }
-    );
-
-    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
-  } catch (err) {
-    console.error("❌ askGPT falhou:", err.message || err);
-    return "Desculpa — não consegui processar a resposta agora.";
-  }
-}
-
-    // garante persona Donna se não estiver presente
-    if (!safeMessages.some(m => m.role === "system")) {
-      safeMessages.unshift({
-        role: "system",
-        content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara, direta e sem sugestões invasivas. Não invente informações pessoais."
-      });
-    }
-
-    safeMessages.push({ role: "user", content: prompt || "" });
+    // garante que a persona da Donna esteja no contexto
+    const hasSystem = messages.some(m => m.role === "system");
+    const safeMessages = hasSystem
+      ? messages
+      : [
+          {
+            role: "system",
+            content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta. Não invente informações pessoais."
+          },
+          ...messages
+        ];
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      { model: "gpt-5-mini", messages: safeMessages },
       {
-        headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" },
-        timeout: 10000 // 10s
+        model: "gpt-4o-mini",
+        messages: safeMessages,
+        max_tokens: 300,
+        temperature: 0.7
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${GPT_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        timeout: timeoutMs
       }
     );
 
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
-    console.error("❌ Erro GPT:", err.response?.data || err.message || err);
-    return "Hmm… ainda estou pensando!";
+    console.error("❌ askGPT falhou:", err.response?.data || err.message || err);
+    return "Desculpa — não consegui processar a resposta agora.";
   }
 }
+
 
 // ===== Send message via WhatsApp =====
 async function sendMessage(to, message) {
