@@ -351,33 +351,33 @@ async function getTodayEvents(number) {
 // cache curto para reduzir chamadas pesadas
 const semanticCache = new Map();
 
-// utilitário: busca memórias semânticas com timeout + cache + fallback
 async function fetchSemanticMemoriesWithTimeout(query, numero, limit = 5, maxWindowDays = 30, timeoutMs = 4000) {
-  try {
-    // se embeddings estiverem desligados, retorno vazio imediatamente
-    const useEmbeddings = (process.env.USE_EMBEDDINGS || "false").toLowerCase() === "true";
-    if (!useEmbeddings) return [];
+  const useEmbeddings = (process.env.USE_EMBEDDINGS || "false").toLowerCase() === "true";
+  if (!useEmbeddings) return [];
 
-    const cacheKey = `${numero}:${query}:${limit}:${maxWindowDays}`;
-    if (semanticCache.has(cacheKey)) return semanticCache.get(cacheKey);
+  const cacheKey = `${numero}:${query}:${limit}:${maxWindowDays}`;
+  if (semanticCache.has(cacheKey)) return semanticCache.get(cacheKey);
 
-    const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
+  const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
 
-    // querySemanticMemory(query, userId, limit, fromDate) -> espera array de strings
-    const queryPromise = (async () => {
-      try {
-        if (typeof querySemanticMemory !== "function") {
-          console.warn("⚠️ querySemanticMemory não disponível.");
-          return [];
-        }
-        // chama o método do seu modelo semântico (assumindo que ele aceita os args)
-        const r = await querySemanticMemory(query, numero, limit, fromDate);
-        return Array.isArray(r) ? r : [];
-      } catch (err) {
-        console.warn("⚠️ querySemanticMemory erro interno:", err?.message || err);
-        return [];
-      }
-    })();
+  const queryPromise = querySemanticMemory
+    ? querySemanticMemory(query, numero, limit, fromDate)
+    : Promise.resolve([]);
+
+  const mems = await Promise.race([
+    queryPromise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout memória semântica")), timeoutMs))
+  ]).catch(err => {
+    console.warn("⚠️ fetchSemanticMemoriesWithTimeout:", err.message);
+    return [];
+  });
+
+  const results = Array.isArray(mems) ? mems.slice(0, limit) : [];
+  semanticCache.set(cacheKey, results);
+  setTimeout(() => semanticCache.delete(cacheKey), 5 * 60 * 1000);
+
+  return results;
+}
 
     const mems = await Promise.race([
       queryPromise,
