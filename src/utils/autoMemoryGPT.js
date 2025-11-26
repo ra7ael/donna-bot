@@ -8,8 +8,11 @@ export async function extractAutoMemoryGPT(numero, mensagem) {
     // 1) encurtar mensagem para aliviar prompt
     const mensagemCurta = mensagem.slice(0, 600);
 
-    // 2) montar prompt enxuto
-    const prompt = `
+    // 2) montar mensagens para GPT
+    const messages = [
+      {
+        role: "system",
+        content: `
 Extraia dados relevantes da mensagem do usuário para as categorias solicitadas.
 Retorne JSON válido sempre que possível.
 Caso não consiga estruturar, ainda assim responda SOMENTE um JSON válido no formato:
@@ -26,12 +29,13 @@ Categorias esperadas:
 - lembretes
 - empresas_clientes
 - outros_dados_relevantes
-
-Mensagem: "${mensagemCurta}"
-`;
+        `
+      },
+      { role: "user", content: mensagemCurta }
+    ];
 
     // 3) chamar GPT com timeout seguro de 8s
-    const resposta = await askGPT(prompt, 8000).catch(() => null);
+    const resposta = await askGPT(messages, 8000).catch(() => null);
     if (!resposta) return { texto: "timeout na extração de memória" };
 
     // 4) parser seguro de JSON
@@ -71,6 +75,7 @@ Mensagem: "${mensagemCurta}"
     return { texto: "falha na extração de memória" };
   }
 }
+
 
 // === BUSCA INTELIGENTE PARA CONSULTAR EMPRESAS ===
 export async function buscarEmpresa(numero, texto) {
