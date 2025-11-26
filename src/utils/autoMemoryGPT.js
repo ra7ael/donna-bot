@@ -1,99 +1,140 @@
+// autoMemoryGPT.js
 import { askGPT, db } from "../server.js";
+import { embedding } from "./embeddingService.js";
 
 // === EXTRAÇÃO AUTOMÁTICA DE MEMÓRIA + EMPRESAS CLIENTES ===
 export async function extractAutoMemoryGPT(numero, mensagem) {
   try {
+    // 1) encurtar mensagem para aliviar prompt
+    const mensagemCurta = mensagem.slice(0, 600);
+
+    // 2) montar prompt enxuto
     const prompt = `
-Analise a mensagem abaixo e identifique informações que devem ser armazenadas como memória do usuário.
-Classifique dentro das seguintes categorias:
-1. informações_pessoais
-2. filhos
-3. formação
-4. trabalho
-5. metas
-6. preferencias
-7. processos_rh
-8. lembretes
-9. empresas_clientes (IMPORTANTE)
-10. outros_dados_relevantes
+Extraia dados relevantes da mensagem do usuário para as categorias solicitadas.
+Retorne JSON válido sempre que possível.
+Caso não consiga estruturar, ainda assim responda SOMENTE um JSON válido no formato:
+{ "texto": "resposta em texto puro" }
 
-Formato de resposta SEMPRE em JSON:
+Categorias esperadas:
+- informacoes_pessoais
+- filhos
+- formacao
+- trabalho
+- metas
+- preferencias
+- processos_rh
+- lembretes
+- empresas_clientes
+- outros_dados_relevantes
 
-{
- "informacoes_pessoais": {},
- "filhos": [],
- "formacao": {},
- "trabalho": {},
- "metas": {},
- "preferencias": {},
- "processos_rh": {},
- "lembretes": {},
- "empresas_clientes": [
-    {
-      "nome": "",
-      "beneficios": [],
-      "taxa_servico": "",
-      "periodo_ponto": "",
-      "datas_pagamento": "",
-      "emails": [],
-      "observacoes": ""
-    }
- ],
- "outros_dados_relevantes": {}
-}
-
-Mensagem do usuário: "${mensagem}"
+Mensagem: "${mensagemCurta}"
 `;
 
-    const resposta = await askGPT(prompt);
+    // 3) chamar GPT com timeout seguro de 8s
+    const resposta = await askGPT(prompt, 8000).catch(() => null);
+    if (!resposta) return { texto: "timeout na extração de memória" };
 
-    let dados = {};
+    // 4) parser seguro de JSON
+    let dados;
     try {
       dados = JSON.parse(resposta);
-    } catch (e) {
-      console.log("❌ Erro ao interpretar JSON:", e);
-      return {};
+    } catch {
+      dados = { texto: resposta }; // se não for JSON, guardamos como texto seguro
     }
 
-    // ---- SALVA EMPRESAS CLIENTES SE HOUVER ----
-    if (dados.empresas_clientes?.length > 0) {
+    // 5) se houver empresas, salvar UMA por vez (leve, indexado)
+    if (dados.empresas_clientes?.length) {
+      const coleção = db.collection("empresasClientes");
+
+      // garantir índices sem travar execução
+      await coleção.createIndex({ numero: 1 });
+      await coleção.createIndex({ nome: 1 });
+      await coleção.createIndex({ atualizado_em: -1 });
+
       for (const empresa of dados.empresas_clientes) {
         if (!empresa.nome) continue;
 
-        await db.collection("empresasClientes").updateOne(
-          { numero, nome: empresa.nome.toLowerCase() },
-          {
-            $set: {
-              ...empresa,
-              nome: empresa.nome.toLowerCase(),
-              atualizado_em: new Date()
-            }
-          },
+        const nome = empresa.nome.trim().toLowerCase();
+
+        await coleção.updateOne(
+          { numero, nome },
+          { $set: { ...empresa, nome, atualizado_em: new Date() } },
           { upsert: true }
         );
       }
     }
 
     return dados;
+
   } catch (err) {
-    console.error("❌ Erro extractAutoMemoryGPT:", err);
-    return {};
+    console.error("❌ Erro extractAutoMemoryGPT:", err.message);
+    return { texto: "falha na extração de memória" };
   }
 }
 
-
 // === BUSCA INTELIGENTE PARA CONSULTAR EMPRESAS ===
 export async function buscarEmpresa(numero, texto) {
-  const nomeMatch = texto.toLowerCase().match(/(beneficios|taxa|ponto|pagamento|email).*?da\s(.+)/);
+  try {
+    // 1) extrair nome da empresa de forma simples e limitada
+    const nomeMatch = texto.toLowerCase().match(/da\s([a-z0-9 áéíóúãõç_\-]{2,40})/i);
+    if (!nomeMatch) return null;
 
-  if (!nomeMatch) return null;
+    const empresaNome = nomeMatch[1].trim().toLowerCase();
 
-  const empresaNome = nomeMatch[2].trim().toLowerCase();
+    // 2) buscar empresa leve e indexada
+    const empresa = await db.collection("empresasClientes")
+      .find({ numero, nome: empresaNome })
+      .limit(1)
+      .next();
 
-  const empresa = await db.collection("empresasClientes").findOne({
-    numero,
-    nome: empresaNome
-  });
+    return empresa || null;
 
-  return empresa;
+  } catch (err) {
+    console.error("❌ Erro buscarEmpresa:", err.message);
+    return null;
+  }
+}
+
+// === RELEVÂNCIA OPCIONAL USANDO EMBEDDING (limitado) ===
+export async function buscarEmpresaPorSimilaridade(numero, query, minScore = 0.82) {
+  try {
+    const coleção = db.collection("empresasClientes");
+
+    await coleção.createIndex({ numero: 1 });
+    await coleção.createIndex({ nome: 1 });
+    
+    const buscaVector = await embedding(query);
+
+    const empresas = await coleção.find({ numero }, { projection: { nome: 1, vector: 1 } }).lean().toArray();
+    if (!empresas.length) return null;
+
+    const scored = empresas.map(e => ({
+      nome: e.nome,
+      score: cosineSimilarity(buscaVector, e.vector)
+    }));
+
+    scored.sort((a, b) => b.score - a.score);
+    const melhor = scored[0];
+
+    if (melhor.score >= minScore) {
+      return coleção.findOne({ numero, nome: melhor.nome });
+    }
+
+    return null;
+
+  } catch (err) {
+    console.error("❌ Falha similaridade:", err.message);
+    return null;
+  }
+}
+
+function cosineSimilarity(A, B) {
+  if (!A?.length || !B?.length) return 0;
+  let dot = 0, mA = 0, mB = 0;
+  for (let i = 0; i < A.length; i++) {
+    dot += A[i] * B[i];
+    mA += A[i] ** 2;
+    mB += B[i] ** 2;
+  }
+  return dot / (Math.sqrt(mA) * Math.sqrt(mB) || 1);
 }
