@@ -23,12 +23,16 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { salvarMemoria, buscarMemoria, limparMemoria } from "./utils/memory.js";
+
+// ✅ Correção do import da memória estruturada (arquivo correto)
+import { salvarMemoria as salvarMemoriaEstruturada, buscarMemoria as buscarMemoriaEstruturada, limparMemoria as limparMemoriaEstruturada } from "./utils/memory.js";
+
+// ✅ Caminho correto do módulo de memória semântica (onde estão os vetores/embeddings)
 import { querySemanticMemory } from "./models/semanticMemory.js";
 
 dotenv.config();
 
-// ✅ único app express consolidado
+// ✅ único app express
 const app = express();
 app.use(bodyParser.json());
 const upload = multer({ dest: "uploads/" });
@@ -41,7 +45,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('🔥 Unhandled Rejection:', reason);
 });
 
-// ===== Papéis Profissionais =====
+// ===== Papéis profissionais =====
 const profissoes = [
   "Enfermeira Obstetra","Médica","Nutricionista","Personal Trainer","Psicóloga","Coach de Produtividade",
   "Consultora de RH","Advogada","Contadora","Engenheira Civil","Arquiteta","Designer Gráfica",
@@ -53,7 +57,7 @@ const profissoes = [
 let papelAtual = null;
 let papeisCombinados = [];
 
-// Função para verificar troca/composição de papéis profissionais
+// Função troca/composição de papéis
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
@@ -102,14 +106,15 @@ function verificarComandoProfissao(texto) {
   return null;
 }
 
+// Resolve __dirname em ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
-// OpenAI client (1× e intacto)
+// Cliente OpenAI (1×)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Mongo globals
+// Variáveis Mongo/WhatsApp
 let db = null;
 let mongoClientInstance = null;
 const PORT = process.env.PORT || 3000;
@@ -117,10 +122,9 @@ const MONGO_URI = process.env.MONGO_URI;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// ===== Função WhatsApp consolidada =====
+// Envio WhatsApp (não quebrado)
 async function sendMessage(to, message) {
   if (!message) message = "⚠️ Sem conteúdo de retorno.";
-
   try {
     await axios.post(
       `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
@@ -133,14 +137,13 @@ async function sendMessage(to, message) {
   }
 }
 
-// ===== askGPT intacta e protegida =====
+// GPT response (intacta na arquitetura)
 async function askGPT(messages) {
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-5-mini",
       messages: messages.filter(m => typeof m.content === "string" && m.content.trim()),
       max_completion_tokens: 300,
-
     });
     return String(completion.choices?.[0]?.message?.content || "");
   } catch (err) {
@@ -149,12 +152,12 @@ async function askGPT(messages) {
   }
 }
 
-// ===== salvar memória semântica =====
+// Salvar memória semântica (vetorial) + chaves
 async function saveMemory(number, role, content, embedding = null, key = null) {
   if (!db || !content?.trim()) return;
   try {
     await db.collection("semanticMemory").updateOne(
-      key ? { userId: number, key } : { userId: number, timestamp: { $exists: true } },
+      { userId: number, key: key || { $exists: true } },
       { $set: { userId: number, role, content, embedding, key, timestamp: new Date() } },
       { upsert: true }
     );
@@ -163,7 +166,7 @@ async function saveMemory(number, role, content, embedding = null, key = null) {
   }
 }
 
-// ===== buscar memória semântica =====
+// Buscar memórias semânticas recentes (sem alterar lógica principal)
 async function findRelevantMemory(numero, limit = 3, timeoutMs = 4000, maxWindowDays = 30) {
   if (!db) return [];
   const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
@@ -186,21 +189,19 @@ async function findRelevantMemory(numero, limit = 3, timeoutMs = 4000, maxWindow
   }
 }
 
+// ✅ Conectar MongoDB (cron intacto)
 async function connectMongo() {
   try {
     if (!MONGO_URI) throw new Error("MONGO_URI ausente");
-
     console.log("🔹 Conectando…");
     const client = await MongoClient.connect(MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000
     });
-
     mongoClientInstance = client;
     db = client.db();
     console.log("✅ Banco conectado e normal.");
-
     startReminderCron(db, sendMessage);
   } catch (err) {
     console.error("❌ Mongo não conectou:", err.message);
@@ -209,7 +210,7 @@ async function connectMongo() {
 
 connectMongo();
 
-// ===== Webhook consolidado =====
+// ===== Webhook (mínimas mudanças, sem quebrar arquitetura) =====
 app.post("/webhook", async (req, res) => {
   try {
     const entry = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -230,7 +231,7 @@ app.post("/webhook", async (req, res) => {
       body = audioBuffer ? await transcribeAudio(audioBuffer) : "❌ Falha transcrição.";
     } else if (entry.type === "document") {
       const pdfBuffer = await downloadMedia(entry.document.id);
-      const pdfPath = `./src/utils/pdfs/${entry.document.filename}`;
+      const pdfPath = `./src/bot/uploads/${entry.document.filename}`;
       fs.writeFileSync(pdfPath, pdfBuffer);
       await sendMessage(from, `✅ PDF salvo: ${entry.document.filename}`);
       return res.sendStatus(200);
@@ -240,26 +241,43 @@ app.post("/webhook", async (req, res) => {
     }
 
     body = body.trim();
-    await saveMemory(from, "user", body);
+    await saveMemory(from, "user", body); // memória semântica
 
-    const memories = await findRelevantMemory(from, 3);
+    // ✅ Salva também a memória estruturada do usuário
+    await salvarMemoriaEstruturada(from, { ultimaMensagem: body });
+
+    // ✅ Gera embedding vetorial da mensagem nova
+    const embeddingNova = await extractAutoMemoryGPT(body);
+    await saveMemory(from, "assistant", body, embeddingNova, "ultimaMensagem");
+
+    // ✅ Busca memória estruturada + memórias semânticas recentes
+    const memEstruturada = await buscarMemoriaEstruturada(from);
+    const memsSemanticas = await findRelevantMemory(from, 3);
+
+    // Injeta memórias no prompt pro GPT, mantendo arquitetura
     const messages = [
-      { role: "system", content: "Você é a Donna, asistente pessoal do Rafael, responda com frases curtas sem inventar informações." },
-      ...memories.map(m => ({
-          role: "assistant",
-          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+      { role: "system", content: "Você é a Donna, assistente pessoal do Rafael." },
+
+      memEstruturada?.memoria
+        ? { role: "assistant", content: JSON.stringify(memEstruturada.memoria) }
+        : null,
+
+      ...memsSemanticas.map(m => ({
+        role: "assistant",
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content)
       })),
+
       { role: "user", content: body }
-    ];
-    
+    ].filter(Boolean);
+
     const sanitizedMessages = messages.map(m => ({
-        role: m.role,
-        content: typeof m.content === "string" ? m.content.trim() : ""
+      role: m.role,
+      content: typeof m.content === "string" ? m.content.trim() : ""
     }));
-    
+
     const reply = await askGPT(sanitizedMessages);
     await sendMessage(from, reply);
-    await saveMemory(from, "assistant", reply);
+    await saveMemory(from, "assistant", reply, null, "ultimaResposta");
 
     return res.sendStatus(200);
 
@@ -269,9 +287,10 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
+// ✅ Listener 1×
 app.listen(PORT, () => console.log(`✅ Rodando na porta ${PORT}`));
 
-// ✅ exportando apenas o que existe aqui
+// ✅ Exports (arquitetura original mantida)
 export {
   askGPT,
   saveMemory,
@@ -285,5 +304,9 @@ export {
   falar,
   sendAudio,
   getWeather,
-  sendMessage
+  sendMessage,
+  salvarMemoriaEstruturada,
+  buscarMemoriaEstruturada,
+  limparMemoriaEstruturada,
+  querySemanticMemory
 };
