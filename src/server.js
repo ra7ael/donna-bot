@@ -243,12 +243,20 @@ app.post("/webhook", async (req, res) => {
 
     const memories = await findRelevantMemory(from, 3);
     const messages = [
-      { role: "system", content: "Você é a Donna, responda curto." },
-      ...memories.map(m => ({ role: "assistant", content: m.content })),
+      { role: "system", content: "Você é a Donna, asistente pessoal do Rafael, responda com frases curtas sem inventar informações." },
+      ...memories.map(m => ({
+          role: "assistant",
+          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+      })),
       { role: "user", content: body }
     ];
-
-    const reply = await askGPT(messages);
+    
+    const sanitizedMessages = messages.map(m => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content.trim() : ""
+    }));
+    
+    const reply = await askGPT(sanitizedMessages);
     await sendMessage(from, reply);
     await saveMemory(from, "assistant", reply);
 
