@@ -28,7 +28,7 @@ import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { salvarMemoria as salvarMemoriaEstruturada, buscarMemoria as buscarMemoriaEstruturada, limparMemoria as limparMemoriaEstruturada } from "./utils/memory.js";
 
 // ✅ Caminho correto do módulo de memória semântica (onde estão os vetores/embeddings)
-import { querySemanticMemory } from "./models/semanticMemory.js";
+import { querySemanticMemory } from "./semanticMemory.js";
 
 dotenv.config();
 
