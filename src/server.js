@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
-import { downloadMedia } from './utils/downloadMedia.js';
+import { downloadMedia } from './utils/downloadMedia.js";
 import cron from "node-cron";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
@@ -26,6 +26,15 @@ import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { salvarMemoria, buscarMemoria, limparMemoria } from "./utils/memory.js";
 
 dotenv.config();
+
+// ===== Conectar Mongoose antecipadamente =====
+mongoose.connect(process.env.MONGO_URI, {
+  serverSelectionTimeoutMS: 5000
+}).then(() => {
+  console.log("✅ Mongoose conectado ao Mongo (memória estruturada)");
+}).catch(err => {
+  console.error("❌ Falha conexão Mongoose:", err.message);
+});
 
 // ✅ único app express consolidado
 const app = express();
@@ -152,7 +161,7 @@ async function connectMongo() {
   try {
     if (!MONGO_URI) throw new Error("MONGO_URI ausente");
 
-    console.log("🔹 Conectando…");
+    console.log("🔹 Conectando ao banco…");
     const client = await MongoClient.connect(MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
@@ -160,12 +169,12 @@ async function connectMongo() {
     });
 
     mongoClientInstance = client;
-    db = client.db();
-    console.log("✅ Banco conectado e normal.");
+    db = client.db("donna");
+    console.log("✅ Conexão Mongo estabelecida.");
 
     startReminderCron(db, sendMessage);
   } catch (err) {
-    console.error("❌ Mongo não conectou:", err.message);
+    console.error("❌ Falha conexão Mongo:", err.message);
   }
 }
 
@@ -181,7 +190,7 @@ app.post("/webhook", async (req, res) => {
     let body = "";
 
     if (!numerosAutorizados.includes(from)) {
-      console.log("⛔ Não autorizado:", from);
+      console.log("⛔ Número bloqueado:", from);
       return res.sendStatus(200);
     }
 
@@ -189,29 +198,27 @@ app.post("/webhook", async (req, res) => {
       body = entry.text.body;
     } else if (entry.type === "audio") {
       const audioBuffer = await downloadMedia(entry.audio.id);
-      body = audioBuffer ? await transcribeAudio(audioBuffer) : "❌ Falha transcrição.";
+      body = audioBuffer ? await transcreverAudio(audioBuffer) : "❌ Falha transcrição.";
     } else if (entry.type === "document") {
       const pdfBuffer = await downloadMedia(entry.document.id);
       const pdfPath = `./src/utils/pdfs/${entry.document.filename}`;
       fs.writeFileSync(pdfPath, pdfBuffer);
-      await sendMessage(from, `✅ PDF salvo: ${entry.document.filename}`);
+      await sendMessage(from, `✅ Documento salvo: ${entry.document.filename}`);
       return res.sendStatus(200);
     } else {
-      await sendMessage(from, "Formato não suportado.");
+      await sendMessage(from, "Formato não compatível.");
       return res.sendStatus(200);
     }
 
     body = body.trim();
 
-    // salvar mensagem do usuário na memória estruturada
+    // Salvar mensagem na memória estruturada
     await salvarMemoria(from, { ultimaMensagem: body });
-
-    // buscar memória estruturada
     const memoria = await buscarMemoria(from);
 
-    // montar histórico de mensagens para GPT
+    // Montar histórico GPT
     const messages = [
-      { role: "system", content: "Você é a Donna, assistente pessoal do Rafael, responda com frases curtas sem inventar informações." },
+      { role: "system", content: "Você é a Donna, assistente pessoal do Rafael, use respostas curtas e diretas." },
       ...(memoria ? Object.entries(memoria.memoria).map(([k,v]) => ({
           role: "assistant",
           content: `${k}: ${v}`
@@ -226,20 +233,19 @@ app.post("/webhook", async (req, res) => {
 
     const reply = await askGPT(sanitizedMessages);
 
-    // salvar resposta na memória estruturada
+    // Salvar resposta
     await salvarMemoria(from, { ultimaResposta: reply });
-
     await sendMessage(from, reply);
 
     return res.sendStatus(200);
 
   } catch (err) {
-    console.error("🔥 Falha no webhook:", err.message);
+    console.error("🔥 Erro webhook:", err.message);
     return res.sendStatus(500);
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Servidor ativo na porta ${PORT}`));
 
 // ✅ exportações
 export {
