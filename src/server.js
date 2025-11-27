@@ -210,6 +210,22 @@ async function connectMongo() {
 
 connectMongo();
 
+// ================= Conectar Mongoose =================
+async function connectMongoose() {
+  try {
+    console.log("🔹 Conectando ao Mongoose...");
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 10000,
+    });
+    console.log("✅ Mongoose conectado.");
+  } catch (err) {
+    console.error("❌ Mongoose falhou:", err.message);
+  }
+}
+
+await connectMongoose();
+
 // ===== Webhook (mínimas mudanças, sem quebrar arquitetura) =====
 app.post("/webhook", async (req, res) => {
   try {
