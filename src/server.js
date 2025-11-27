@@ -184,13 +184,15 @@ async function saveMemory(number, role, content) {
 const semanticCache = new Map();
 
 async function fetchSemanticMemoriesWithTimeout(query, numero, limit = 5, maxWindowDays = 30, timeoutMs = 4000) {
-  if (!db) return [];
+  if (!db || !query?.trim() || !numero) return [];
 
   const cacheKey = `${numero}::${query}`;
   if (semanticCache.has(cacheKey)) return semanticCache.get(cacheKey);
 
   try {
     const fromDate = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
+
+    // 🔧 correção do nome da função importada (agora correto)
     const search = querySemanticMemory(query, numero, limit, fromDate);
 
     const mems = await Promise.race([
@@ -199,7 +201,7 @@ async function fetchSemanticMemoriesWithTimeout(query, numero, limit = 5, maxWin
     ]);
 
     const normalized = Array.isArray(mems)
-      ? mems.map(m => typeof m === "string" ? m : m.content).filter(Boolean).slice(0, limit)
+      ? mems.map(m => typeof m === "string" ? m : m?.content || "").filter(Boolean).slice(0, limit)
       : [];
 
     semanticCache.set(cacheKey, normalized);
@@ -211,6 +213,7 @@ async function fetchSemanticMemoriesWithTimeout(query, numero, limit = 5, maxWin
     return [];
   }
 }
+
 
 // ===== Webhook =====
 const userStates = {};
