@@ -139,7 +139,7 @@ async function askGPT(messages) {
       model: "gpt-5-mini",
       messages: messages.filter(m => typeof m.content === "string" && m.content.trim()),
       max_completion_tokens: 300,
-      temperature: 1
+
     });
     return String(completion.choices?.[0]?.message?.content || "");
   } catch (err) {
