@@ -138,7 +138,7 @@ async function askGPT(messages) {
     const completion = await openai.chat.completions.create({
       model: "gpt-5-mini",
       messages: messages.filter(m => typeof m.content === "string" && m.content.trim()),
-      max_tokens: 300,
+      max_completion_tokens: 300,
       temperature: 0.7
     });
     return String(completion.choices?.[0]?.message?.content || "");
