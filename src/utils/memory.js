@@ -1,4 +1,4 @@
-import Memoria from "./semanticMemory.js";
+import Memoria from "../models/memory.js";
 import { MongoClient } from "mongodb";
 
 const MONGO_URI = process.env.MONGO_URI;
