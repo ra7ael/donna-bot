@@ -52,6 +52,7 @@ const profissoes = [
 let papelAtual = null;
 let papeisCombinados = [];
 
+// Função para verificar troca/composição de papéis profissionais
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
@@ -104,8 +105,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
+// OpenAI client
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Mongo globals
 let db = null;
 let mongoClientInstance = null;
 const PORT = process.env.PORT || 3000;
@@ -113,6 +116,7 @@ const MONGO_URI = process.env.MONGO_URI;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
+// ===== Função WhatsApp consolidada =====
 async function sendMessage(to, message) {
   if (!message) message = "⚠️ Sem conteúdo de retorno.";
 
@@ -128,6 +132,7 @@ async function sendMessage(to, message) {
   }
 }
 
+// ===== askGPT protegido =====
 async function askGPT(messages) {
   try {
     const completion = await openai.chat.completions.create({
@@ -142,6 +147,7 @@ async function askGPT(messages) {
   }
 }
 
+// ===== conectar Mongo =====
 async function connectMongo() {
   try {
     if (!MONGO_URI) throw new Error("MONGO_URI ausente");
@@ -165,7 +171,7 @@ async function connectMongo() {
 
 connectMongo();
 
-// ===== Webhook =====
+// ===== Webhook consolidado =====
 app.post("/webhook", async (req, res) => {
   try {
     const entry = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -196,18 +202,34 @@ app.post("/webhook", async (req, res) => {
     }
 
     body = body.trim();
+
+    // salvar mensagem do usuário na memória estruturada
     await salvarMemoria(from, { ultimaMensagem: body });
 
-    const memories = await buscarMemoria(from);
-    const messages = [
-      { role: "system", content: "Você é a Donna, asistente pessoal do Rafael, responda com frases curtas sem inventar informações." },
-      memories ? { role: "assistant", content: JSON.stringify(memories.memoria) } : null,
-      { role: "user", content: body }
-    ].filter(Boolean);
+    // buscar memória estruturada
+    const memoria = await buscarMemoria(from);
 
-    const reply = await askGPT(messages);
-    await sendMessage(from, reply);
+    // montar histórico de mensagens para GPT
+    const messages = [
+      { role: "system", content: "Você é a Donna, assistente pessoal do Rafael, responda com frases curtas sem inventar informações." },
+      ...(memoria ? Object.entries(memoria.memoria).map(([k,v]) => ({
+          role: "assistant",
+          content: `${k}: ${v}`
+      })) : []),
+      { role: "user", content: body }
+    ];
+
+    const sanitizedMessages = messages.map(m => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content.trim() : ""
+    }));
+
+    const reply = await askGPT(sanitizedMessages);
+
+    // salvar resposta na memória estruturada
     await salvarMemoria(from, { ultimaResposta: reply });
+
+    await sendMessage(from, reply);
 
     return res.sendStatus(200);
 
@@ -219,6 +241,7 @@ app.post("/webhook", async (req, res) => {
 
 app.listen(PORT, () => console.log(`✅ Rodando na porta ${PORT}`));
 
+// ✅ exportações
 export {
   askGPT,
   salvarMemoria,
