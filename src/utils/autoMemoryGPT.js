@@ -76,7 +76,6 @@ Categorias esperadas:
   }
 }
 
-
 // === BUSCA INTELIGENTE PARA CONSULTAR EMPRESAS ===
 export async function buscarEmpresa(numero, texto) {
   try {
@@ -109,23 +108,34 @@ export async function buscarEmpresaPorSimilaridade(numero, query, minScore = 0.8
     await coleção.createIndex({ nome: 1 });
     
     const buscaVector = await embedding(query);
+    if (!buscaVector?.length) return null;
 
-    const empresas = await coleção.find({ numero }, { projection: { nome: 1, vector: 1 } }).lean().toArray();
+    // ❗ Corrigido: removido .lean() indevido do Mongo nativo
+    const empresas = await coleção.find(
+      { numero },
+      { projection: { nome: 1, vector: 1 } }
+    ).toArray();
+
     if (!empresas.length) return null;
 
+    // calcular score de similaridade
     const scored = empresas.map(e => ({
       nome: e.nome,
       score: cosineSimilarity(buscaVector, e.vector)
     }));
 
+    // ordenar por score
     scored.sort((a, b) => b.score - a.score);
     const melhor = scored[0];
 
-    if (melhor.score >= minScore) {
-      return coleção.findOne({ numero, nome: melhor.nome });
-    }
+    // ❗ Adicionado guard seguro
+    if (!melhor?.nome) return null;
+    if (!melhor?.score || melhor.score < minScore) return null;
 
-    return null;
+    // ❗ Corrigido: substituído findOne() por query nativa segura
+    return coleção.find(
+      { numero, nome: melhor.nome }
+    ).limit(1).next();
 
   } catch (err) {
     console.error("❌ Falha similaridade:", err.message);
@@ -133,6 +143,7 @@ export async function buscarEmpresaPorSimilaridade(numero, query, minScore = 0.8
   }
 }
 
+// === Cálculo de similaridade ===
 function cosineSimilarity(A, B) {
   if (!A?.length || !B?.length) return 0;
   let dot = 0, mA = 0, mB = 0;
