@@ -137,11 +137,11 @@ async function askGPT(messages) {
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      messages: messages.filter(m => m.content?.trim()),
+      messages: messages.filter(m => typeof m.content === "string" && m.content.trim()),
       max_tokens: 300,
       temperature: 0.7
     });
-    return completion.choices?.[0]?.message?.content || "Sem resposta gerada.";
+    return String(completion.choices?.[0]?.message?.content || "");
   } catch (err) {
     console.warn("⚠️ OpenAI falhou:", err.message);
     return "Pensando…";
