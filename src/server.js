@@ -287,12 +287,11 @@ async function getTodayEvents(number) {
 
     // ===== Sanitização segura =====
     const sanitizedMessages = allMemories
-      .filter(m => m && (typeof m.content === "string" || typeof m.content === "number"))
-      .map(m => ({
-        role: m.role || "user",
-        content: m.content?.toString().trim() || ""
-      }));
-
+  .filter(m => m && m.content != null && (typeof m.content === "string" || typeof m.content === "number"))
+  .map(m => ({
+    role: m.role || "user",
+    content: m.content.toString().trim()
+  }));
     const messagesForGPT = [
       { role: "system", content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta." },
       { role: "user", content: body },
