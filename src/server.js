@@ -23,9 +23,6 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { salvarMemoria } from "./utils/memory.js";
-import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
-import transcribeAudio from "./utils/transcribeAudio.js";
 
 dotenv.config();
 const app = express();
@@ -47,9 +44,10 @@ const profissoes = [
   "Pediatra", "Oftalmologista", "Dentista", "Barista", "Coach de Inteligência Emocional"
 ];
 
-let papelAtual = null;
+let papelAtual = null; // Papel profissional atual
 let papeisCombinados = [];
 
+// ===== Função para checar comandos de papéis =====
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
@@ -128,6 +126,8 @@ const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 const userStates = {};
 
+
+// ===== ROTA PARA RECEBER PDFs =====
 app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
   try {
     console.log(`📥 Recebido PDF: ${req.file.originalname}`);
@@ -139,21 +139,26 @@ app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
   }
 });
 
-// ===== askGPT corrigida =====
-async function askGPT(messagesArray) {
+// ===== Funções de GPT, WhatsApp, Memória, etc =====
+async function askGPT(prompt, history = []) {
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      messages: messagesArray.filter(m => typeof m.content === "string" && m.content.trim()),
-      max_completion_tokens: 300,
-    });
-    return String(completion.choices?.[0]?.message?.content || "");
+    const safeMessages = history
+      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
+      .filter(m => m.content.trim() !== "");
+    safeMessages.push({ role: "user", content: prompt || "" });
+
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      { model: "gpt-5-mini", messages: safeMessages },
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
+    );
+
+    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
-    console.warn("⚠️ GPT falhou:", err.message);
-    return "Pensando...";
+    console.error("❌ Erro GPT:", err.response?.data || err);
+    return "Hmm… ainda estou pensando!";
   }
 }
-
 
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
@@ -185,8 +190,9 @@ async function sendMessage(to, message) {
   }
 }
 
+// ===== Outras funções auxiliares =====
 async function getUserName(number) {
-  const doc = await db.collection("users").findOne({ userId: number });
+  const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
 }
 
@@ -199,8 +205,8 @@ async function setUserName(number, name) {
 }
 
 async function getUserMemory(number, limit = 5) {
-  return await db.collection("semanticmemories")
-    .find({ userId: number })
+  return await db.collection("semanticMemory")
+    .find({ numero: number })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
@@ -208,10 +214,29 @@ async function getUserMemory(number, limit = 5) {
 
 async function saveMemory(number, role, content) {
   if (!content || !content.trim()) return;
-  await db.collection("semanticmemories").insertOne({ numero: number, role, content, timestamp: new Date() });
+  await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
 }
 
+async function transcribeAudio(audioBuffer) {
+  try {
+    const form = new FormData();
+    form.append("file", audioBuffer, { filename: "audio.ogg" });
+    form.append("model", "whisper-1");
 
+    const res = await axios.post(
+      "https://api.openai.com/v1/audio/transcriptions",
+      form,
+      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...form.getHeaders() } }
+    );
+
+    return res.data?.text || "";
+  } catch (err) {
+    console.error("❌ Erro na transcrição:", err.response?.data || err.message);
+    return "";
+  }
+}
+
+// ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
   await db.collection("agenda").insertOne({
     numero: number,
@@ -226,10 +251,11 @@ async function addEvent(number, title, description, date, time) {
 
 async function getTodayEvents(number) {
   const today = DateTime.now().toFormat("yyyy-MM-dd");
-  return await db.collection("agenda").find({ userId: number, data: today }).sort({ hora: 1 }).toArray();
+  return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
- app.post("/webhook", async (req, res) => {
+
+app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
@@ -244,68 +270,40 @@ async function getTodayEvents(number) {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    const dadosMemorizados = await extractAutoMemoryGPT(from, body);
+    // Memoriza automaticamente qualquer informação
+const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
-    if (dadosMemorizados.nomes_dos_filhos?.length) {
-      const filhosStr = dadosMemorizados.nomes_dos_filhos.join(" e ");
-      await addSemanticMemory("Filhos", filhosStr, from, "assistant");
-      await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${filhosStr}`);
-    }
+if (Object.keys(dadosMemorizados).length > 0) {
+  // Apenas salva a memória, sem enviar JSON
+  await saveMemory(from, "assistant", "Memória atualizada."); 
+}
 
-    if (dadosMemorizados.trabalho?.empresa) {
-      const cargoStr = `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`;
-      await addSemanticMemory(body, cargoStr, from, "assistant");
-      await sendMessage(from, `Salvei seu cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa}`);
-    }
+  // Exemplo de confirmação
+  if (dadosMemorizados.nomes_dos_filhos?.length) {
+    await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
+    return res.sendStatus(200);
+  }
 
-    if (dadosMemorizados.nome) {
-      await addSemanticMemory("Nome", dadosMemorizados.nome, from, "assistant");
-    }
+    // Se não for comando específico, responde normalmente usando GPT
+    const memories = await db.collection("semanticMemory")
+      .find({ numero: from })
+      .sort({ timestamp: -1 })
+      .limit(6)
+      .toArray();
 
-    // Busca memórias semânticas e transforma sempre em array de strings válidas
-    const memoriaRelevante = (await querySemanticMemory(body, from, 3)) || [];
-    const memoriaTexto = memoriaRelevante
-      .filter(r => r !== undefined && r !== null)
-      .map(r => r.toString())
-      .join("\n");
-
-    // Histórico de memórias antigas
-    const memories = await SemanticMemory.find({ userId: from })
-      .sort({ createdAt: -1 })
-      .limit(6);
-
-    const yesterday = DateTime.now().minus({ days: 1 }).toJSDate();
-    const olderMemories = await SemanticMemory.find({ userId: from, createdAt: { $lt: yesterday } })
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    const allMemories = [
-      ...(Array.isArray(memories) ? memories.reverse() : []),
-      ...(Array.isArray(olderMemories) ? olderMemories.reverse() : [])
-    ];
-
-    const chatHistory = allMemories
-      .filter(m => m.answer && typeof m.answer === "string")
-      .map(m => ({ role: m.role, content: m.answer }));
+    const chatHistory = memories.reverse()
+      .map(m => ({ role: m.role, content: m.content || "" }))
+      .filter(m => m.content.trim() !== "");
 
     const systemMessage = {
       role: "system",
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
-    // Monta o prompt
-    const reply = await askGPT([
-      systemMessage,
-      { role: "user", content: body },
-      { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
-      ...chatHistory
-    ]);
+    let reply = await askGPT(body, [systemMessage, ...chatHistory]);
+    await saveMemory(from, "user", body);
+    await saveMemory(from, "assistant", reply);
 
-    // Salva mensagens no histórico
-    await addSemanticMemory(body, reply, from, "user");
-    await addSemanticMemory(body, reply, from, "assistant");
-
-    // Envia resposta
     await sendMessage(from, reply);
     res.sendStatus(200);
 
@@ -318,11 +316,9 @@ async function getTodayEvents(number) {
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
 export { 
-  askGPT, 
+  askGPT,
   getTodayEvents, 
   addEvent, 
   saveMemory, 
   db 
 };
-
-
