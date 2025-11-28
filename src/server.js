@@ -23,6 +23,13 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
+// vetor + embeddings
+import { querySemanticMemory } from "./models/semanticMemory.js";
+
+// memória estruturada (JSON persistente)
+import MemoriaEstruturada from "./models/memory.js";
+
+
 
 dotenv.config();
 const app = express();
