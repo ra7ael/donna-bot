@@ -23,6 +23,7 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
+import { querySemanticMemory } from "./utils/semanticMemory.js"; // <-- CORREÇÃO: import adicionado
 
 dotenv.config();
 const app = express();
@@ -44,10 +45,9 @@ const profissoes = [
   "Pediatra", "Oftalmologista", "Dentista", "Barista", "Coach de Inteligência Emocional"
 ];
 
-let papelAtual = null; // Papel profissional atual
+let papelAtual = null;
 let papeisCombinados = [];
 
-// ===== Função para checar comandos de papéis =====
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
@@ -126,8 +126,6 @@ const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 const userStates = {};
 
-
-// ===== ROTA PARA RECEBER PDFs =====
 app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
   try {
     console.log(`📥 Recebido PDF: ${req.file.originalname}`);
@@ -139,7 +137,6 @@ app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
   }
 });
 
-// ===== Funções de GPT, WhatsApp, Memória, etc =====
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
@@ -190,7 +187,6 @@ async function sendMessage(to, message) {
   }
 }
 
-// ===== Outras funções auxiliares =====
 async function getUserName(number) {
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
@@ -236,7 +232,6 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
-// ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
   await db.collection("agenda").insertOne({
     numero: number,
@@ -254,7 +249,6 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -270,10 +264,8 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // Extrair informações automaticamente
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
-    // Salva memórias detalhadas
     if (dadosMemorizados.nomes_dos_filhos?.length) {
       await saveMemory(from, "assistant", `Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
       await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
@@ -286,11 +278,9 @@ app.post("/webhook", async (req, res) => {
       await saveMemory(from, "assistant", `Nome: ${dadosMemorizados.nome}`);
     }
 
-    // Recupera memórias semânticas relevantes via embeddings
-    const memoriaRelevante = await querySemanticMemory(body, from, 3); // 3 memórias mais relevantes
+    const memoriaRelevante = await querySemanticMemory(body, from, 3);
     const memoriaTexto = memoriaRelevante ? memoriaRelevante.join("\n") : "";
 
-    // Consultar memórias recentes (lógica antiga)
     const memories = await db.collection("semanticMemory")
       .find({ numero: from })
       .sort({ timestamp: -1 })
@@ -304,9 +294,11 @@ app.post("/webhook", async (req, res) => {
       .limit(5)
       .toArray();
 
-    const allMemories = [...memories.reverse(), ...olderMemories.reverse()];
+    const allMemories = [
+      ...(Array.isArray(memories) ? memories.reverse() : []),
+      ...(Array.isArray(olderMemories) ? olderMemories.reverse() : [])
+    ];
 
-    // Histórico de chat
     const chatHistory = allMemories
       .map(m => ({ role: m.role, content: m.content || "" }))
       .filter(m => m.content.trim() !== "");
@@ -316,18 +308,15 @@ app.post("/webhook", async (req, res) => {
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
-    // Consulta ao GPT incluindo memórias relevantes antes do histórico
     const reply = await askGPT(body, [
       systemMessage,
       { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
-      ...chatHistory
+      ...(Array.isArray(chatHistory) ? chatHistory : [])
     ]);
 
-    // Salva as mensagens do usuário e da assistente
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    // Envia a resposta
     await sendMessage(from, reply);
     res.sendStatus(200);
 
@@ -336,7 +325,6 @@ app.post("/webhook", async (req, res) => {
     res.sendStatus(500);
   }
 });
-
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
