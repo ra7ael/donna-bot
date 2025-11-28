@@ -1,142 +1,120 @@
-// src/models/semanticMemory.js
 import mongoose from "mongoose";
-import dotenv from "dotenv";
-dotenv.config();
+import { embedding } from "../utils/embeddingService.js";
 
-const MONGO_URI = process.env.MONGO_URI;
-const MONGOOSE_CONNECT_TIMEOUT_MS = 3000;
-
-// ----------------------
-// 📌 Schema (ajustado e coerente)
-// ----------------------
+// Definição do Schema para as Memórias Semânticas
 const semanticSchema = new mongoose.Schema({
-  userId: { type: String, required: true, trim: true },
-  prompt: { type: String, required: true, trim: true },
-  answer: { type: String, required: true, trim: true },
-  numero: { type: String, required: true, trim: true }, // compatível com envio Cron/WPP
-  date: { type: Date, required: true, index: true },    // usado na query do cron
-  sent: { type: Boolean, default: false, index: true }, // controle igual ao cron
+  userId: { type: String, required: true },
+  prompt: { type: String, required: true },
+  answer: { type: String, required: true },
+  role: { type: String, enum: ["user", "assistant"], required: true },
   vector: { type: [Number], required: true },
   createdAt: { type: Date, default: Date.now }
 });
 
-// índice único pra não duplicar memória
+// 🔍 Evita memórias repetidas (mesmo prompt, mesmo usuário)
 semanticSchema.index({ userId: 1, prompt: 1 }, { unique: true });
 
-// ----------------------
-// 🔧 Garante model única no sistema
-// ----------------------
-const SemanticMemory = mongoose.models.SemanticMemory || mongoose.model("SemanticMemory", semanticSchema);
+const SemanticMemory = mongoose.model("SemanticMemory", semanticSchema);
 
-// ----------------------
-// 🔌 Conexão com timeout seguro
-// ----------------------
-async function ensureMongooseConnected() {
-  if (mongoose.connection.readyState === 1) return true;
-
-  if (!MONGO_URI) {
-    console.warn("⚠️ semanticMemory: URI do Mongo não definida.");
-    return false;
-  }
-
+// 🧠 Função para salvar memória semântica com o embedding
+export async function addSemanticMemory(prompt, answer, userId, role) {
   try {
-    await Promise.race([
-      mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: MONGOOSE_CONNECT_TIMEOUT_MS }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), MONGOOSE_CONNECT_TIMEOUT_MS))
-    ]);
+    const vector = await embedding(`${prompt} ${answer}`);
 
-    console.log("✅ mongoose conectado (semanticMemory)");
-    return true;
-  } catch (err) {
-    console.warn("⚠️ Falha ao conectar mongoose (semanticMemory):", err.message);
-    return false;
-  }
-}
-
-// Loga se desconectar no deploy
-mongoose.connection.on("disconnected", () => console.log("⚠️ mongoose desconectado"));
-
-// ----------------------
-// 🧠 Salvar memória com guard
-// ----------------------
-export async function addSemanticMemory(prompt, answer, numero, date, userId, role = "assistant") {
-  try {
-    if (!numero || !date || !userId) return;
-
-    const embeddingsOn = (process.env.USE_EMBEDDINGS || "false") === "true";
-    if (!embeddingsOn) {
-      console.log("🧠 Embeddings OFF → memória ignorada");
-      return;
-    }
-
-    const connected = await ensureMongooseConnected();
-    if (!connected) return;
-
-    const vector = await embedding(prompt + " " + answer);
-    if (!vector?.length) return;
-
+    // Atualiza ou insere a memória semântica com o vetor de embedding
     await SemanticMemory.findOneAndUpdate(
       { userId, prompt },
-      { prompt, answer, numero, date, role, vector, sent: false, createdAt: new Date() },
+      { userId, prompt, answer, role, vector },
       { upsert: true, new: true }
     );
 
-    console.log("🧠 salvo:", prompt);
+    console.log("🧠 Memória semântica salva:", prompt);
   } catch (err) {
-    console.error("❌ erro salvar memória:", err.message);
+    console.error("❌ Erro ao salvar memória semântica:", err.message);
   }
 }
 
-// ----------------------
-// 🔍 Consultar pelo vector mais próximo
-// ----------------------
-export async function querySemanticMemory(query, userId, limit = 1, fromDate = null) {
+// 🧠 Função para calcular a Similaridade de Coseno
+function cosineSimilarity(vecA, vecB) {
+  const dotProduct = vecA.reduce((sum, val, i) => sum + val * vecB[i], 0);
+  const magnitudeA = Math.sqrt(vecA.reduce((sum, val) => sum + val * val, 0));
+  const magnitudeB = Math.sqrt(vecB.reduce((sum, val) => sum + val * val, 0));
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+
+// 🧠 Função para buscar memória por similaridade de coseno
+export async function querySemanticMemory(query, userId, limit = 1) {
   try {
-    if (!query || !userId) return [];
+    // Gera o vetor de embedding para a consulta
+    const queryVector = await embedding(query);
 
-    const embeddingsOn = (process.env.USE_EMBEDDINGS || "false") === "true";
-    if (!embeddingsOn) return [];
+    // Busca as memórias armazenadas no banco
+    const results = await SemanticMemory.aggregate([
+      { $match: { userId } },
+      {
+        $addFields: {
+          similarity: {
+            $let: {
+              vars: {
+                dot: {
+                  $reduce: {
+                    input: { $range: [0, { $size: "$vector" }] },
+                    initialValue: 0,
+                    in: {
+                      $add: [
+                        "$$value",
+                        {
+                          $multiply: [
+                            queryVector["$$this"],
+                            { $arrayElemAt: ["$vector", "$$this"] }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                },
+                magnitudeQuery: {
+                  $sqrt: {
+                    $reduce: {
+                      input: { $range: [0, { $size: "$$queryVector" }] },
+                      initialValue: 0,
+                      in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
+                    }
+                  }
+                },
+                magnitudeMemory: {
+                  $sqrt: {
+                    $reduce: {
+                      input: { $range: [0, { $size: "$vector" }] },
+                      initialValue: 0,
+                      in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
+                    }
+                  }
+                }
+              },
+              in: {
+                $divide: [
+                  "$$dot",
+                  { $multiply: ["$$magnitudeQuery", "$$magnitudeMemory"] }
+                ]
+              }
+            }
+          }
+        }
+      },
+      { $sort: { similarity: -1, createdAt: -1 } },
+      { $limit: limit }
+    ]);
 
-    const connected = await ensureMongooseConnected();
-    if (!connected) return [];
+    // Se não encontrar nenhum resultado, retorna null
+    if (results.length === 0) return null;
 
-    const qVector = await embedding(query);
-    if (!qVector?.length) return [];
-
-    const filter = { userId };
-    if (fromDate && !isNaN(new Date(fromDate))) {
-      filter.createdAt = { $gte: new Date(fromDate) };
-    }
-
-    const docs = await SemanticMemory.find(filter, { prompt: 1, answer: 1, vector: 1, createdAt: 1 }).lean().exec();
-    if (!docs?.length) return [];
-
-    const scored = docs.map(d => ({
-      answer: d.answer,
-      score: cosineSimilarity(qVector, d.vector),
-      time: d.createdAt
-    })).filter(d => d.score > -1);
-
-    if (!scored.length) return [];
-
-    scored.sort((a, b) => b.score - a.score || b.time - a.time);
-
-    return scored.slice(0, limit).map(d => d.answer);
+    // Retorna as respostas mais relevantes com base na similaridade
+    return results.map(r => r.answer);
   } catch (err) {
-    console.error("❌ erro query memória:", err.message);
-    return [];
+    console.error("❌ Erro ao buscar memória semântica:", err.message);
+    return null;
   }
-}
-
-// ----------------------
-// 🧮 Similaridade Coseno (fica aqui, mas agnóstica)
-// ----------------------
-function cosineSimilarity(a, b) {
-  if (!a?.length || !b?.length || a.length !== b.length) return -1;
-  const dot = a.reduce((s, v, i) => s + v * b[i], 0);
-  const ma = Math.sqrt(a.reduce((s, v) => s + v * v, 0));
-  const mb = Math.sqrt(b.reduce((s, v) => s + v * v,, 0));
-  return ma && mb ? dot / (ma * mb) : -1;
 }
 
 export default SemanticMemory;
