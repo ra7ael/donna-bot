@@ -296,8 +296,9 @@ app.post("/webhook", async (req, res) => {
     };
 
     // Monta o prompt de forma segura
-    const reply = await askGPT(body, [
+    const reply = await askGPT([
       systemMessage,
+      { role: "user", content: body },
       { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
       ...chatHistory
     ]);
