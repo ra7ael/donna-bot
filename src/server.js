@@ -24,7 +24,7 @@ import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { salvarMemoria } from "./utils/memory.js";
-import { addSemanticMemory, querySemanticMemory } from "./utils/semanticMemory.js";
+import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import transcribeAudio from "./utils/transcribeAudio.js";
 
 dotenv.config();
