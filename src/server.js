@@ -229,7 +229,7 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ userId: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-app.post("/webhook", async (req, res) => {
+  app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
@@ -285,34 +285,29 @@ app.post("/webhook", async (req, res) => {
       ...(Array.isArray(olderMemories) ? olderMemories.reverse() : [])
     ];
 
-    // Garante que chatHistory seja array de objetos válidos
-    const chatHistory = allMemories
-      .filter(m => m.content && typeof m.content === "string")
-      .map(m => ({ role: m.role, content: m.content }));
+    // ===== Sanitização segura =====
+    const sanitizedMessages = allMemories
+      .filter(m => m && (typeof m.content === "string" || typeof m.content === "number"))
+      .map(m => ({
+        role: m.role || "user",
+        content: m.content?.toString().trim() || ""
+      }));
 
-    const systemMessage = {
-      role: "system",
-      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
-    };
-
-    // Monta o prompt de forma segura
-    const reply = await askGPT([
-      systemMessage,
+    const messagesForGPT = [
+      { role: "system", content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta." },
       { role: "user", content: body },
       { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
-      ...chatHistory
-    ]);
+      ...sanitizedMessages
+    ];
+
+    // Chama GPT
+    const reply = await askGPT(messagesForGPT);
 
     // Salva mensagens no histórico
-    // Garante que o content seja sempre objeto
-    const garantirObjeto = (valor) => {
-      return (typeof valor === "string") ? { text: valor } : valor;
-    };
-    
+    const garantirObjeto = (valor) => (typeof valor === "string" ? { text: valor } : valor);
     await salvarMemoria(from, "user", garantirObjeto(body));
     await salvarMemoria(from, "assistant", garantirObjeto(reply));
 
-    
     // Envia resposta
     await sendMessage(from, reply);
     res.sendStatus(200);
