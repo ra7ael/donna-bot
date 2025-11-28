@@ -229,7 +229,7 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ userId: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-  app.post("/webhook", async (req, res) => {
+ app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
@@ -248,7 +248,7 @@ async function getTodayEvents(number) {
 
     if (dadosMemorizados.nomes_dos_filhos?.length) {
       const filhosStr = dadosMemorizados.nomes_dos_filhos.join(" e ");
-      await addSemanticMemory(`Filhos`, filhosStr, from, "assistant");
+      await addSemanticMemory("Filhos", filhosStr, from, "assistant");
       await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${filhosStr}`);
     }
 
@@ -259,53 +259,51 @@ async function getTodayEvents(number) {
     }
 
     if (dadosMemorizados.nome) {
-      await saveMemory(from, "assistant", `Nome: ${dadosMemorizados.nome}`);
+      await addSemanticMemory("Nome", dadosMemorizados.nome, from, "assistant");
     }
 
-    // Busca memórias semânticas e transforma sempre em array de strings
-    const memoriaRelevante = await querySemanticMemory(body, from, 3) || [];
-    const memoriaTexto = memoriaRelevante.map(r => r.toString()).join("\n");
+    // Busca memórias semânticas e transforma sempre em array de strings válidas
+    const memoriaRelevante = (await querySemanticMemory(body, from, 3)) || [];
+    const memoriaTexto = memoriaRelevante
+      .filter(r => r !== undefined && r !== null)
+      .map(r => r.toString())
+      .join("\n");
 
     // Histórico de memórias antigas
-    const memories = await db.collection("semanticmemories")
-      .find({ userId: from })
-      .sort({ timestamp: -1 })
-      .limit(6)
-      .toArray();
+    const memories = await SemanticMemory.find({ userId: from })
+      .sort({ createdAt: -1 })
+      .limit(6);
 
     const yesterday = DateTime.now().minus({ days: 1 }).toJSDate();
-    const olderMemories = await db.collection("semanticmemories")
-      .find({ userId: from, timestamp: { $lt: yesterday } })
-      .sort({ timestamp: -1 })
-      .limit(5)
-      .toArray();
+    const olderMemories = await SemanticMemory.find({ userId: from, createdAt: { $lt: yesterday } })
+      .sort({ createdAt: -1 })
+      .limit(5);
 
     const allMemories = [
       ...(Array.isArray(memories) ? memories.reverse() : []),
       ...(Array.isArray(olderMemories) ? olderMemories.reverse() : [])
     ];
 
-    // ===== Sanitização segura =====
-    const sanitizedMessages = allMemories
-  .filter(m => m && m.content != null && (typeof m.content === "string" || typeof m.content === "number"))
-  .map(m => ({
-    role: m.role || "user",
-    content: m.content.toString().trim()
-  }));
-    const messagesForGPT = [
-      { role: "system", content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta." },
+    const chatHistory = allMemories
+      .filter(m => m.answer && typeof m.answer === "string")
+      .map(m => ({ role: m.role, content: m.answer }));
+
+    const systemMessage = {
+      role: "system",
+      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
+    };
+
+    // Monta o prompt
+    const reply = await askGPT([
+      systemMessage,
       { role: "user", content: body },
       { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
-      ...sanitizedMessages
-    ];
-
-    // Chama GPT
-    const reply = await askGPT(messagesForGPT);
+      ...chatHistory
+    ]);
 
     // Salva mensagens no histórico
-    const garantirObjeto = (valor) => (typeof valor === "string" ? { text: valor } : valor);
-    await salvarMemoria(from, "user", garantirObjeto(body));
-    await salvarMemoria(from, "assistant", garantirObjeto(reply));
+    await addSemanticMemory(body, reply, from, "user");
+    await addSemanticMemory(body, reply, from, "assistant");
 
     // Envia resposta
     await sendMessage(from, reply);
