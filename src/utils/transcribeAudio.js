@@ -20,3 +20,5 @@ export async function transcribeAudio(audioBuffer) {
     try { fs.unlinkSync(tempFile); } catch(e) {}
   }
 }
+
+export default transcribeAudio;
