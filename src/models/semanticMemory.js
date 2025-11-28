@@ -47,7 +47,7 @@ export async function querySemanticMemory(query, userId, limit = 1, recentLimit 
     // Busca os N registros mais recentes do usuário
     const memories = await SemanticMemory.find({ userId })
       .sort({ createdAt: -1 })
-      .limit(recentLimit);
+      .limit(50);
 
     if (!Array.isArray(memories) || memories.length === 0) return null;
 
