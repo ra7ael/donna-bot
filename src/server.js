@@ -1,42 +1,37 @@
-// src/server.js
-import "dotenv/config";
-import express from "express";
-import OpenAI from "openai";
-import { MongoClient } from "mongodb";
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
-import bodyParser from "body-parser";
-import axios from "axios";
-import mongoose from "mongoose";
-import cron from "node-cron";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import FormData from "form-data";
-import { DateTime } from "luxon";
+require("dotenv/config");
+const express = require("express");
+const OpenAI = require("openai");
+const { MongoClient } = require("mongodb");
+const pdfParse = require("pdf-parse/lib/pdf-parse.js");
+const bodyParser = require("body-parser");
+const axios = require("axios");
+const mongoose = require("mongoose");
+const cron = require("node-cron");
+const fs = require("fs");
+const path = require("path");
+const FormData = require("form-data");
+const { DateTime } = require("luxon");
 
-import { startReminderCron } from "./cron/reminders.js";
-import { getWeather } from "./utils/weather.js";
-import { downloadMedia } from "./utils/downloadMedia.js";
-import { falar, sendAudio } from "./utils/speak.js";
-import { numerosAutorizados } from "./config/autorizados.js";
-import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
-import { buscarPergunta } from "./utils/buscarPdf.js";
-import { funcoesExtras } from "./utils/funcoesExtras.js";
-import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { salvarMemoria, buscarMemoria, limparMemoria } from "./utils/memory.js";
-import Message from "./models/Message.js";
-import Reminder from "./models/Reminder.js";
-import Conversation from "./models/Conversation.js";
+const { startReminderCron } = require("./cron/reminders.js");
+const { getWeather } = require("./utils/weather.js");
+const { downloadMedia } = require("./utils/downloadMedia.js");
+const { falar, sendAudio } = require("./utils/speak.js");
+const { numerosAutorizados } = require("./config/autorizados.js");
+const { treinarDonna, obterResposta, setPapeis, clearPapeis } = require("./utils/treinoDonna.js");
+const { buscarPergunta } = require("./utils/buscarPdf.js");
+const { funcoesExtras } = require("./utils/funcoesExtras.js");
+const { extractAutoMemoryGPT } = require("./utils/autoMemoryGPT.js");
+const { salvarMemoria, buscarMemoria, limparMemoria } = require("./utils/memory.js");
+const Message = require("./models/Message.js");
+const Reminder = require("./models/Reminder.js");
+const Conversation = require("./models/Conversation.js");
 
 // ===== Conectar Mongoose antecipadamente =====
 if (process.env.MONGO_URI) {
-  mongoose.connect(process.env.MONGO_URI, {
-    serverSelectionTimeoutMS: 5000
-  }).then(() => {
-    console.log("✅ Mongoose conectado ao Mongo (memória estruturada)");
-  }).catch(err => {
-    console.error("❌ Falha conexão Mongoose:", err?.message || err);
-  });
+  mongoose
+    .connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 5000 })
+    .then(() => console.log("✅ Mongoose conectado ao Mongo (memória estruturada)"))
+    .catch((err) => console.error("❌ Falha conexão Mongoose:", err?.message || err));
 } else {
   console.warn("⚠️ MONGO_URI não definida. Mongoose não será conectado.");
 }
@@ -47,12 +42,8 @@ app.use(bodyParser.json());
 const upload = null;
 
 // ===== Global error handlers =====
-process.on("uncaughtException", err => {
-  console.error("🔥 Uncaught Exception:", err);
-});
-process.on("unhandledRejection", reason => {
-  console.error("🔥 Unhandled Rejection:", reason);
-});
+process.on("uncaughtException", (err) => console.error("🔥 Uncaught Exception:", err));
+process.on("unhandledRejection", (reason) => console.error("🔥 Unhandled Rejection:", reason));
 
 // ===== Papéis Profissionais =====
 const profissoes = [
@@ -66,15 +57,10 @@ const profissoes = [
 let papelAtual = null;
 let papeisCombinados = [];
 
-// Função para verificar troca/composição de papéis profissionais
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase().trim();
 
-  if (
-    textoLower.includes("sair do papel") ||
-    textoLower.includes("volte a ser assistente") ||
-    textoLower.includes("saia do papel")
-  ) {
+  if (textoLower.includes("sair do papel") || textoLower.includes("volte a ser assistente") || textoLower.includes("saia do papel")) {
     papelAtual = null;
     papeisCombinados = [];
     clearPapeis();
@@ -83,12 +69,7 @@ function verificarComandoProfissao(texto) {
 
   for (const p of profissoes) {
     const pLower = p.toLowerCase();
-    if (
-      textoLower.includes(`você é ${pLower}`) ||
-      textoLower.includes(`seja meu ${pLower}`) ||
-      textoLower.includes(`ajude-me como ${pLower}`) ||
-      textoLower === pLower
-    ) {
+    if (textoLower.includes(`você é ${pLower}`) || textoLower.includes(`seja meu ${pLower}`) || textoLower.includes(`ajude-me como ${pLower}`) || textoLower === pLower) {
       papelAtual = p;
       papeisCombinados = [p];
       setPapeis([p]);
@@ -98,27 +79,21 @@ function verificarComandoProfissao(texto) {
 
   const combinarMatch = textoLower.match(/(misture|combine|junte) (.+)/i);
   if (combinarMatch) {
-    const solicitados = combinarMatch[2].split(/,| e |\+|com/).map(s => s.trim()).filter(Boolean);
-    const validos = solicitados.filter(s =>
-      profissoes.some(p => p.toLowerCase() === s.toLowerCase())
-    );
+    const solicitados = combinarMatch[2].split(/,| e |\+|com/).map((s) => s.trim()).filter(Boolean);
+    const validos = solicitados.filter((s) => profissoes.some((p) => p.toLowerCase() === s.toLowerCase()));
     if (validos.length > 0) {
       papelAtual = "Múltiplos";
       papeisCombinados = validos;
       setPapeis(validos);
       return { tipo: "papel", resposta: `🧠 Papéis combinados: ${validos.join(" + ")}. Pode mandar!` };
-    } else {
-      return { tipo: "erro", resposta: "❌ Perfis não reconhecidos. Confirme os nomes?" };
     }
+    return { tipo: "erro", resposta: "❌ Perfis não reconhecidos. Confirme os nomes?" };
   }
 
   return null;
 }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 app.use("/audio", express.static(path.join(__dirname, "public/audio")));
-
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ===== MongoDB Globals =====
@@ -129,7 +104,6 @@ const MONGO_URI = process.env.MONGO_URI;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// ===== Função WhatsApp consolidada =====
 async function sendMessage(to, message) {
   if (!message) message = "⚠️ Sem conteúdo de retorno.";
 
@@ -145,13 +119,12 @@ async function sendMessage(to, message) {
   }
 }
 
-// ===== askGPT protegido =====
 async function askGPT(messages) {
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      messages: messages.filter(m => typeof m.content === "string" && m.content.trim()),
-      max_completion_tokens: 300
+      messages: messages.filter((m) => typeof m.content === "string" && m.content.trim()),
+      max_tokens: 300
     });
 
     return String(completion.choices?.[0]?.message?.content || "");
@@ -161,7 +134,6 @@ async function askGPT(messages) {
   }
 }
 
-// ===== conectar Mongo =====
 async function connectMongo() {
   if (db) return db;
 
@@ -169,24 +141,13 @@ async function connectMongo() {
     if (!MONGO_URI) throw new Error("MONGO_URI ausente");
 
     console.log("🔹 Conectando ao banco...");
-    const client = await MongoClient.connect(MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000
-    });
+    const client = await MongoClient.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 });
 
     mongoClientInstance = client;
     db = client.db("donna");
     console.log("✅ Conexão Mongo estabelecida.");
-    
-    export function getDB() {
-      return db;
-    }
 
     startReminderCron(db, sendMessage);
-
-
-
     return db;
   } catch (err) {
     console.error("❌ Falha conexão Mongo:", err?.message || err);
@@ -196,7 +157,30 @@ async function connectMongo() {
 
 connectMongo();
 
-// ===== Webhook consolidado =====
+// ===== Cron job para lembretes (Mongoose Model) =====
+cron.schedule("* * * * *", async () => {
+  try {
+    await connectMongo();
+    const now = new Date();
+    const reminders = await Reminder.find({ date: { $lte: now }, sent: false }).lean();
+
+    console.log(`⏰ Buscando lembretes no Model Reminder <= ${now.toISOString()}`);
+
+    if (!reminders.length) {
+      console.log("🔹 Nenhum lembrete pendente (Model Reminder).");
+      return;
+    }
+
+    for (const r of reminders) {
+      await sendMessage(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString("pt-BR")})`);
+      await Reminder.updateOne({ _id: r._id }, { $set: { sent: true, disparadoEm: new Date() } });
+    }
+  } catch (err) {
+    console.error("❌ Falha cron lembretes Model:", err?.message || err);
+  }
+});
+
+// ===== Webhook =====
 app.post("/webhook", async (req, res) => {
   try {
     const entry = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -217,7 +201,7 @@ app.post("/webhook", async (req, res) => {
       body = audioBuffer ? await falar(audioBuffer) : "❌ Falha transcrição.";
     } else if (entry.type === "document") {
       const pdfBuffer = await downloadMedia(entry.document.id);
-      const pdfPath = `./src/utils/pdfs/${entry.document.filename}`;
+      const pdfPath = path.join(__dirname, "src/utils/pdfs", entry.document.filename);
       fs.writeFileSync(pdfPath, pdfBuffer);
       await sendMessage(from, `✅ Documento salvo: ${entry.document.filename}`);
       return res.sendStatus(200);
@@ -227,73 +211,39 @@ app.post("/webhook", async (req, res) => {
     }
 
     body = body.trim();
-
     await salvarMemoria(from, { ultimaMensagem: body });
     const memoria = await buscarMemoria(from);
 
     const messages = [
       { role: "system", content: "Você é a Donna, assistente pessoal do Rafael, use respostas curtas e diretas." },
-      ...(memoria?.memoria ? Object.entries(memoria.memoria).map(([k,v]) => ({
-          role: "assistant",
-          content: `${k}: ${v}`
-      })) : []),
+      ...(memoria?.memoria ? Object.entries(memoria.memoria).map(([k,v]) => ({ role: "assistant", content: `${k}: ${v}` })) : []),
       { role: "user", content: body }
     ];
 
-    const sanitizedMessages = messages.map(m => ({
-        role: m.role,
-        content: String(m.content || "").trim()
-    })).filter(m => m.content);
-
-    const reply = await askGPT(sanitizedMessages);
-
+    const reply = await askGPT(messages);
     await salvarMemoria(from, { ultimaResposta: reply });
     await sendMessage(from, reply.trim());
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("🔥 Erro webhook:", err?.message || err);
+    console.error("🔥 Webhook erro:", err?.message || err);
     return res.sendStatus(500);
   }
 });
 
-// ===== Cron job para lembretes (mongoose Model) =====
-cron.schedule("* * * * *", async () => {
-  try {
-    await connectMongo();
-    const now = new Date();
-    const reminders = await Reminder.find({ date: { $lte: now }, sent: false }).lean();
-
-    console.log(`⏰ Buscando lembretes no Model Reminder <= ${now.toISOString()}`);
-
-    if (!reminders.length) {
-      console.log("🔹 Nenhum lembrete pendente (Model Reminder).");
-      return;
-    }
-
-    for (const r of reminders) {
-      await sendMessage(r.from, `⏰ Lembrete: ${r.text} (agendado para ${r.date.toLocaleString("pt-BR")})`);
-      await Reminder.updateOne({ _id: r._id }, { $set: { sent: true, disparadoEm: new Date() } });
-    }
-
-  } catch (err) {
-    console.error("❌ Falha cron lembretes Model:", err?.message || err);
-  }
-});
-
 // ===== Iniciar servidor =====
-app.listen(PORT, () => {
-  console.log(`✅ Servidor ativo na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Servidor ativo na porta ${PORT}`));
 
-// ===== Exportações =====
-export {
+module.exports = {
   askGPT,
+  connectMongo,
+  sendMessage,
+  verificarComandoProfissao,
   salvarMemoria,
   buscarMemoria,
   limparMemoria,
-  funcoesExtras,
   buscarPergunta,
+  funcoesExtras,
   treinarDonna,
   obterResposta,
   setPapeis,
@@ -301,5 +251,5 @@ export {
   falar,
   sendAudio,
   getWeather,
-  sendMessage
+  getDB: () => db
 };
