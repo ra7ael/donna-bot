@@ -257,7 +257,7 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj.from;
     let body = "";
 
-    // Extrai texto ou áudio
+    // Extrai o conteúdo da mensagem
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
     } else if (messageObj.type === "audio") {
@@ -265,7 +265,7 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // Extrai dados automáticos
+    // Extrai informações automáticas e salva memórias específicas
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
     if (dadosMemorizados.nomes_dos_filhos?.length) {
@@ -286,45 +286,31 @@ app.post("/webhook", async (req, res) => {
       await saveMemory(from, "assistant", `Nome: ${dadosMemorizados.nome}`);
     }
 
-    // 🔹 Memórias semânticas relevantes
-    const semanticMemories = (await querySemanticMemory(body, from, 5)) || [];
-    const semanticChatHistory = semanticMemories.map(h => ({
+    // Busca as memórias semânticas mais relevantes (10 últimas)
+    const history = (await querySemanticMemory(body, from, 10)) || [];
+
+    // Monta o histórico de conversa para o GPT
+    const chatHistory = history.map(h => ({
       role: h.role || "assistant",
       content: h.answer || h.content || ""
     }));
 
-    // 🔹 Últimas mensagens recentes (até 10)
-    const recentMessages = await db.collection("semanticMemory")
-      .find({ numero: from })
-      .sort({ timestamp: -1 })
-      .limit(10)
-      .toArray();
-
-    const recentChatHistory = (Array.isArray(recentMessages) ? recentMessages.reverse() : []).map(m => ({
-      role: m.role || "assistant",
-      content: m.content || ""
-    })).filter(m => m.content.trim() !== "");
-
-    // Combina histórico de memórias semânticas + mensagens recentes
-    const chatHistory = [...semanticChatHistory, ...recentChatHistory];
-
-    // Mensagem do sistema
     const systemMessage = {
       role: "system",
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
-    // Chama GPT com histórico completo
+    // Chama o GPT com prompt e histórico
     const reply = await askGPT({
       prompt: body,
       history: [systemMessage, ...chatHistory]
     });
 
-    // Salva conversa atual
+    // Salva a conversa atual
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    // Envia resposta
+    // Envia a resposta para o usuário
     await sendMessage(from, reply);
 
     res.sendStatus(200);
@@ -336,6 +322,7 @@ app.post("/webhook", async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
+
 
 
 
