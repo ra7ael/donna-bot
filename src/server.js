@@ -199,7 +199,7 @@ async function setUserName(number, name) {
 }
 
 async function getUserMemory(number, limit = 5) {
-  return await db.collection("semanticMemory")
+  return await db.collection("semanticmemories"))
     .find({ userId: number })
     .sort({ timestamp: -1 })
     .limit(limit)
@@ -208,7 +208,7 @@ async function getUserMemory(number, limit = 5) {
 
 async function saveMemory(number, role, content) {
   if (!content || !content.trim()) return;
-  await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
+  await db.collection("semanticmemories").insertOne({ numero: number, role, content, timestamp: new Date() });
 }
 
 
@@ -267,14 +267,14 @@ app.post("/webhook", async (req, res) => {
     const memoriaTexto = memoriaRelevante.map(r => r.toString()).join("\n");
 
     // Histórico de memórias antigas
-    const memories = await db.collection("semanticMemory")
+    const memories = await db.collection("semanticmemories")
       .find({ userId: from })
       .sort({ timestamp: -1 })
       .limit(6)
       .toArray();
 
     const yesterday = DateTime.now().minus({ days: 1 }).toJSDate();
-    const olderMemories = await db.collection("semanticMemory")
+    const olderMemories = await db.collection("semanticmemories")
       .find({ userId: from, timestamp: { $lt: yesterday } })
       .sort({ timestamp: -1 })
       .limit(5)
