@@ -53,36 +53,28 @@ export async function connectDB() {
 /**
  * Salva dados na memória estruturada via Mongoose (somente se conectado)
  */
-export async function salvarMemoria(userId, dados) {
-  if (!userId || !dados || typeof dados !== "object") {
-    console.warn("⚠️ Dados inválidos para salvarMemoria.");
-    return null;
-  }
-
+export async function saveMemory(userId, role, content) {
   await connectDB();
 
-  if (mongoose.connection.readyState !== 1) {
-    console.warn("⚠️ Mongoose offline, não foi possível salvar memória.");
-    return null;
+  const dados = typeof content === "string" ? { text: content } : content;
+
+  let memoria = await Memoria.findOne({ userId });
+
+  if (!memoria) {
+    memoria = new Memoria({
+      userId,
+      memoria: { [role]: [dados] },
+    });
+  } else {
+    if (!memoria.memoria[role]) memoria.memoria[role] = [];
+    memoria.memoria[role].push(dados);
   }
 
-  try {
-    let registro = await Memoria.findOne({ userId }).lean();
-
-    if (!registro) {
-      registro = new Memoria({ userId, memoria: dados });
-    } else {
-      await Memoria.updateOne({ userId }, { $set: { memoria: { ...registro.memoria, ...dados } } });
-    }
-
-    const salvo = await Memoria.findOne({ userId }).lean();
-    console.log(`💾 Memória salva para: ${userId}`);
-    return salvo;
-  } catch (err) {
-    console.error("❌ Falha ao salvar memória:", err?.message || err);
-    return null;
-  }
+  await memoria.save();
+  console.log(`💾 Memória estruturada atualizada para ${userId}`);
+  return memoria;
 }
+
 
 /**
  * Busca memória estruturada
