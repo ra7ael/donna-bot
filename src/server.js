@@ -304,9 +304,9 @@ app.post("/webhook", async (req, res) => {
     ]);
 
     // Salva mensagens no histórico
-    await salvarMemoria(from, "user", body);
-    await salvarMemoria(from, "assistant", reply);
-
+    await salvarMemoria(from, "user", { text: body });
+    await salvarMemoria(from, "assistant", { text: reply });
+    
     // Envia resposta
     await sendMessage(from, reply);
     res.sendStatus(200);
