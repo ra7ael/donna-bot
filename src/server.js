@@ -199,7 +199,7 @@ async function setUserName(number, name) {
 }
 
 async function getUserMemory(number, limit = 5) {
-  return await db.collection("semanticmemories"))
+  return await db.collection("semanticmemories")
     .find({ userId: number })
     .sort({ timestamp: -1 })
     .limit(limit)
