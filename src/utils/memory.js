@@ -3,115 +3,132 @@ import mongoose from "mongoose";
 import { MongoClient } from "mongodb";
 import Memoria from "../models/memory.js";
 import dotenv from "dotenv";
+
 dotenv.config();
 
 const MONGO_URI = process.env.MONGO_URI;
 
-// driver nativo
-let db = null;
-let client = null;
+// Driver nativo
+let dbInstance = null;
+let mongoClient = null;
 
 /**
- * Conecta ao MongoDB (driver nativo) + mongoose (1 tentativa rápida, sem buffering infinito)
+ * Conecta ao MongoDB (driver nativo) + tenta conectar mongoose sem travar o app
  */
 export async function connectDB() {
-  // 1. Se já existe conexão do driver, retorna
-  if (db) return db;
+  if (dbInstance) return dbInstance;
 
   if (!MONGO_URI) {
-    console.error("❌ connectDB: MONGO_URI não definida no env.");
+    console.error("❌ MONGO_URI não definida no env.");
     process.exit(1);
   }
 
   try {
-    console.log("🔹 Conectando driver nativo Mongo...");
-
-    client = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 4000 });
-    await client.connect();
-
-    db = client.db("donna"); // seu banco
-    console.log("✅ Driver nativo Mongo conectado");
-
+    console.log("🔹 Conectando ao MongoDB...");
+    mongoClient = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 4000 });
+    await mongoClient.connect();
+    dbInstance = mongoClient.db("donna");
+    console.log("✅ MongoDB conectado.");
   } catch (err) {
-    console.error("❌ Erro ao conectar driver nativo Mongo:", err.message);
+    console.error("❌ Erro ao conectar ao MongoDB:", err?.message || err);
     process.exit(1);
   }
 
   try {
-    // 2. Tenta conectar mongoose rapidamente se ainda não estiver conectado
     if (mongoose.connection.readyState !== 1) {
-      console.log("🔹 Conectando mongoose...");
+      console.log("🔹 Tentando conectar Mongoose...");
       await Promise.race([
         mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 4000 }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout mongoose")), 3500))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout mongoose")), 3500)),
       ]);
-      console.log("✅ Mongoose conectado");
+      console.log("✅ Mongoose conectado.");
     }
   } catch (err) {
-    console.warn("⚠️ Mongoose não conectou rápido, seguindo sem bloquear o app:", err.message);
+    console.warn("⚠️ Mongoose não conectou a tempo, seguindo sem bloquear:", err?.message || err);
   }
 
-  return db;
+  return dbInstance;
 }
 
 /**
- * Salva dados na memória estruturada (usando Mongoose, mas só se conectado)
+ * Salva dados na memória estruturada via Mongoose (somente se conectado)
  */
 export async function salvarMemoria(userId, dados) {
   if (!userId || !dados || typeof dados !== "object") {
-    console.warn("⚠️ salvarMemoria: userId ou dados inválidos.");
+    console.warn("⚠️ Dados inválidos para salvarMemoria.");
     return null;
   }
 
   await connectDB();
 
-  // Se mongoose não conectou, evita usar a model (evita timeout)
   if (mongoose.connection.readyState !== 1) {
-    console.warn("⚠️ salvarMemoria: Mongoose offline, memória não persistida.");
+    console.warn("⚠️ Mongoose offline, não foi possível salvar memória.");
     return null;
   }
 
-  let memoria = await Memoria.findOne({ userId });
+  try {
+    let registro = await Memoria.findOne({ userId }).lean();
 
-  if (!memoria) {
-    memoria = new Memoria({ userId, memoria: dados });
-  } else {
-    memoria.memoria = { ...memoria.memoria, ...dados };
+    if (!registro) {
+      registro = new Memoria({ userId, memoria: dados });
+    } else {
+      await Memoria.updateOne({ userId }, { $set: { memoria: { ...registro.memoria, ...dados } } });
+    }
+
+    const salvo = await Memoria.findOne({ userId }).lean();
+    console.log(`💾 Memória salva para: ${userId}`);
+    return salvo;
+  } catch (err) {
+    console.error("❌ Falha ao salvar memória:", err?.message || err);
+    return null;
   }
-
-  await memoria.save();
-  console.log(`💾 Memória atualizada para ${userId}`);
-  return memoria;
 }
 
 /**
- * Busca memória estruturada (guard contra offline)
+ * Busca memória estruturada
  */
 export async function buscarMemoria(userId) {
   if (!userId) return null;
   await connectDB();
 
   if (mongoose.connection.readyState !== 1) {
-    console.warn("⚠️ buscarMemoria: Mongoose offline.");
+    console.warn("⚠️ Mongoose offline, não foi possível buscar memória.");
     return null;
   }
 
-  return await Memoria.findOne({ userId }).lean().exec();
+  try {
+    return await Memoria.findOne({ userId }).lean();
+  } catch (err) {
+    console.error("❌ Erro ao buscar memória:", err?.message || err);
+    return null;
+  }
 }
 
 /**
- * Apaga memória estruturada
+ * Remove a memória estruturada
  */
 export async function limparMemoria(userId) {
   if (!userId) return false;
   await connectDB();
 
-  if (mongoose.connection.readyState === 1) {
-    await Memoria.deleteOne({ userId });
-    console.log(`🗑️ Memória apagada: ${userId}`);
-    return true;
+  if (mongoose.connection.readyState !== 1) {
+    console.warn("⚠️ Mongoose offline, não foi possível limpar memória.");
+    return false;
   }
 
-  console.warn("⚠️ limparMemoria: Mongoose offline.");
-  return false;
+  try {
+    await Memoria.deleteOne({ userId });
+    console.log(`🗑️ Memória removida para: ${userId}`);
+    return true;
+  } catch (err) {
+    console.error("❌ Erro ao limpar memória:", err?.message || err);
+    return false;
+  }
+}
+
+/**
+ * Retorna a instância do banco do driver nativo caso precise fora daqui
+ */
+export function getDB() {
+  return dbInstance;
 }
