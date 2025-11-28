@@ -24,7 +24,7 @@ import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { salvarMemoria } from "./utils/memory.js";
-import querySemanticMemory from "./models/semanticMemory.js";
+import { addSemanticMemory, querySemanticMemory } from "./utils/semanticMemory.js";
 import transcribeAudio from "./utils/transcribeAudio.js";
 
 dotenv.config();
@@ -248,13 +248,13 @@ app.post("/webhook", async (req, res) => {
 
     if (dadosMemorizados.nomes_dos_filhos?.length) {
       const filhosStr = dadosMemorizados.nomes_dos_filhos.join(" e ");
-      await saveMemory(from, "assistant", `Filhos: ${filhosStr}`);
+      await addSemanticMemory(`Filhos`, filhosStr, from, "assistant");
       await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${filhosStr}`);
     }
 
     if (dadosMemorizados.trabalho?.empresa) {
       const cargoStr = `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`;
-      await saveMemory(from, "assistant", cargoStr);
+      await addSemanticMemory(body, cargoStr, from, "assistant");
       await sendMessage(from, `Salvei seu cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa}`);
     }
 
