@@ -139,25 +139,21 @@ app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
   }
 });
 
-async function askGPT(prompt, history = []) {
+// ===== askGPT corrigida =====
+async function askGPT(messagesArray) {
   try {
-    const safeMessages = history
-      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
-      .filter(m => m.content.trim() !== "");
-    safeMessages.push({ role: "user", content: prompt || "" });
-
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      { model: "gpt-5-mini", messages: safeMessages },
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
-    );
-
-    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      messages: messagesArray.filter(m => typeof m.content === "string" && m.content.trim()),
+      max_completion_tokens: 300,
+    });
+    return String(completion.choices?.[0]?.message?.content || "");
   } catch (err) {
-    console.error("❌ Erro GPT:", err.response?.data || err);
-    return "Hmm… ainda estou pensando!";
+    console.warn("⚠️ GPT falhou:", err.message);
+    return "Pensando...";
   }
 }
+
 
 async function sendMessage(to, message) {
   if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
