@@ -257,7 +257,6 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj.from;
     let body = "";
 
-    // Extrai o conteúdo da mensagem
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
     } else if (messageObj.type === "audio") {
@@ -265,54 +264,60 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // Extrai informações automáticas e salva memórias específicas
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
     if (dadosMemorizados.nomes_dos_filhos?.length) {
       await saveMemory(from, "assistant", `Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
       await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
     }
-
     if (dadosMemorizados.trabalho?.empresa) {
-      await saveMemory(
-        from,
-        "assistant",
-        `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`
-      );
+      await saveMemory(from, "assistant", `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`);
       await sendMessage(from, `Salvei seu cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa}`);
     }
-
     if (dadosMemorizados.nome) {
       await saveMemory(from, "assistant", `Nome: ${dadosMemorizados.nome}`);
     }
 
-    // Busca as memórias semânticas mais relevantes (10 últimas)
-    const history = (await querySemanticMemory(body, from, 10)) || [];
+    const memoriaRelevante = await querySemanticMemory(body, from, 3);
+    const memoriaTexto = memoriaRelevante ? memoriaRelevante.join("\n") : "";
 
-    // Monta o histórico de conversa para o GPT
-    const chatHistory = history.map(h => ({
-      role: h.role || "assistant",
-      content: h.answer || h.content || ""
-    }));
+    const memories = await db.collection("semanticMemory")
+      .find({ numero: from })
+      .sort({ timestamp: -1 })
+      .limit(6)
+      .toArray();
+
+    const yesterday = DateTime.now().minus({ days: 1 }).toJSDate();
+    const olderMemories = await db.collection("semanticMemory")
+      .find({ numero: from, timestamp: { $lt: yesterday } })
+      .sort({ timestamp: -1 })
+      .limit(5)
+      .toArray();
+
+    const allMemories = [
+      ...(Array.isArray(memories) ? memories.reverse() : []),
+      ...(Array.isArray(olderMemories) ? olderMemories.reverse() : [])
+    ];
+
+    const chatHistory = allMemories
+      .map(m => ({ role: m.role, content: m.content || "" }))
+      .filter(m => m.content.trim() !== "");
 
     const systemMessage = {
       role: "system",
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
-    // Chama o GPT com prompt e histórico
-    const reply = await askGPT({
-      prompt: body,
-      history: [systemMessage, ...chatHistory]
-    });
+    const reply = await askGPT(body, [
+      systemMessage,
+      { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
+      ...(Array.isArray(chatHistory) ? chatHistory : [])
+    ]);
 
-    // Salva a conversa atual
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
-    // Envia a resposta para o usuário
     await sendMessage(from, reply);
-
     res.sendStatus(200);
 
   } catch (err) {
@@ -323,9 +328,6 @@ app.post("/webhook", async (req, res) => {
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-
-
-
 export { 
   askGPT,
   getTodayEvents, 
@@ -333,3 +335,5 @@ export {
   saveMemory, 
   db 
 };
+
+
