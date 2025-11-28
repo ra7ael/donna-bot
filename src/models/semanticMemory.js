@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { embedding } from "../utils/embeddingService.js";
 
-// Definição do Schema
+// Definição do Schema para as Memórias Semânticas
 const semanticSchema = new mongoose.Schema({
   userId: { type: String, required: true },
   prompt: { type: String, required: true },
@@ -11,11 +11,12 @@ const semanticSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+// 🔍 Evita memórias repetidas (mesmo prompt, mesmo usuário)
 semanticSchema.index({ userId: 1, prompt: 1 }, { unique: true });
 
 const SemanticMemory = mongoose.model("SemanticMemory", semanticSchema);
 
-// Salvar memória semântica
+// 🧠 Função para salvar memória semântica com o embedding
 export async function addSemanticMemory(prompt, answer, userId, role) {
   try {
     const vector = await embedding(`${prompt} ${answer}`);
@@ -30,7 +31,7 @@ export async function addSemanticMemory(prompt, answer, userId, role) {
   }
 }
 
-// Função de similaridade de coseno
+// 🧠 Função para calcular a Similaridade de Coseno
 function cosineSimilarity(vecA, vecB) {
   const dotProduct = vecA.reduce((sum, val, i) => sum + val * vecB[i], 0);
   const magnitudeA = Math.sqrt(vecA.reduce((sum, val) => sum + val * val, 0));
@@ -38,26 +39,33 @@ function cosineSimilarity(vecA, vecB) {
   return dotProduct / (magnitudeA * magnitudeB);
 }
 
-// Buscar memória por similaridade (Node.js, não MongoDB)
-export async function querySemanticMemory(query, userId, limit = 3) {
+// 🧠 Função para buscar memória por similaridade de coseno
+export async function querySemanticMemory(query, userId, limit = 1, recentLimit = 50) {
   try {
     const queryVector = await embedding(query);
-    const memories = await SemanticMemory.find({ userId }).limit(50); // pega as 50 mais recentes
 
-    if (!memories || memories.length === 0) return [];
+    // Busca os N registros mais recentes do usuário
+    const memories = await SemanticMemory.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(recentLimit);
 
-    const results = memories
-      .map(m => ({
-        answer: m.answer,
-        similarity: cosineSimilarity(m.vector, queryVector)
-      }))
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
+    if (!Array.isArray(memories) || memories.length === 0) return null;
 
-    return results.map(r => r.answer);
+    // Calcula similaridade de coseno
+    const scored = memories.map(m => ({
+      answer: m.answer,
+      similarity: cosineSimilarity(queryVector, m.vector)
+    }));
+
+    // Ordena por similaridade decrescente
+    scored.sort((a, b) => b.similarity - a.similarity);
+
+    // Retorna as respostas mais relevantes
+    return scored.slice(0, limit).map(m => m.answer);
+
   } catch (err) {
     console.error("❌ Erro ao buscar memória semântica:", err.message);
-    return [];
+    return null;
   }
 }
 
