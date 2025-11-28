@@ -215,24 +215,6 @@ async function saveMemory(number, role, content) {
   await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
 }
 
-async function transcribeAudio(audioBuffer) {
-  try {
-    const form = new FormData();
-    form.append("file", audioBuffer, { filename: "audio.ogg" });
-    form.append("model", "whisper-1");
-
-    const res = await axios.post(
-      "https://api.openai.com/v1/audio/transcriptions",
-      form,
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...form.getHeaders() } }
-    );
-
-    return res.data?.text || "";
-  } catch (err) {
-    console.error("❌ Erro na transcrição:", err.response?.data || err.message);
-    return "";
-  }
-}
 
 async function addEvent(number, title, description, date, time) {
   await db.collection("agenda").insertOne({
