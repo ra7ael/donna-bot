@@ -305,10 +305,13 @@ app.post("/webhook", async (req, res) => {
 
     // Salva mensagens no histórico
     // Garante que o content seja sempre objeto
-    const formatContent = (c) => (typeof c === "string" ? { text: c } : c);
+    const garantirObjeto = (valor) => {
+      return (typeof valor === "string") ? { text: valor } : valor;
+    };
     
-    await salvarMemoria(from, "user", formatContent(body));
-    await salvarMemoria(from, "assistant", formatContent(reply));
+    await salvarMemoria(from, "user", garantirObjeto(body));
+    await salvarMemoria(from, "assistant", garantirObjeto(reply));
+
     
     // Envia resposta
     await sendMessage(from, reply);
