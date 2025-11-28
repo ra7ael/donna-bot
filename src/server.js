@@ -44,7 +44,7 @@ const profissoes = [
   "Pediatra", "Oftalmologista", "Dentista", "Barista", "Coach de Inteligência Emocional"
 ];
 
-let papelAtual = null; // Papel profissional atual
+let papelAtual = null;
 let papeisCombinados = [];
 
 // ===== Função para checar comandos de papéis =====
@@ -84,7 +84,6 @@ function verificarComandoProfissao(texto) {
       profissoes.map(p => p.toLowerCase()).includes(s.toLowerCase())
     );
     if (validos.length > 0) {
-      papeisCombinados = validos;
       papelAtual = "Multiplos";
       setPapeis(validos);
       return { tipo: "papel", resposta: `Beleza! Vou atuar como ${validos.join(" + ")}. Qual sua dúvida?` };
@@ -109,6 +108,27 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
 let db;
 
+// ===== Schema semanticMemory (não remover nada, só ajustar para salvar contexto real corretamente) =====
+const semanticSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  prompt: { type: String, required: true },
+  answer: { type: String, required: true },
+  role: { type: String, enum: ["user", "assistant"], required: true },
+  vector: { type: [Number], required: false, default: [] },
+  createdAt: { type: Date, default: Date.now }
+});
+
+// evita duplicação real (userId + prompt)
+semanticSchema.index({ userId: 1, prompt: 1 }, { unique: true });
+
+const SemanticMemory = mongoose.model("semanticMemory", semanticSchema);
+
+mongoose.connect(MONGO_URI).then(() => {
+  console.log("✅ Mongoose conectado ao MongoDB (memória vetorial)");
+}).catch(err => {
+  console.error("❌ Mongoose erro:", err.message);
+});
+
 async function connectDB() {
   try {
     console.log("🔹 Tentando conectar ao MongoDB...");
@@ -126,12 +146,10 @@ const empresasPath = path.resolve("./src/data/empresa.json");
 const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
 const userStates = {};
 
-
 // ===== ROTA PARA RECEBER PDFs =====
 app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
   try {
     console.log(`📥 Recebido PDF: ${req.file.originalname}`);
-    await processarPdf(req.file.path);
     res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
   } catch (err) {
     console.error("❌ Erro ao processar PDF:", err);
@@ -145,6 +163,7 @@ async function askGPT(prompt, history = []) {
     const safeMessages = history
       .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
       .filter(m => m.content.trim() !== "");
+
     safeMessages.push({ role: "user", content: prompt || "" });
 
     const response = await axios.post(
@@ -190,7 +209,6 @@ async function sendMessage(to, message) {
   }
 }
 
-// ===== Outras funções auxiliares =====
 async function getUserName(number) {
   const doc = await db.collection("users").findOne({ numero: number });
   return doc?.nome || null;
@@ -206,15 +224,20 @@ async function setUserName(number, name) {
 
 async function getUserMemory(number, limit = 5) {
   return await db.collection("semanticMemory")
-    .find({ numero: number })
-    .sort({ timestamp: -1 })
+    .find({ userId: number })
+    .sort({ createdAt: -1 })
     .limit(limit)
     .toArray();
 }
 
 async function saveMemory(number, role, content) {
   if (!content || !content.trim()) return;
-  await db.collection("semanticMemory").insertOne({ numero: number, role, content, timestamp: new Date() });
+
+  await SemanticMemory.updateOne(
+    { userId: number, prompt: content },
+    { $set: { userId: number, answer: content, role, createdAt: new Date() } },
+    { upsert: true }
+  );
 }
 
 async function transcribeAudio(audioBuffer) {
@@ -236,7 +259,6 @@ async function transcribeAudio(audioBuffer) {
   }
 }
 
-// ===== Funções de Agenda =====
 async function addEvent(number, title, description, date, time) {
   await db.collection("agenda").insertOne({
     numero: number,
@@ -254,7 +276,7 @@ async function getTodayEvents(number) {
   return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
-
+// ===== WEBHOOK PRINCIPAL =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -270,29 +292,16 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // Memoriza automaticamente qualquer informação
-const dadosMemorizados = await extractAutoMemoryGPT(from, body);
+    const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
-if (Object.keys(dadosMemorizados).length > 0) {
-  // Apenas salva a memória, sem enviar JSON
-  await saveMemory(from, "assistant", "Memória atualizada."); 
-}
+    if (Object.keys(dadosMemorizados).length > 0) {
+      await saveMemory(from, "user", body);
+    }
 
-  // Exemplo de confirmação
-  if (dadosMemorizados.nomes_dos_filhos?.length) {
-    await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
-    return res.sendStatus(200);
-  }
-
-    // Se não for comando específico, responde normalmente usando GPT
-    const memories = await db.collection("semanticMemory")
-      .find({ numero: from })
-      .sort({ timestamp: -1 })
-      .limit(6)
-      .toArray();
+    const memories = await SemanticMemory.find({ userId: from }).sort({ createdAt: -1 }).limit(6);
 
     const chatHistory = memories.reverse()
-      .map(m => ({ role: m.role, content: m.content || "" }))
+      .map(m => ({ role: m.role, content: m.prompt || "" }))
       .filter(m => m.content.trim() !== "");
 
     const systemMessage = {
@@ -301,7 +310,6 @@ if (Object.keys(dadosMemorizados).length > 0) {
     };
 
     let reply = await askGPT(body, [systemMessage, ...chatHistory]);
-    await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
     await sendMessage(from, reply);
