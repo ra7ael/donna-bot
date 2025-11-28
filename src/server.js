@@ -23,7 +23,9 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import SemanticMemory, { querySemanticMemory, addSemanticMemory } from "./models/semanticMemory.js";
+import { salvarMemoria } from "./utils/memory.js";
+import querySemanticMemory from "./models/semanticMemory.js";
+import transcribeAudio from "./utils/transcribeAudio.js";
 
 dotenv.config();
 const app = express();
@@ -188,7 +190,7 @@ async function sendMessage(to, message) {
 }
 
 async function getUserName(number) {
-  const doc = await db.collection("users").findOne({ numero: number });
+  const doc = await db.collection("users").findOne({ userId: number });
   return doc?.nome || null;
 }
 
@@ -202,7 +204,7 @@ async function setUserName(number, name) {
 
 async function getUserMemory(number, limit = 5) {
   return await db.collection("semanticMemory")
-    .find({ numero: number })
+    .find({ userId: number })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
@@ -246,7 +248,7 @@ async function addEvent(number, title, description, date, time) {
 
 async function getTodayEvents(number) {
   const today = DateTime.now().toFormat("yyyy-MM-dd");
-  return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
+  return await db.collection("agenda").find({ userId: number, data: today }).sort({ hora: 1 }).toArray();
 }
 
 app.post("/webhook", async (req, res) => {
@@ -288,14 +290,14 @@ app.post("/webhook", async (req, res) => {
 
     // Histórico de memórias antigas
     const memories = await db.collection("semanticMemory")
-      .find({ numero: from })
+      .find({ userId: from })
       .sort({ timestamp: -1 })
       .limit(6)
       .toArray();
 
     const yesterday = DateTime.now().minus({ days: 1 }).toJSDate();
     const olderMemories = await db.collection("semanticMemory")
-      .find({ numero: from, timestamp: { $lt: yesterday } })
+      .find({ userId: from, timestamp: { $lt: yesterday } })
       .sort({ timestamp: -1 })
       .limit(5)
       .toArray();
@@ -323,8 +325,8 @@ app.post("/webhook", async (req, res) => {
     ]);
 
     // Salva mensagens no histórico
-    await saveMemory(from, "user", body);
-    await saveMemory(from, "assistant", reply);
+    await salvarMemoria(from, "user", body);
+    await salvarMemoria(from, "assistant", reply);
 
     // Envia resposta
     await sendMessage(from, reply);
