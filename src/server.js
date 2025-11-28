@@ -178,8 +178,14 @@ async function connectMongo() {
     mongoClientInstance = client;
     db = client.db("donna");
     console.log("✅ Conexão Mongo estabelecida.");
+    
+    export function getDB() {
+      return db;
+    }
 
     startReminderCron(db, sendMessage);
+
+
 
     return db;
   } catch (err) {
