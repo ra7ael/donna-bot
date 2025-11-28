@@ -23,7 +23,7 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { querySemanticMemory } from "./utils/semanticMemory.js"; // <-- CORREÇÃO: import adicionado
+import { querySemanticMemory } from "../utils/semanticMemory.js";
 
 dotenv.config();
 const app = express();
