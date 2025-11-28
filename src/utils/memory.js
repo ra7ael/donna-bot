@@ -8,9 +8,13 @@ dotenv.config();
 
 const MONGO_URI = process.env.MONGO_URI;
 
+// Driver nativo
 let dbInstance = null;
 let mongoClient = null;
 
+/**
+ * Conecta ao MongoDB (driver nativo) + tenta conectar mongoose sem travar o app
+ */
 export async function connectDB() {
   if (dbInstance) return dbInstance;
 
@@ -48,14 +52,13 @@ export async function connectDB() {
 
 /**
  * Salva dados na memória estruturada via Mongoose
- * Aceita string ou objeto
  */
 export async function salvarMemoria(userId, role, content) {
   await connectDB();
-
   if (!content || !content.toString().trim()) return;
 
-  const dados = typeof content === "string" ? { content: content.toString() } : content;
+  // Normaliza string simples para objeto
+  const dados = typeof content === "string" ? { text: content.toString(), timestamp: new Date() } : { ...content, timestamp: new Date() };
 
   let memoria = await Memoria.findOne({ userId });
 
@@ -74,6 +77,9 @@ export async function salvarMemoria(userId, role, content) {
   return memoria;
 }
 
+/**
+ * Busca memória estruturada
+ */
 export async function buscarMemoria(userId) {
   if (!userId) return null;
   await connectDB();
@@ -91,6 +97,9 @@ export async function buscarMemoria(userId) {
   }
 }
 
+/**
+ * Remove a memória estruturada
+ */
 export async function limparMemoria(userId) {
   if (!userId) return false;
   await connectDB();
@@ -110,6 +119,9 @@ export async function limparMemoria(userId) {
   }
 }
 
+/**
+ * Retorna a instância do banco do driver nativo caso precise fora daqui
+ */
 export function getDB() {
   return dbInstance;
 }
