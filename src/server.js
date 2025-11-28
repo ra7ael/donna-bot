@@ -267,20 +267,26 @@ app.post("/webhook", async (req, res) => {
     const dadosMemorizados = await extractAutoMemoryGPT(from, body);
 
     if (dadosMemorizados.nomes_dos_filhos?.length) {
-      await saveMemory(from, "assistant", `Filhos: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
-      await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${dadosMemorizados.nomes_dos_filhos.join(" e ")}`);
+      const filhosStr = dadosMemorizados.nomes_dos_filhos.join(" e ");
+      await saveMemory(from, "assistant", `Filhos: ${filhosStr}`);
+      await sendMessage(from, `Entendido! Vou lembrar que seus filhos são: ${filhosStr}`);
     }
+
     if (dadosMemorizados.trabalho?.empresa) {
-      await saveMemory(from, "assistant", `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`);
+      const cargoStr = `Cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa} desde ${dadosMemorizados.trabalho.admissao}`;
+      await saveMemory(from, "assistant", cargoStr);
       await sendMessage(from, `Salvei seu cargo: ${dadosMemorizados.trabalho.cargo} na ${dadosMemorizados.trabalho.empresa}`);
     }
+
     if (dadosMemorizados.nome) {
       await saveMemory(from, "assistant", `Nome: ${dadosMemorizados.nome}`);
     }
 
-    const memoriaRelevante = await querySemanticMemory(body, from, 3);
-    const memoriaTexto = memoriaRelevante ? memoriaRelevante.join("\n") : "";
+    // Busca memórias semânticas e transforma sempre em array de strings
+    const memoriaRelevante = await querySemanticMemory(body, from, 3) || [];
+    const memoriaTexto = memoriaRelevante.map(r => r.toString()).join("\n");
 
+    // Histórico de memórias antigas
     const memories = await db.collection("semanticMemory")
       .find({ numero: from })
       .sort({ timestamp: -1 })
@@ -299,24 +305,28 @@ app.post("/webhook", async (req, res) => {
       ...(Array.isArray(olderMemories) ? olderMemories.reverse() : [])
     ];
 
+    // Garante que chatHistory seja array de objetos válidos
     const chatHistory = allMemories
-      .map(m => ({ role: m.role, content: m.content || "" }))
-      .filter(m => m.content.trim() !== "");
+      .filter(m => m.content && typeof m.content === "string")
+      .map(m => ({ role: m.role, content: m.content }));
 
     const systemMessage = {
       role: "system",
       content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
     };
 
+    // Monta o prompt de forma segura
     const reply = await askGPT(body, [
       systemMessage,
       { role: "assistant", content: `Memórias relevantes: ${memoriaTexto}` },
-      ...(Array.isArray(chatHistory) ? chatHistory : [])
+      ...chatHistory
     ]);
 
+    // Salva mensagens no histórico
     await saveMemory(from, "user", body);
     await saveMemory(from, "assistant", reply);
 
+    // Envia resposta
     await sendMessage(from, reply);
     res.sendStatus(200);
 
@@ -329,7 +339,7 @@ app.post("/webhook", async (req, res) => {
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
 export { 
-  askGPT,
+  askGPT, 
   getTodayEvents, 
   addEvent, 
   saveMemory, 
