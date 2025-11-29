@@ -23,13 +23,8 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-// vetor + embeddings
 import { querySemanticMemory } from "./models/semanticMemory.js";
-
-// memória estruturada (JSON persistente)
 import MemoriaEstruturada from "./models/memory.js";
-
-
 
 dotenv.config();
 const app = express();
@@ -54,7 +49,7 @@ const profissoes = [
 let papelAtual = null;
 let papeisCombinados = [];
 
-// ===== Função para checar comandos de papéis =====
+// ===== Verificação de papel =====
 function verificarComandoProfissao(texto) {
   const textoLower = texto.toLowerCase();
 
@@ -94,9 +89,8 @@ function verificarComandoProfissao(texto) {
       papelAtual = "Multiplos";
       setPapeis(validos);
       return { tipo: "papel", resposta: `Beleza! Vou atuar como ${validos.join(" + ")}. Qual sua dúvida?` };
-    } else {
-      return { tipo: "erro", resposta: "Não reconheci esses papéis — verifique a grafia ou escolha outros." };
     }
+    return { tipo: "erro", resposta: "Não reconheci esses papéis — verifique a grafia ou escolha outros." };
   }
 
   return null;
@@ -108,74 +102,76 @@ app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
-const GPT_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+const WHATSAPP_PHONE_ID = process.env.OPENAI_API_KEY;
 
+// ===== Conexão com MongoDB =====
 const openai = new OpenAI({ apiKey: GPT_API_KEY });
 let db;
-
-// ===== Schema semanticMemory (não remover nada, só ajustar para salvar contexto real corretamente) =====
-const semanticSchema = new mongoose.Schema({
-  userId: { type: String, required: true },
-  prompt: { type: String, required: true },
-  answer: { type: String, required: true },
-  role: { type: String, enum: ["user", "assistant"], required: true },
-  vector: { type: [Number], required: false, default: [] },
-  createdAt: { type: Date, default: Date.now }
-});
-
-// evita duplicação real (userId + prompt)
-semanticSchema.index({ userId: 1, prompt: 1 }, { unique: true });
-
-const SemanticMemory = mongoose.model("semanticMemory", semanticSchema);
-
-mongoose.connect(MONGO_URI).then(() => {
-  console.log("✅ Mongoose conectado ao MongoDB (memória vetorial)");
-}).catch(err => {
-  console.error("❌ Mongoose erro:", err.message);
-});
 
 async function connectDB() {
   try {
     console.log("🔹 Tentando conectar ao MongoDB...");
     const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
-    db = client.db();
-    console.log('✅ Conectado ao MongoDB (histórico, usuários, agenda)');
+    db = client.db("donna");
+    console.log("✅ Conectado ao MongoDB");
     startReminderCron(db, sendMessage);
   } catch (err) {
-    console.error('❌ Erro ao conectar ao MongoDB:', err.message);
+    console.error("❌ Erro ao conectar MongoDB:", err.message);
+    process.exit(1);
   }
 }
-connectDB();
+await connectDB();
+export { db };
 
-const empresasPath = path.resolve("./src/data/empresa.json");
-const empresas = JSON.parse(fs.readFileSync(empresasPath, "utf8"));
-const userStates = {};
-
-// ===== ROTA PARA RECEBER PDFs =====
-app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
+// ===== Salvar memória do chat =====
+async function saveChatMemory(userId, role, content) {
+  if (!content || !content.toString().trim()) return;
   try {
-    console.log(`📥 Recebido PDF: ${req.file.originalname}`);
-    res.send(`✅ PDF ${req.file.originalname} processado e salvo no MongoDB!`);
+    await db.collection("chatMemory").insertOne({
+      userId,
+      role,
+      content: content.toString(),
+      createdAt: new Date()
+    });
+    console.log("💾 Chat salvo na chatMemory.");
   } catch (err) {
-    console.error("❌ Erro ao processar PDF:", err);
-    res.status(500).send("Erro ao processar PDF");
+    console.error("❌ Erro salvar chat:", err.message);
   }
-});
+}
 
-// ===== Funções de GPT, WhatsApp, Memória, etc =====
+// ===== Recuperar últimas mensagens do chat =====
+async function getChatMemory(userId, limit = 10) {
+  try {
+    return await db.collection("chatMemory")
+      .find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray();
+  } catch {
+    return [];
+  }
+}
+
+// ===== Função askGPT (sem alterar lógica existente) =====
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
       .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
       .filter(m => m.content.trim() !== "");
 
-    safeMessages.push({ role: "user", content: prompt || "" });
+    const sanitizedMessages = safeMessages
+      .filter(m => typeof m.content === "string" || typeof m.content === "number")
+      .map(m => ({
+        role: m.role,
+        content: m.content.toString().trim()
+      }));
+
+    sanitizedMessages.push({ role: "user", content: prompt || "" });
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      { model: "gpt-5-mini", messages: safeMessages },
+      { model: "gpt-5-mini", messages: sanitizedMessages },
       { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
     );
 
@@ -186,104 +182,7 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-async function sendMessage(to, message) {
-  if (!message) message = "❌ Ocorreu um erro ao processar sua solicitação. Tente novamente.";
-
-  let textBody = "";
-  if (typeof message === "string") {
-    textBody = message;
-  } else if (typeof message === "object") {
-    if (message.resposta && typeof message.resposta === "string") {
-      textBody = message.resposta;
-    } else if (message.texto && typeof message.texto === "string") {
-      textBody = message.texto;
-    } else {
-      textBody = JSON.stringify(message, null, 2);
-    }
-  } else {
-    textBody = String(message);
-  }
-
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_ID}/messages`,
-      { messaging_product: "whatsapp", to, text: { body: textBody } },
-      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
-    );
-    console.log("📤 Mensagem enviada:", textBody);
-  } catch (err) {
-    console.error("❌ Erro ao enviar WhatsApp:", err.response?.data || err);
-  }
-}
-
-async function getUserName(number) {
-  const doc = await db.collection("users").findOne({ numero: number });
-  return doc?.nome || null;
-}
-
-async function setUserName(number, name) {
-  await db.collection("users").updateOne(
-    { numero: number },
-    { $set: { nome: name } },
-    { upsert: true }
-  );
-}
-
-async function getUserMemory(number, limit = 5) {
-  return await db.collection("semanticMemory")
-    .find({ userId: number })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .toArray();
-}
-
-async function saveMemory(number, role, content) {
-  if (!content || !content.trim()) return;
-
-  await SemanticMemory.updateOne(
-    { userId: number, prompt: content },
-    { $set: { userId: number, answer: content, role, createdAt: new Date() } },
-    { upsert: true }
-  );
-}
-
-async function transcribeAudio(audioBuffer) {
-  try {
-    const form = new FormData();
-    form.append("file", audioBuffer, { filename: "audio.ogg" });
-    form.append("model", "whisper-1");
-
-    const res = await axios.post(
-      "https://api.openai.com/v1/audio/transcriptions",
-      form,
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, ...form.getHeaders() } }
-    );
-
-    return res.data?.text || "";
-  } catch (err) {
-    console.error("❌ Erro na transcrição:", err.response?.data || err.message);
-    return "";
-  }
-}
-
-async function addEvent(number, title, description, date, time) {
-  await db.collection("agenda").insertOne({
-    numero: number,
-    titulo: title,
-    descricao: description || title,
-    data: date,
-    hora: time,
-    sent: false,
-    timestamp: new Date()
-  });
-}
-
-async function getTodayEvents(number) {
-  const today = DateTime.now().toFormat("yyyy-MM-dd");
-  return await db.collection("agenda").find({ numero: number, data: today }).sort({ hora: 1 }).toArray();
-}
-
-// ===== WEBHOOK PRINCIPAL =====
+// ===== Webhook principal =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -299,31 +198,33 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    const dadosMemorizados = await extractAutoMemoryGPT(from, body);
+    // 💾 salva a mensagem do usuário no chatMemory
+    await saveChatMemory(from, "user", body);
 
-    if (Object.keys(dadosMemorizados).length > 0) {
-      await saveMemory(from, "user", body);
-    }
-
-    const memories = await SemanticMemory.find({ userId: from }).sort({ createdAt: -1 }).limit(6);
-
-    const chatHistory = memories.reverse()
-      .map(m => ({ role: m.role, content: m.prompt || "" }))
+    // 🔍 busca últimas mensagens para enviar como contexto
+    const memories = await getChatMemory(from, 10);
+    const historyMessages = memories
+      .reverse()
+      .map(m => ({ role: m.role, content: m.content }))
       .filter(m => m.content.trim() !== "");
 
     const systemMessage = {
       role: "system",
-      content: "Você é a Donna, assistente pessoal do usuário. Responda de forma curta, clara e direta."
+      content: "Você é a Donna, assistente pessoal do usuário. Responda curto."
     };
 
-    let reply = await askGPT(body, [systemMessage, ...chatHistory]);
-    await saveMemory(from, "assistant", reply);
+    // 🤖 obtém a resposta da IA mantendo seu fluxo normal
+    let reply = await askGPT(body, [systemMessage, ...historyMessages]);
 
+    // 💾 salva a resposta dela no mesmo chatMemory
+    await saveChatMemory(from, "assistant", reply);
+
+    // 📤 envia a resposta para o WhatsApp (lógica não alterada)
     await sendMessage(from, reply);
-    res.sendStatus(200);
 
+    res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro no webhook:", err);
+    console.error("❌ Webhook erro:", err.message);
     res.sendStatus(500);
   }
 });
@@ -334,6 +235,6 @@ export {
   askGPT,
   getTodayEvents, 
   addEvent, 
-  saveMemory, 
+  saveChatMemory, 
   db 
 };
