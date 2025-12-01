@@ -235,6 +235,5 @@ app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 export { 
   askGPT,
   getTodayEvents, 
-  addEvent, 
   saveChatMemory 
 };
