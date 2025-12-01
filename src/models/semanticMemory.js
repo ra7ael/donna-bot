@@ -55,7 +55,7 @@ export async function querySemanticMemory(query, userId, limit = 1) {
                       "$$value",
                       {
                         $multiply: [
-                          { $arrayElemAt: queryVector["$$this"], 0 },
+                           { $arrayElemAt: ["$queryVector", 0] }
                           { $arrayElemAt: ["$vector", "$$this"] }
                         ]
                       }
