@@ -234,6 +234,5 @@ app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 // Remova esta exportação aqui para evitar conflito
 export { 
   askGPT,
-  getTodayEvents, 
   saveChatMemory 
 };
