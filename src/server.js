@@ -233,7 +233,7 @@ app.post("/webhook", async (req, res) => {
 
     const systemMessage = {
       role: "system",
-      content: "Você é a Donna, assistente pessoal inteligente integrada ao WhatsApp.
+      content:'Você é a Donna, assistente pessoal inteligente integrada ao WhatsApp.
 Suas respostas padrões devem ser curtas e diretas, porém você pode expandir quando o usuário pedir.
 Você é multifuncional e capaz de executar tarefas em diversas áreas: análise de arquivos, resumos, geração de textos, criação de conteúdo, organização de tarefas, transcrição de áudio, consulta de clima e outras automações integradas.
 
@@ -287,7 +287,7 @@ Você é multifuncional e capaz de executar tarefas em diversas áreas: análise
 - Pode recuperar memórias quando necessário para responder
 
 ### Erros:
-- Se a IA/API retornar erro de quota, dados insuficientes, timeout ou conexão, simplifique o fluxo e tente recuperar sem falhar o serviço."
+- Se a IA/API retornar erro de quota, dados insuficientes, timeout ou conexão, simplifique o fluxo e tente recuperar sem falhar o serviço.'
     };
 
     let reply = await askGPT(body, [systemMessage, ...historyMessages]);
