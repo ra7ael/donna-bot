@@ -102,11 +102,14 @@ app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_PHONE_ID = process.env.OPENAI_API_KEY;
+const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+
+// Instância OpenAI correta
+const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
 // ===== Conexão com MongoDB =====
-const openai = new OpenAI({ apiKey: GPT_API_KEY });
 let db;
 
 async function connectDB() {
@@ -121,6 +124,7 @@ async function connectDB() {
     process.exit(1);
   }
 }
+
 await connectDB();
 export { db };
 
@@ -153,32 +157,53 @@ async function getChatMemory(userId, limit = 10) {
   }
 }
 
-// ===== Função askGPT (sem alterar lógica existente) =====
+// ===== Função askGPT (mantida e corrigida a chave) =====
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
       .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
       .filter(m => m.content.trim() !== "");
 
-    const sanitizedMessages = safeMessages
-      .filter(m => typeof m.content === "string" || typeof m.content === "number")
-      .map(m => ({
-        role: m.role,
-        content: m.content.toString().trim()
-      }));
+    const sanitizedMessages = safeMessages.map(m => ({
+      role: m.role,
+      content: m.content.toString().trim()
+    }));
 
     sanitizedMessages.push({ role: "user", content: prompt || "" });
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       { model: "gpt-4.1-mini", messages: sanitizedMessages },
-      { headers: { Authorization: `Bearer ${GPT_API_KEY}`, "Content-Type": "application/json" } }
+      { headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" } }
     );
 
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
     console.error("❌ Erro GPT:", err.response?.data || err);
     return "Hmm… ainda estou pensando!";
+  }
+}
+
+// ===== Função de envio WhatsApp =====
+async function sendMessage(to, text) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to,
+        text: { body: text }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    console.log("📤 Mensagem enviada para WhatsApp.");
+  } catch (err) {
+    console.error("❌ Erro enviar WhatsApp:", err.response?.data || err.message);
   }
 }
 
@@ -198,10 +223,8 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // 💾 salva a mensagem do usuário no chatMemory
     await saveChatMemory(from, "user", body);
 
-    // 🔍 busca últimas mensagens para enviar como contexto
     const memories = await getChatMemory(from, 10);
     const historyMessages = memories
       .reverse()
@@ -213,13 +236,9 @@ app.post("/webhook", async (req, res) => {
       content: "Você é a Donna, assistente pessoal do usuário. Responda curto."
     };
 
-    // 🤖 obtém a resposta da IA mantendo seu fluxo normal
     let reply = await askGPT(body, [systemMessage, ...historyMessages]);
 
-    // 💾 salva a resposta dela no mesmo chatMemory
     await saveChatMemory(from, "assistant", reply);
-
-    // 📤 envia a resposta para o WhatsApp (lógica não alterada)
     await sendMessage(from, reply);
 
     res.sendStatus(200);
@@ -231,8 +250,8 @@ app.post("/webhook", async (req, res) => {
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-// Remova esta exportação aqui para evitar conflito
-export { 
+// Export correto das funções principais SEM duplicar
+export {
   askGPT,
-  saveChatMemory 
+  saveChatMemory
 };
