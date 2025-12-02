@@ -173,7 +173,7 @@ async function askGPT(prompt, history = []) {
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      { model: "gpt-4.1-mini", messages: sanitizedMessages },
+      { model: "gpt-5-mini", messages: sanitizedMessages },
       { headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" } }
     );
 
