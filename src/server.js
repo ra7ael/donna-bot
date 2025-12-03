@@ -276,16 +276,6 @@ function identificarPalavrasChave(texto) {
   return palavrasChave;
 }
 
-// Função para identificar palavras-chave no prompt
-function identificarPalavrasChave(texto) {
-  // Regex para pegar palavras com 5 ou mais caracteres
-  const regex = /\b(\w{5,})\b/g;
-  const palavras = texto.match(regex) || [];
-  
-  // Aqui, podemos adicionar uma lógica para filtrar palavras importantes
-  const palavrasChave = palavras.filter(p => p.length > 5);  // Filtra apenas palavras com 5 ou mais letras
-  return palavrasChave;
-}
 
 // ===== Envio WhatsApp com controle de tamanho =====
 function limitarMensagem(msg, limite = 120) {
