@@ -299,36 +299,41 @@ function identificarPalavrasChave(texto) {
 }
 
 
-// ===== Envio WhatsApp com controle de tamanho =====
-function limitarMensagem(msg, limite = 120) {
-  if (!msg) return "";
-  return msg.length > limite ? msg.slice(0, limite) + "…" : msg;
+// Função para dividir a mensagem em partes
+function dividirMensagem(texto, limite = 120) {
+  const partes = [];
+  while (texto.length > limite) {
+    partes.push(texto.slice(0, limite));
+    texto = texto.slice(limite);
+  }
+  partes.push(texto);
+  return partes;
 }
 
+// Função para enviar mensagem via WhatsApp
 async function sendMessage(to, text) {
   try {
-    const conteúdo = text?.toString() || "";
-    const textoFinal = limitarMensagem(conteúdo);
-
-    await axios.post(
-      `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to,
-        text: { body: textoFinal }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
+    const partes = dividirMensagem(text);
+    for (let parte of partes) {
+      await axios.post(
+        `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
+        {
+          messaging_product: "whatsapp",
+          to,
+          text: { body: parte }
         },
-        timeout: 30000
-      }
-    );
-
+        {
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 30000
+        }
+      );
+    }
     console.log("📤 Mensagem enviada para WhatsApp.");
   } catch (err) {
-    console.error("❌ Erro enviar WhatsApp:", JSON.stringify(err.message));
+    console.error("❌ Erro enviar WhatsApp:", err.message);
   }
 }
 
