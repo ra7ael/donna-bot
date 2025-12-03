@@ -23,7 +23,6 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import MemoriaEstruturada from "./models/memory.js";
 
