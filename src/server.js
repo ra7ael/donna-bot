@@ -110,12 +110,17 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
 // ===== Conexão com MongoDB =====
+// ===== Conexão com MongoDB =====
 let db;
 
 async function connectDB() {
   try {
     console.log("🔹 Tentando conectar ao MongoDB...");
-    const client = await MongoClient.connect(MONGO_URI, { useUnifiedTopology: true });
+    const client = await MongoClient.connect(MONGO_URI, {
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 30000, // espera até 30s para achar o servidor
+      socketTimeoutMS: 60000           // espera até 60s por cada operação
+    });
     db = client.db("donna");
     console.log("✅ Conectado ao MongoDB");
     startReminderCron(db, sendMessage);
@@ -124,7 +129,6 @@ async function connectDB() {
     process.exit(1);
   }
 }
-
 await connectDB();
 export { db };
 
