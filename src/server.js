@@ -165,12 +165,28 @@ let chatCache = new Set();
 
 async function saveChatMemory(userId, role, content) {
   if (!content || !content.toString().trim()) return;
+
+  // Gerar chave de cache
   const key = userId + content;
 
-  if (chatCache.has(key)) return;
+  // Verificar se já existe esse conteúdo no cache
+  if (chatCache.has(key)) {
+    console.log("💾 Conteúdo já está no cache, não salvando novamente.");
+    return;
+  }
+
+  // Verificar se o conteúdo já existe no banco de dados
+  const existingMemory = await db.collection("chatMemory").findOne({ userId, content: content.toString() });
+  if (existingMemory) {
+    console.log("💾 Conteúdo já existe no banco de dados, não salvando novamente.");
+    return;
+  }
+
+  // Adicionar ao cache
   chatCache.add(key);
 
   try {
+    // Salvar conteúdo no banco de dados
     await db.collection("chatMemory").insertOne({
       userId,
       role,
@@ -182,6 +198,7 @@ async function saveChatMemory(userId, role, content) {
     console.error("❌ Erro salvar chat:", err.message);
   }
 }
+
 
 // ===== Recuperar memória do usuário =====
 async function getChatMemory(userId, limit = 10) {
