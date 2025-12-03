@@ -241,7 +241,7 @@ async function sendMessage(to, text) {
   }
 }
 
-// ===== Webhook principal com memória semântica =====
+// ===== Webhook principal com memória semântica e extração automática =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -259,14 +259,9 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = "audio: recebido";
     }
 
-    // --- Gatihos padrões ---
+    // --- Gatilhos padrões ---
     // Buscar memórias tradicionais
-    if (
-      body.toLowerCase().includes("memoria") ||
-      body.toLowerCase().includes("o que voce lembra") ||
-      body.toLowerCase().includes("me diga o que tem salvo") ||
-      body.toLowerCase().includes("busque sua memoria")
-    ) {
+    if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
       const items = await getChatMemory(from, 30);
       if (!items.length) {
         await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
@@ -286,62 +281,46 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Salvar nome
-    if (
-      body.toLowerCase().includes("meu nome é") ||
-      body.toLowerCase().includes("eu sou o") ||
-      body.toLowerCase().includes("sou o")
-    ) {
-      const nome = body.replace(/(meu nome é|eu sou o|sou o)/i, "").trim();
-      await saveChatMemory(from, "profile", `nome: ${nome}`);
-      await addSemanticMemory("nome do usuário", nome, from, "user"); // Salva na memória semântica
-      await sendMessage(from, `Prontinho! Vou lembrar de você como ${nome} ✨`);
-      return res.sendStatus(200);
+    // --- Salvar informações pessoais, preferências e ideias ---
+    const patterns = [
+      { regex: /(meu nome é|eu sou o|sou o)/i, label: "nome do usuário" },
+      { regex: /(me chama de|pode me chamar de)/i, label: "apelido do usuário" },
+      { regex: /(ideia:|anote isso|guarda essa)/i, label: "ideia do usuário" },
+      { regex: /(no meu trabalho|cartoes devem estar disponiveis)/i, label: "regra de trabalho" }
+    ];
+
+    for (const p of patterns) {
+      if (p.regex.test(body)) {
+        const valor = body.replace(p.regex, "").trim();
+        await saveChatMemory(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${valor}`);
+        await addSemanticMemory(p.label, valor, from, "user");
+        await sendMessage(from, p.label.includes("ideia") ? `Salvei sua ideia 💡` : `Prontinho! Vou lembrar de você como ${valor} ✨`);
+        return res.sendStatus(200);
+      }
     }
 
-    // Salvar preferências
-    if (body.toLowerCase().includes("me chama de") || body.toLowerCase().includes("pode me chamar de")) {
-      const apelido = body.replace(/(me chama de|pode me chamar de)/i, "").trim();
-      await saveChatMemory(from, "preferences", `apelido: ${apelido}`);
-      await addSemanticMemory("apelido do usuário", apelido, from, "user"); // Memória semântica
-      await sendMessage(from, `Beleza! Vou usar ${apelido} pra falar com você 😎`);
-      return res.sendStatus(200);
-    }
-
-    // Guardar ideias
-    if (body.toLowerCase().includes("ideia:") || body.toLowerCase().includes("anote isso") || body.toLowerCase().includes("guarda essa")) {
-      const nota = body.replace(/(ideia:|anote isso|guarda essa)/i, "").trim();
-      await saveChatMemory(from, "notes", `anotacao: ${nota}`);
-      await addSemanticMemory("ideia do usuário", nota, from, "user"); // Memória semântica
-      await sendMessage(from, `Salvei sua ideia 💡`);
-      return res.sendStatus(200);
-    }
-
-    // Regras de trabalho
-    if (body.toLowerCase().includes("no meu trabalho") || body.toLowerCase().includes("cartoes devem estar disponiveis")) {
-      await saveChatMemory(from, "work_rules", `regra: ${body}`);
-      await addSemanticMemory("regra de trabalho", body, from, "user"); // Memória semântica
-      await sendMessage(from, "Regra do seu trabalho salva ✔️");
-      return res.sendStatus(200);
+    // --- Extração automática de dados estruturados ---
+    const extractedData = await extractAutoMemoryGPT(from, body);
+    for (const [categoria, dados] of Object.entries(extractedData)) {
+      if (!dados) continue;
+      await addSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user");
     }
 
     // --- Salvar chat geral ---
     await saveChatMemory(from, "user", body);
-    await addSemanticMemory("chat geral", body, from, "user"); // Memória semântica
+    await addSemanticMemory("chat geral", body, from, "user");
 
     // --- Buscar memória semântica relacionada ---
     const semanticResults = await querySemanticMemory(body, from, 3);
     let reply;
     if (semanticResults && semanticResults.length) {
-      // Se houver contexto semântico, usar ele como base
       reply = await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`);
     } else {
-      // Caso contrário, apenas responder normalmente
       reply = await askGPT(body);
     }
 
     await saveChatMemory(from, "assistant", reply);
-    await addSemanticMemory("resposta GPT", reply, from, "assistant"); // Memória semântica
+    await addSemanticMemory("resposta GPT", reply, from, "assistant");
     await sendMessage(from, reply);
 
     return res.sendStatus(200);
