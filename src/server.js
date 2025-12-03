@@ -26,6 +26,8 @@ import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import MemoriaEstruturada from "./models/memory.js";
 
+mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
+
 dotenv.config();
 const app = express();
 app.use(bodyParser.json());
