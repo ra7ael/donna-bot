@@ -31,10 +31,6 @@ const app = express();
 app.use(bodyParser.json());
 const uploadMulter = multer({ dest: "uploads/" });
 
-// ⏳ Ajuste de timeout interno do Mongoose (evita buffering infinito)
-mongoose.set('timeout', 30000);
-mongoose.set('bufferTimeoutMS', 30000);
-
 // ===== Papéis Profissionais =====
 const profissoes = [
   "Enfermeira Obstetra","Médica", "Nutricionista", "Personal Trainer", "Psicóloga", "Coach de Produtividade",
@@ -282,7 +278,7 @@ async function sendMessage(to, text) {
 // importar fila mantido
 import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
 
-// ===== Webhook mantido com JSON.stringify no campo problemático =====
+// ===== Webhook mantido with JSON.stringify on problematic fields =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
