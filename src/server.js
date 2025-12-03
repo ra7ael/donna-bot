@@ -239,15 +239,15 @@ async function askGPT(prompt, history = []) {
     sanitizedMessages.unshift({ role: "system", content: contextoHorario });
     sanitizedMessages.push({ role: "user", content: prompt || "" });
 
-    // Adiciona a mensagem do usuário
-    sanitizedMessages.push({ role: "user", content: prompt || "" });
-
     // Identificar palavras-chave no prompt
     const palavrasChave = identificarPalavrasChave(prompt);
 
+    // Evitar duplicação: filtra palavras-chave já salvas
+    const palavrasChaveUnicas = [...new Set(palavrasChave)];
+
     // Se encontrar palavras-chave, salvar elas como memória semântica
-    if (palavrasChave.length > 0) {
-      for (let palavra of palavrasChave) {
+    if (palavrasChaveUnicas.length > 0) {
+      for (let palavra of palavrasChaveUnicas) {
         await enqueueSemanticMemory("palavras-chave", palavra, "user", "user");
       }
     }
@@ -263,6 +263,17 @@ async function askGPT(prompt, history = []) {
     console.error("❌ Erro GPT:", JSON.stringify(err.message));
     return "Hmm… ainda estou pensando!";
   }
+}
+
+// Função para identificar palavras-chave no prompt
+function identificarPalavrasChave(texto) {
+  // Regex para pegar palavras com 3 ou mais caracteres
+  const regex = /\b(\w{3,})\b/g;
+  const palavras = texto.match(regex) || [];
+  
+  // Aqui, podemos adicionar uma lógica para filtrar palavras importantes
+  const palavrasChave = palavras.filter(p => p.length > 3);  // Filtra apenas palavras com 3 ou mais letras
+  return palavrasChave;
 }
 
 // Função para identificar palavras-chave no prompt
