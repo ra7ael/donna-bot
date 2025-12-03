@@ -118,30 +118,44 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 let db;
 
 async function connectDB() {
-  try {
-    console.log("🔹 Tentando conectar ao MongoDB...");
-    const client = await MongoClient.connect(MONGO_URI, {
-      useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 30000,
-      socketTimeoutMS: 60000
-    });
+  let tentativas = 5;
 
-    db = client.db("donna");
-    console.log("✅ Conectado ao MongoDB");
+  while (tentativas > 0) {
+    try {
+      console.log("🔹 Tentando conectar ao MongoDB...");
+      const client = await MongoClient.connect(MONGO_URI, {
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 60000, // ⬆️ aumentei
+        socketTimeoutMS: 90000           // ⬆️ aumentei
+      });
 
-    // só inicia Mongoose após MongoClient conectar
-    await mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 30000,
-      connectTimeoutMS: 30000,
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10
-    });
+      db = client.db("donna");
+      console.log("✅ Conectado ao MongoDB ✅");
 
-    console.log("✅ Mongoose conectado com sucesso!");
-    startReminderCron(db, sendMessage);
-  } catch (err) {
-    console.error("❌ Erro ao conectar MongoDB:", err.message);
-    process.exit(1);
+      await mongoose.connect(MONGO_URI, {
+        serverSelectionTimeoutMS: 60000, // ⬆️ aumentei
+        connectTimeoutMS: 60000,         // ⬆️ aumentei
+        socketTimeoutMS: 90000,          // ⬆️ aumentei
+        maxPoolSize: 10
+      });
+
+      console.log("✅ Mongoose conectado com sucesso ✅");
+      startReminderCron(db, sendMessage);
+      break; // se conectar, sai do loop
+
+    } catch (err) {
+      tentativas--;
+      console.error(`❌ Falha ao conectar. Tentativas restantes: ${tentativas}`);
+      console.error(err.message);
+
+      if (tentativas === 0) {
+        console.error("❌ Não foi possível conectar ao banco. Encerrando...");
+        process.exit(1);
+      }
+
+      // aguarda 5s antes de tentar de novo
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
   }
 }
 
