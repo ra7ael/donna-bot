@@ -250,15 +250,23 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// ===== Envio WhatsApp mantido =====
+// ===== Envio WhatsApp com controle de tamanho =====
+function limitarMensagem(msg, limite = 300) {
+  if (!msg) return "";
+  return msg.length > limite ? msg.slice(0, limite) + "…" : msg;
+}
+
 async function sendMessage(to, text) {
   try {
+    const conteúdo = text?.toString() || "";
+    const textoFinal = limitarMensagem(conteúdo);
+
     await axios.post(
       `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
       {
         messaging_product: "whatsapp",
         to,
-        text: { body: JSON.stringify(text) ? text : text.toString() } // cast seguro só se precisar
+        text: { body: textoFinal }
       },
       {
         headers: {
@@ -274,6 +282,7 @@ async function sendMessage(to, text) {
     console.error("❌ Erro enviar WhatsApp:", JSON.stringify(err.message));
   }
 }
+
 
 // importar fila mantido
 import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
