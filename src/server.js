@@ -23,7 +23,7 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { querySemanticMemory } from "./models/semanticMemory.js";
+import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import MemoriaEstruturada from "./models/memory.js";
 
 dotenv.config();
@@ -241,7 +241,7 @@ async function sendMessage(to, text) {
   }
 }
 
-// ===== Webhook principal com busca e leitura de memória =====
+// ===== Webhook principal com memória semântica =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -250,18 +250,17 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj.from;
     let body = "";
 
-    // 1. Capturar texto
-    if (messageObj.type === "text") {
-      body = messageObj.text?.body || "";
-    }
+    // Capturar texto
+    if (messageObj.type === "text") body = messageObj.text?.body || "";
 
-    // 2. Capturar áudio antes dos gatilhos
+    // Capturar áudio
     if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = "audio: recebido";
     }
 
-    // 3. Gatilho para buscar memória (1x só)
+    // --- Gatihos padrões ---
+    // Buscar memórias tradicionais
     if (
       body.toLowerCase().includes("memoria") ||
       body.toLowerCase().includes("o que voce lembra") ||
@@ -278,16 +277,16 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // 4. Gatilho para buscar nome salvo
+    // Buscar nome salvo
     if (body.toLowerCase().includes("qual é meu nome")) {
       const items = await getChatMemory(from, 20);
-      const nomeItem = items.find(m => m.content.toLowerCase().startsWith("nome:") || m.content.toLowerCase().includes("nome:"));
+      const nomeItem = items.find(m => m.content.toLowerCase().startsWith("nome:"));
       const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
       await sendMessage(from, nome ? `Seu nome salvo é: ${nome} 😊` : "Você ainda não tem nome salvo.");
       return res.sendStatus(200);
     }
 
-    // 5. Salvar nome se o usuário disser
+    // Salvar nome
     if (
       body.toLowerCase().includes("meu nome é") ||
       body.toLowerCase().includes("eu sou o") ||
@@ -295,44 +294,54 @@ app.post("/webhook", async (req, res) => {
     ) {
       const nome = body.replace(/(meu nome é|eu sou o|sou o)/i, "").trim();
       await saveChatMemory(from, "profile", `nome: ${nome}`);
+      await addSemanticMemory("nome do usuário", nome, from, "user"); // Salva na memória semântica
       await sendMessage(from, `Prontinho! Vou lembrar de você como ${nome} ✨`);
       return res.sendStatus(200);
     }
 
-    // 6. Salvar preferências se ele disser
+    // Salvar preferências
     if (body.toLowerCase().includes("me chama de") || body.toLowerCase().includes("pode me chamar de")) {
       const apelido = body.replace(/(me chama de|pode me chamar de)/i, "").trim();
       await saveChatMemory(from, "preferences", `apelido: ${apelido}`);
+      await addSemanticMemory("apelido do usuário", apelido, from, "user"); // Memória semântica
       await sendMessage(from, `Beleza! Vou usar ${apelido} pra falar com você 😎`);
       return res.sendStatus(200);
     }
 
-    // 7. Guardar ideias
+    // Guardar ideias
     if (body.toLowerCase().includes("ideia:") || body.toLowerCase().includes("anote isso") || body.toLowerCase().includes("guarda essa")) {
       const nota = body.replace(/(ideia:|anote isso|guarda essa)/i, "").trim();
       await saveChatMemory(from, "notes", `anotacao: ${nota}`);
+      await addSemanticMemory("ideia do usuário", nota, from, "user"); // Memória semântica
       await sendMessage(from, `Salvei sua ideia 💡`);
       return res.sendStatus(200);
     }
 
-    // 8. Guardar regras do seu RH
+    // Regras de trabalho
     if (body.toLowerCase().includes("no meu trabalho") || body.toLowerCase().includes("cartoes devem estar disponiveis")) {
       await saveChatMemory(from, "work_rules", `regra: ${body}`);
+      await addSemanticMemory("regra de trabalho", body, from, "user"); // Memória semântica
       await sendMessage(from, "Regra do seu trabalho salva ✔️");
       return res.sendStatus(200);
     }
 
-    // 9. Finalmente, salvar o chat e interagir com GPT
+    // --- Salvar chat geral ---
     await saveChatMemory(from, "user", body);
+    await addSemanticMemory("chat geral", body, from, "user"); // Memória semântica
 
-    const memories = await getChatMemory(from, 10);
-    const historyMessages = memories
-      .reverse()
-      .map(m => ({ role: "assistant", content: m.content }));
-
-    let reply = await askGPT(body, historyMessages);
+    // --- Buscar memória semântica relacionada ---
+    const semanticResults = await querySemanticMemory(body, from, 3);
+    let reply;
+    if (semanticResults && semanticResults.length) {
+      // Se houver contexto semântico, usar ele como base
+      reply = await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`);
+    } else {
+      // Caso contrário, apenas responder normalmente
+      reply = await askGPT(body);
+    }
 
     await saveChatMemory(from, "assistant", reply);
+    await addSemanticMemory("resposta GPT", reply, from, "assistant"); // Memória semântica
     await sendMessage(from, reply);
 
     return res.sendStatus(200);
@@ -343,4 +352,4 @@ app.post("/webhook", async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
-export { askGPT, saveChatMemory };
+export { askGPT, saveChatMemory, addSemanticMemory, querySemanticMemory };
