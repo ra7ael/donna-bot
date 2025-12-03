@@ -20,10 +20,11 @@ const SemanticMemory = mongoose.model("SemanticMemory", semanticSchema);
 export async function addSemanticMemory(prompt, answer, userId, role) {
   try {
     const vector = await embedding(`${prompt} ${answer}`);
+    const resposta = typeof answer === "string" ? answer : JSON.stringify(answer);
 
     await SemanticMemory.findOneAndUpdate(
       { userId, prompt },
-      { userId, prompt, answer, role, vector },
+      { userId, prompt, answer: resposta, role, vector },
       { upsert: true, new: true }
     );
 
@@ -41,51 +42,65 @@ export async function querySemanticMemory(query, userId, limit = 1) {
     const results = await SemanticMemory.aggregate([
       { $match: { userId } },
 
-      // Calcula similaridade do vetor da query com o vetor salvo
+      // Injeta o vetor da query no pipeline para cálculos
       {
         $addFields: {
-          similarity: {
-            $divide: [
-              {
-                $reduce: {
-                  input: { $range: [0, { $size: "$vector" }] },
-                  initialValue: 0,
-                  in: {
-                    $add: [
-                      "$$value",
-                      {
-                        $multiply: [
-                          { $arrayElemAt: ["$queryVector", 0] },
-                          { $arrayElemAt: ["$vector", 0] }
-                        ]
-                      }
+          queryVector: queryVector
+        }
+      },
+
+      // Calcula similaridade (cosine similarity correta)
+      {
+        $addFields: {
+          dotProduct: {
+            $reduce: {
+              input: { $range: [0, { $size: "$vector" }] },
+              initialValue: 0,
+              in: {
+                $add: [
+                  "$$value",
+                  {
+                    $multiply: [
+                      { $arrayElemAt: ["$queryVector", "$$this"] },
+                      { $arrayElemAt: ["$vector", "$$this"] }
                     ]
-                  }
-                }
-              },
-              {
-                $multiply: [
-                  {
-                    $sqrt: {
-                      $reduce: {
-                        input: "$vector",
-                        initialValue: 0,
-                        in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
-                      }
-                    }
-                  },
-                  {
-                    $sqrt: {
-                      $reduce: {
-                        input: queryVector,
-                        initialValue: 0,
-                        in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
-                      }
-                    }
                   }
                 ]
               }
-            ]
+            }
+          },
+
+          magnitudeQuery: {
+            $sqrt: {
+              $reduce: {
+                input: "$queryVector",
+                initialValue: 0,
+                in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
+              }
+            }
+          },
+
+          magnitudeDoc: {
+            $sqrt: {
+              $reduce: {
+                input: "$vector",
+                initialValue: 0,
+                in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
+              }
+            }
+          }
+        }
+      },
+
+      // Similaridade final = dotProduct / (|A| * |B|)
+      {
+        $addFields: {
+          similarity: {
+            $cond: {
+              if: { $eq: [{ $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }, 0] },
+              then: 0,
+              else: { $divide: ["$dotProduct", { $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }] }
+            }
           }
         }
       },
@@ -93,17 +108,25 @@ export async function querySemanticMemory(query, userId, limit = 1) {
       { $sort: { similarity: -1, createdAt: -1 } },
       { $limit: limit },
 
-      { $project: { answer: 1, similarity: 1, _id: 0 } }
-    ]);
+      // Garante que answer é string
+      {
+        $project: {
+          answer: {
+            $toString: "$answer"
+          },
+          similarity: 1,
+          _id: 0
+        }
+      }
+    ]).option({ maxTimeMS: 60000 }); // ⏳ Timeout de 60s adicionado na aggregate
 
     if (!results.length) return null;
-
     return results.map(r => r.answer);
+
   } catch (err) {
     console.error("❌ Erro ao buscar memória semântica:", err.message);
     return null;
   }
 }
-
 
 export default SemanticMemory;
