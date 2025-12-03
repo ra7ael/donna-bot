@@ -29,7 +29,11 @@ import MemoriaEstruturada from "./models/memory.js";
 dotenv.config();
 const app = express();
 app.use(bodyParser.json());
-const upload = multer({ dest: "uploads/" });
+const uploadMulter = multer({ dest: "uploads/" });
+
+// ⏳ Ajuste de timeout interno do Mongoose (evita buffering infinito)
+mongoose.set('timeout', 30000);
+mongoose.set('bufferTimeoutMS', 30000);
 
 // ===== Papéis Profissionais =====
 const profissoes = [
@@ -103,13 +107,13 @@ app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-const openai = new OpenAI({ apiKey: OPENAI_KEY });
+// ⚡ openai instanciado com a variável correta
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// ===== Conexão com MongoDB =====
 // ===== Conexão com MongoDB =====
 let db;
 
@@ -118,25 +122,39 @@ async function connectDB() {
     console.log("🔹 Tentando conectar ao MongoDB...");
     const client = await MongoClient.connect(MONGO_URI, {
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 30000, // espera até 30s para achar o servidor
-      socketTimeoutMS: 60000           // espera até 60s por cada operação
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 60000
     });
+
     db = client.db("donna");
     console.log("✅ Conectado ao MongoDB");
+
+    // só inicia Mongoose após MongoClient conectar
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10
+    });
+
+    console.log("✅ Mongoose conectado com sucesso!");
     startReminderCron(db, sendMessage);
   } catch (err) {
     console.error("❌ Erro ao conectar MongoDB:", err.message);
     process.exit(1);
   }
 }
+
 await connectDB();
 export { db };
 
-// ===== Salvar memória do chat (AGORA SALVA 1x SÓ) =====
+// ===== Salvar memória do chat (cache evita duplicação) =====
 let chatCache = new Set();
+
 async function saveChatMemory(userId, role, content) {
   if (!content || !content.toString().trim()) return;
   const key = userId + content;
+
   if (chatCache.has(key)) return;
   chatCache.add(key);
 
@@ -166,7 +184,7 @@ async function getChatMemory(userId, limit = 10) {
   }
 }
 
-// ✅ FUNÇÃO ACRESCENTADA SEM ALTERAR O RESTO DO CÓDIGO
+// FUNÇÃO de busca mantida
 async function buscarMemoria(userId) {
   const items = await getChatMemory(userId, 20);
   if (!items.length) return null;
@@ -177,7 +195,7 @@ async function buscarMemoria(userId) {
   }));
 }
 
-// 📌 Endpoint de memória mantido
+// ===== Endpoint de memória mantido =====
 app.get("/memoria/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -189,11 +207,11 @@ app.get("/memoria/:userId", async (req, res) => {
 
     res.json(memories.map(m => m.content));
   } catch (err) {
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: JSON.stringify(err.message) });
   }
 });
 
-// ===== Função askGPT corrigida =====
+// ===== Função askGPT mantida e com cast seguro =====
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
@@ -212,17 +230,17 @@ async function askGPT(prompt, history = []) {
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       { model: "gpt-5-mini", messages: sanitizedMessages },
-      { headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" } }
+      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" }, timeout: 30000 }
     );
 
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
   } catch (err) {
-    console.error("❌ Erro GPT:", err.response?.data || err);
+    console.error("❌ Erro GPT:", JSON.stringify(err.message));
     return "Hmm… ainda estou pensando!";
   }
 }
 
-// ===== Função de envio WhatsApp mantida =====
+// ===== Envio WhatsApp mantido =====
 async function sendMessage(to, text) {
   try {
     await axios.post(
@@ -230,24 +248,27 @@ async function sendMessage(to, text) {
       {
         messaging_product: "whatsapp",
         to,
-        text: { body: text }
+        text: { body: JSON.stringify(text) ? text : text.toString() } // cast seguro só se precisar
       },
       {
         headers: {
           Authorization: `Bearer ${WHATSAPP_TOKEN}`,
           "Content-Type": "application/json"
-        }
+        },
+        timeout: 30000
       }
     );
+
     console.log("📤 Mensagem enviada para WhatsApp.");
   } catch (err) {
-    console.error("❌ Erro enviar WhatsApp:", err.response?.data || err.message);
+    console.error("❌ Erro enviar WhatsApp:", JSON.stringify(err.message));
   }
 }
 
+// importar fila mantido
 import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
 
-// ===== Webhook principal com memória semântica e extração automática =====
+// ===== Webhook mantido com JSON.stringify no campo problemático =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -256,16 +277,13 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj.from;
     let body = "";
 
-    // Capturar texto
     if (messageObj.type === "text") body = messageObj.text?.body || "";
 
-    // Capturar áudio
     if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = "audio: recebido";
     }
 
-    // --- Gatilhos padrões ---
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
       const items = await getChatMemory(from, 30);
       if (!items.length) {
@@ -277,16 +295,14 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Buscar nome salvo
     if (body.toLowerCase().includes("qual é meu nome")) {
       const items = await getChatMemory(from, 20);
       const nomeItem = items.find(m => m.content.toLowerCase().startsWith("nome:"));
       const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
-      await sendMessage(from, nome ? `Seu nome salvo é: ${nome} 😊` : "Você ainda não tem nome salvo.");
+      await sendMessage(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
       return res.sendStatus(200);
     }
 
-    // --- Salvar informações pessoais, preferências e ideias ---
     const patterns = [
       { regex: /(meu nome é|eu sou o|sou o)/i, label: "nome do usuário" },
       { regex: /(me chama de|pode me chamar de)/i, label: "apelido do usuário" },
@@ -297,25 +313,23 @@ app.post("/webhook", async (req, res) => {
     for (const p of patterns) {
       if (p.regex.test(body)) {
         const valor = body.replace(p.regex, "").trim();
-        await saveChatMemory(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${valor}`);
-        enqueueSemanticMemory(p.label, valor, from, "user"); // ⚡ Usa fila em vez de salvar direto
-        await sendMessage(from, p.label.includes("ideia") ? `Salvei sua ideia 💡` : `Prontinho! Vou lembrar de você como ${valor} ✨`);
+        await saveChatMemory(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${JSON.stringify(valor)}`);
+        enqueueSemanticMemory(p.label, valor, from, "user");
+        await sendMessage(from, p.label.includes("ideia") ? `Salvei sua ideia 💡` : `Prontinho! Vou lembrar de você como ${JSON.stringify(valor)} ✨`);
         return res.sendStatus(200);
       }
     }
 
-    // --- Extração automática de dados estruturados ---
     const extractedData = await extractAutoMemoryGPT(from, body);
     for (const [categoria, dados] of Object.entries(extractedData)) {
       if (!dados) continue;
-      enqueueSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user"); // ⚡ fila
+      enqueueSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user");
     }
 
-    // --- Salvar chat geral ---
-    await saveChatMemory(from, "user", body);
-    enqueueSemanticMemory("chat geral", body, from, "user"); // ⚡ fila
+    await saveChatMemory(from, "user", JSON.stringify(body));
 
-    // --- Buscar memória semântica relacionada ---
+    enqueueSemanticMemory("chat geral", body, from, "user");
+
     const semanticResults = await querySemanticMemory(body, from, 3);
     let reply;
     if (semanticResults && semanticResults.length) {
@@ -324,16 +338,18 @@ app.post("/webhook", async (req, res) => {
       reply = await askGPT(body);
     }
 
-    await saveChatMemory(from, "assistant", reply);
-    enqueueSemanticMemory("resposta GPT", reply, from, "assistant"); // ⚡ fila
+    await saveChatMemory(from, "assistant", JSON.stringify(reply));
+    enqueueSemanticMemory("resposta GPT", reply, from, "assistant");
     await sendMessage(from, reply);
 
     return res.sendStatus(200);
+
   } catch (err) {
-    console.error("❌ Webhook erro:", err.message);
+    console.error("❌ Webhook erro:", JSON.stringify(err.message));
     return res.sendStatus(500);
   }
 });
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
+
 export { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
