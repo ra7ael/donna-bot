@@ -6,7 +6,15 @@ let processing = false;
 
 // Adiciona item na fila
 export function enqueueSemanticMemory(prompt, answer, userId, role) {
-  queue.push({ prompt, answer, userId, role });
+  // 🔹 Força tudo virar string antes de ir pra fila
+  const item = { 
+    prompt: prompt.toString(),
+    answer: typeof answer === "string" ? answer : JSON.stringify(answer),
+    userId: userId.toString(),
+    role: role.toString()
+  };
+
+  queue.push(item);
   processQueue();
 }
 
