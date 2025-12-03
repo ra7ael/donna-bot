@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
-import { downloadMedia } from './utils/downloadMedia.js";
+import { downloadMedia } from './utils/downloadMedia.js';
 import cron from "node-cron";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
