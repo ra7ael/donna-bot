@@ -239,6 +239,19 @@ async function askGPT(prompt, history = []) {
     sanitizedMessages.unshift({ role: "system", content: contextoHorario });
     sanitizedMessages.push({ role: "user", content: prompt || "" });
 
+    // Adiciona a mensagem do usuário
+    sanitizedMessages.push({ role: "user", content: prompt || "" });
+
+    // Identificar palavras-chave no prompt
+    const palavrasChave = identificarPalavrasChave(prompt);
+
+    // Se encontrar palavras-chave, salvar elas como memória semântica
+    if (palavrasChave.length > 0) {
+      for (let palavra of palavrasChave) {
+        await enqueueSemanticMemory("palavras-chave", palavra, "user", "user");
+      }
+    }
+
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       { model: "gpt-5-mini", messages: sanitizedMessages },
@@ -252,8 +265,19 @@ async function askGPT(prompt, history = []) {
   }
 }
 
+// Função para identificar palavras-chave no prompt
+function identificarPalavrasChave(texto) {
+  // Regex para pegar palavras com 5 ou mais caracteres
+  const regex = /\b(\w{5,})\b/g;
+  const palavras = texto.match(regex) || [];
+  
+  // Aqui, podemos adicionar uma lógica para filtrar palavras importantes
+  const palavrasChave = palavras.filter(p => p.length > 5);  // Filtra apenas palavras com 5 ou mais letras
+  return palavrasChave;
+}
+
 // ===== Envio WhatsApp com controle de tamanho =====
-function limitarMensagem(msg, limite = 300) {
+function limitarMensagem(msg, limite = 120) {
   if (!msg) return "";
   return msg.length > limite ? msg.slice(0, limite) + "…" : msg;
 }
