@@ -23,6 +23,7 @@ import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
+import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import MemoriaEstruturada from "./models/memory.js";
 
@@ -241,6 +242,8 @@ async function sendMessage(to, text) {
   }
 }
 
+import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
+
 // ===== Webhook principal com memória semântica e extração automática =====
 app.post("/webhook", async (req, res) => {
   try {
@@ -260,7 +263,6 @@ app.post("/webhook", async (req, res) => {
     }
 
     // --- Gatilhos padrões ---
-    // Buscar memórias tradicionais
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
       const items = await getChatMemory(from, 30);
       if (!items.length) {
@@ -293,7 +295,7 @@ app.post("/webhook", async (req, res) => {
       if (p.regex.test(body)) {
         const valor = body.replace(p.regex, "").trim();
         await saveChatMemory(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${valor}`);
-        await addSemanticMemory(p.label, valor, from, "user");
+        enqueueSemanticMemory(p.label, valor, from, "user"); // ⚡ Usa fila em vez de salvar direto
         await sendMessage(from, p.label.includes("ideia") ? `Salvei sua ideia 💡` : `Prontinho! Vou lembrar de você como ${valor} ✨`);
         return res.sendStatus(200);
       }
@@ -303,12 +305,12 @@ app.post("/webhook", async (req, res) => {
     const extractedData = await extractAutoMemoryGPT(from, body);
     for (const [categoria, dados] of Object.entries(extractedData)) {
       if (!dados) continue;
-      await addSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user");
+      enqueueSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user"); // ⚡ fila
     }
 
     // --- Salvar chat geral ---
     await saveChatMemory(from, "user", body);
-    await addSemanticMemory("chat geral", body, from, "user");
+    enqueueSemanticMemory("chat geral", body, from, "user"); // ⚡ fila
 
     // --- Buscar memória semântica relacionada ---
     const semanticResults = await querySemanticMemory(body, from, 3);
@@ -320,7 +322,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     await saveChatMemory(from, "assistant", reply);
-    await addSemanticMemory("resposta GPT", reply, from, "assistant");
+    enqueueSemanticMemory("resposta GPT", reply, from, "assistant"); // ⚡ fila
     await sendMessage(from, reply);
 
     return res.sendStatus(200);
@@ -331,4 +333,4 @@ app.post("/webhook", async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
-export { askGPT, saveChatMemory, addSemanticMemory, querySemanticMemory };
+export { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
