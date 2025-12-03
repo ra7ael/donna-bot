@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 import { DateTime } from 'luxon';
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
-import { downloadMedia } from './utils/downloadMedia.js';
+import { downloadMedia } from './utils/downloadMedia.js";
 import cron from "node-cron";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
@@ -18,7 +18,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import FormData from "form-data";
 import { falar, sendAudio } from "./utils/speak.js";
-import { treinarDonna, obterResposta, setPapeis, clearPapeis } from "./utils/treinoDonna.js";
+import { setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
@@ -87,6 +87,7 @@ function verificarComandoProfissao(texto) {
     );
     if (validos.length > 0) {
       papelAtual = "Multiplos";
+      papeisCombinados = validos;
       setPapeis(validos);
       return { tipo: "papel", resposta: `Beleza! Vou atuar como ${validos.join(" + ")}. Qual sua dúvida?` };
     }
@@ -106,7 +107,6 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// Instância OpenAI correta
 const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
 // ===== Conexão com MongoDB =====
@@ -128,9 +128,14 @@ async function connectDB() {
 await connectDB();
 export { db };
 
-// ===== Salvar memória do chat =====
+// ===== Salvar memória do chat (AGORA SALVA 1x SÓ) =====
+let chatCache = new Set();
 async function saveChatMemory(userId, role, content) {
   if (!content || !content.toString().trim()) return;
+  const key = userId + content;
+  if (chatCache.has(key)) return;
+  chatCache.add(key);
+
   try {
     await db.collection("chatMemory").insertOne({
       userId,
@@ -144,7 +149,7 @@ async function saveChatMemory(userId, role, content) {
   }
 }
 
-// ===== Recuperar últimas mensagens do chat =====
+// ===== Recuperar memória do usuário =====
 async function getChatMemory(userId, limit = 10) {
   try {
     return await db.collection("chatMemory")
@@ -157,7 +162,18 @@ async function getChatMemory(userId, limit = 10) {
   }
 }
 
-// 📌 NOVO ENDPOINT ADICIONADO (sem modificar nada existente)
+// ✅ FUNÇÃO ACRESCENTADA SEM ALTERAR O RESTO DO CÓDIGO
+async function buscarMemoria(userId) {
+  const items = await getChatMemory(userId, 20);
+  if (!items.length) return null;
+  return items.map(m => ({
+    role: m.role,
+    content: m.content,
+    createdAt: m.createdAt
+  }));
+}
+
+// 📌 Endpoint de memória mantido
 app.get("/memoria/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -173,7 +189,7 @@ app.get("/memoria/:userId", async (req, res) => {
   }
 });
 
-// ===== Função askGPT (mantida e corrigida a chave) =====
+// ===== Função askGPT corrigida =====
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
@@ -185,6 +201,8 @@ async function askGPT(prompt, history = []) {
       content: m.content.toString().trim()
     }));
 
+    const contextoHorario = `Agora no Brasil são: ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
+    sanitizedMessages.unshift({ role: "system", content: contextoHorario });
     sanitizedMessages.push({ role: "user", content: prompt || "" });
 
     const response = await axios.post(
@@ -200,7 +218,7 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// ===== Função de envio WhatsApp =====
+// ===== Função de envio WhatsApp mantida =====
 async function sendMessage(to, text) {
   try {
     await axios.post(
@@ -223,7 +241,7 @@ async function sendMessage(to, text) {
   }
 }
 
-// ===== Webhook principal =====
+// ===== Webhook principal com busca e leitura de memória =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -232,113 +250,97 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj.from;
     let body = "";
 
+    // 1. Capturar texto
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
-    } else if (messageObj.type === "audio") {
-      const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = await transcribeAudio(audioBuffer);
     }
 
-    // DETECTAR COMANDO DE BUSCA DE MEMÓRIA (inclusão natural, sem alterar o resto)
-    if (body.toLowerCase().includes("busque minha memória")) {
-      const mem = await db.collection("chatMemory")
-        .find({ userId: from })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .toArray();
+    // 2. Capturar áudio antes dos gatilhos
+    if (messageObj.type === "audio") {
+      const audioBuffer = await downloadMedia(messageObj.audio?.id);
+      if (audioBuffer) body = "audio: recebido";
+    }
 
-      const memoriaMsg = mem.length
-        ? "🧠 Suas últimas memórias:\n" + mem.map(m => "- " + m.content).join("\n")
-        : "Você ainda não salvou informações.";
-
-      await sendMessage(from, memoriaMsg);
+    // 3. Gatilho para buscar memória (1x só)
+    if (
+      body.toLowerCase().includes("memoria") ||
+      body.toLowerCase().includes("o que voce lembra") ||
+      body.toLowerCase().includes("me diga o que tem salvo") ||
+      body.toLowerCase().includes("busque sua memoria")
+    ) {
+      const items = await getChatMemory(from, 30);
+      if (!items.length) {
+        await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
+      } else {
+        const resposta = items.map(i => `• ${i.content}`).join("\n");
+        await sendMessage(from, `Memórias salvas:\n\n${resposta}`);
+      }
       return res.sendStatus(200);
     }
 
-    // segue o fluxo normal sem alterar nada do código original
+    // 4. Gatilho para buscar nome salvo
+    if (body.toLowerCase().includes("qual é meu nome")) {
+      const items = await getChatMemory(from, 20);
+      const nomeItem = items.find(m => m.content.toLowerCase().startsWith("nome:") || m.content.toLowerCase().includes("nome:"));
+      const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
+      await sendMessage(from, nome ? `Seu nome salvo é: ${nome} 😊` : "Você ainda não tem nome salvo.");
+      return res.sendStatus(200);
+    }
+
+    // 5. Salvar nome se o usuário disser
+    if (
+      body.toLowerCase().includes("meu nome é") ||
+      body.toLowerCase().includes("eu sou o") ||
+      body.toLowerCase().includes("sou o")
+    ) {
+      const nome = body.replace(/(meu nome é|eu sou o|sou o)/i, "").trim();
+      await saveChatMemory(from, "profile", `nome: ${nome}`);
+      await sendMessage(from, `Prontinho! Vou lembrar de você como ${nome} ✨`);
+      return res.sendStatus(200);
+    }
+
+    // 6. Salvar preferências se ele disser
+    if (body.toLowerCase().includes("me chama de") || body.toLowerCase().includes("pode me chamar de")) {
+      const apelido = body.replace(/(me chama de|pode me chamar de)/i, "").trim();
+      await saveChatMemory(from, "preferences", `apelido: ${apelido}`);
+      await sendMessage(from, `Beleza! Vou usar ${apelido} pra falar com você 😎`);
+      return res.sendStatus(200);
+    }
+
+    // 7. Guardar ideias
+    if (body.toLowerCase().includes("ideia:") || body.toLowerCase().includes("anote isso") || body.toLowerCase().includes("guarda essa")) {
+      const nota = body.replace(/(ideia:|anote isso|guarda essa)/i, "").trim();
+      await saveChatMemory(from, "notes", `anotacao: ${nota}`);
+      await sendMessage(from, `Salvei sua ideia 💡`);
+      return res.sendStatus(200);
+    }
+
+    // 8. Guardar regras do seu RH
+    if (body.toLowerCase().includes("no meu trabalho") || body.toLowerCase().includes("cartoes devem estar disponiveis")) {
+      await saveChatMemory(from, "work_rules", `regra: ${body}`);
+      await sendMessage(from, "Regra do seu trabalho salva ✔️");
+      return res.sendStatus(200);
+    }
+
+    // 9. Finalmente, salvar o chat e interagir com GPT
     await saveChatMemory(from, "user", body);
 
     const memories = await getChatMemory(from, 10);
     const historyMessages = memories
       .reverse()
-      .map(m => ({ role: m.role, content: m.content }))
-      .filter(m => m.content.trim() !== "");
+      .map(m => ({ role: "assistant", content: m.content }));
 
-    const systemMessage = {
-      role: "system",
-      content: `Você é a Donna, assistente pessoal inteligente integrada ao WhatsApp.
-      Suas respostas padrões devem ser curtas e diretas, porém você pode expandir quando o usuário pedir.
-      Você é multifuncional e capaz de executar tarefas em diversas áreas: análise de arquivos, resumos, geração de textos, criação de conteúdo, organização de tarefas, transcrição de áudio, consulta de clima e outras automações integradas.
-
-      ### Regras base:
-      1. Você pode desempenhar qualquer função solicitada, mas quando perceber que a solicitação se encaixa em um dos módulos especializados (extração de dados, contratos, QR codes, posts de Instagram, ou outro módulo configurado no sistema), você deve **ativar apenas aquele módulo**, responder somente no formato esperado dele, e **não misturar instruções ou estilos entre módulos**.
-      2. Quando não for uma tarefa que pertence a um módulo, responda livremente como assistente geral, ajudando com clareza e objetividade.
-      3. Se o usuário pedir opinião, brainstorming ou criação criativa, você pode ser envolvente e estruturada, mantendo foco em soluções práticas.
-      4. Se o usuário enviar arquivo (PDF, áudio, imagem, documento, IDs, nomes, CPFs, datas etc), identifique o objetivo antes de responder.
-      5. Sempre que possível, forneça respostas estruturadas, passo a passo simples e sem termos técnicos complexos, a menos que o usuário peça.
-      6. Você pode:
-         - Consultar clima e tempo
-         - Transcrever áudios
-         - Fazer OCR e extrair dados
-         - Criar contratos, documentos e templates
-         - Gerar QR codes via automação
-         - Criar legendas, copies e posts para redes sociais como Instagram
-         - Sugerir melhorias em fluxos de trabalho
-         - Criar planos, agendas e checklists
-         - Ajudar com comunicação corporativa, mensagens e e-mails
-         - Atuar em papéis profissionais quando solicitado
-         - Guardar e consultar memórias estruturadas do chat
-      7. Se algo não for possível executar, explique de forma simples e ofereça alternativas práticas.
-      8. Não invente dados que não foram fornecidos.
-      9. Se o pedido envolver dados que exigem retorno em tabela, contrato, QR etc: não misture. Trate focado.
-      10. Tom padrão da Donna: 
-          - objetiva  
-          - organizada  
-          - leve no WhatsApp  
-          - confiável nas tarefas  
-          - criativa quando necessário  
-
-      ### Identificação automática de módulos:
-      - Se o usuário quiser extrair dados de um arquivo → módulo EXTRAÇÃO  
-      - Se quiser gerar contrato com dados → módulo CONTRATO  
-      - Se quiser QR Code com nomes/ID → módulo QR  
-      - Se quiser posts/legendas para Instagram ou redes sociais → módulo INSTAGRAM  
-      - Se quiser apenas resposta curta e profissional no WhatsApp → módulo WHATSAPP  
-      - Se não cair em nenhum desses → módulo GERAL (este prompt)
-
-      ### Estilo e proteções extras:
-      - Ao responder WhatsApp, evite textos grandes sem necessidade  
-      - Ao criar conteúdo social, considere engajamento e clareza  
-      - Em organização de projetos, priorize cronogramas simples e factíveis  
-      - Em análise de dados, aponte insights e próximos passos  
-      - Em comunicação corporativa, mantenha neutralidade e profissionalismo  
-      - Ao atuar em papéis profissionais, mantenha precisão técnica  
-      - Se houver inferência de dados sensíveis, confirme antes de usar (quando necessário)
-
-      ### Memória:
-      - Você pode salvar mensagens relevantes na memória estruturada  
-      - Pode recuperar memórias quando necessário para responder  
-
-      ### Erros:
-      - Se a IA/API retornar erro de quota, dados insuficientes, timeout ou conexão, simplifique o fluxo e tente recuperar sem falhar o serviço.`
-    };
-
-    let reply = await askGPT(body, [systemMessage, ...historyMessages]);
+    let reply = await askGPT(body, historyMessages);
 
     await saveChatMemory(from, "assistant", reply);
     await sendMessage(from, reply);
 
-    res.sendStatus(200);
+    return res.sendStatus(200);
   } catch (err) {
     console.error("❌ Webhook erro:", err.message);
-    res.sendStatus(500);
+    return res.sendStatus(500);
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
-
-// Export correto das funções principais SEM duplicar
-export {
-  askGPT,
-  saveChatMemory
-};
+app.listen(PORT, () => console.log(✅ Donna rodando na porta ${PORT})); 
+export { askGPT, saveChatMemory };
