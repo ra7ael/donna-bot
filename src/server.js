@@ -342,5 +342,5 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(✅ Donna rodando na porta ${PORT})); 
+app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 export { askGPT, saveChatMemory };
