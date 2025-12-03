@@ -255,6 +255,8 @@ async function askGPT(prompt, history = []) {
       content: m.content.toString().trim()
     }));
 
+    const contextoDonna = `Você é Donna, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no maximo 2 frases`;
+
     const contextoHorario = `Agora no Brasil são: ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
     sanitizedMessages.unshift({ role: "system", content: contextoHorario });
     sanitizedMessages.push({ role: "user", content: prompt || "" });
