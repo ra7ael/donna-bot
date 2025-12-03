@@ -1,29 +1,5 @@
-import { askGPT, db } from "../server.js";
-
-// === FILA CENTRAL DE OPERAÇÕES NO MONGO ===
-const mongoQueue = [];
-let processingQueue = false;
-
-async function processMongoQueue() {
-  if (processingQueue) return;
-  processingQueue = true;
-
-  while (mongoQueue.length > 0) {
-    const operation = mongoQueue.shift();
-    try {
-      await operation();
-    } catch (err) {
-      console.error("❌ Erro na operação MongoDB:", err);
-    }
-  }
-
-  processingQueue = false;
-}
-
-function enqueueMongoOperation(operation) {
-  mongoQueue.push(operation);
-  processMongoQueue();
-}
+import { askGPT } from "../server.js";
+import { enqueueSemanticMemory } from "./semanticQueue.js"; // ajuste o caminho se necessário
 
 // === EXTRAÇÃO AUTOMÁTICA DE MEMÓRIA + EMPRESAS CLIENTES ===
 export async function extractAutoMemoryGPT(numero, mensagem) {
@@ -70,61 +46,40 @@ Mensagem do usuário: "${mensagem}"
       return {};
     }
 
-    // ---- SALVA EMPRESAS CLIENTES SE HOUVER ----
-    if (dados.empresas_clientes?.length > 0) {
-      for (const empresa of dados.empresas_clientes) {
-        if (!empresa.nome) continue;
-
-        enqueueMongoOperation(() =>
-          db.collection("empresasClientes").updateOne(
-            { numero, nome: empresa.nome.toLowerCase() },
-            {
-              $set: {
-                ...empresa,
-                nome: empresa.nome.toLowerCase(),
-                atualizado_em: new Date()
-              }
-            },
-            { upsert: true }
-          )
-        );
-      }
-    }
-
-    // ---- SALVA FILHOS SE HOUVER ----
-    if (dados.filhos?.length > 0) {
-      for (const filho of dados.filhos) {
-        enqueueMongoOperation(() =>
-          db.collection("filhos").updateOne(
-            { numero, nome: filho.nome.toLowerCase() },
-            { $set: { ...filho, atualizado_em: new Date() } },
-            { upsert: true }
-          )
-        );
-      }
-    }
-
-    // ---- SALVA LEMBRETES SE HOUVER ----
-    if (dados.lembretes?.length > 0) {
-      for (const lembrete of dados.lembretes) {
-        enqueueMongoOperation(() =>
-          db.collection("lembretes").updateOne(
-            { numero, titulo: lembrete.titulo },
-            { $set: { ...lembrete, atualizado_em: new Date() } },
-            { upsert: true }
-          )
-        );
-      }
-    }
-
-    // ---- SALVA OUTROS DADOS PESSOAIS ----
+    // ---- SALVA TODAS AS CATEGORIAS NA FILA DE MEMÓRIA SEMÂNTICA ----
     if (Object.keys(dados.informacoes_pessoais || {}).length > 0) {
-      enqueueMongoOperation(() =>
-        db.collection("informacoesPessoais").updateOne(
-          { numero },
-          { $set: { ...dados.informacoes_pessoais, atualizado_em: new Date() } },
-          { upsert: true }
-        )
+      enqueueSemanticMemory(
+        "informacoes_pessoais",
+        dados.informacoes_pessoais,
+        numero,
+        "user"
+      );
+    }
+
+    if (dados.filhos?.length > 0) {
+      dados.filhos.forEach(filho => {
+        enqueueSemanticMemory("filhos", filho, numero, "user");
+      });
+    }
+
+    if (dados.lembretes?.length > 0) {
+      dados.lembretes.forEach(lembrete => {
+        enqueueSemanticMemory("lembretes", lembrete, numero, "user");
+      });
+    }
+
+    if (dados.empresas_clientes?.length > 0) {
+      dados.empresas_clientes.forEach(empresa => {
+        enqueueSemanticMemory("empresas_clientes", empresa, numero, "user");
+      });
+    }
+
+    if (Object.keys(dados.outros_dados_relevantes || {}).length > 0) {
+      enqueueSemanticMemory(
+        "outros_dados_relevantes",
+        dados.outros_dados_relevantes,
+        numero,
+        "user"
       );
     }
 
@@ -138,11 +93,11 @@ Mensagem do usuário: "${mensagem}"
 // === BUSCA INTELIGENTE PARA CONSULTAR EMPRESAS ===
 export async function buscarEmpresa(numero, texto) {
   const nomeMatch = texto.toLowerCase().match(/(beneficios|taxa|ponto|pagamento|email).*?da\s(.+)/);
-
   if (!nomeMatch) return null;
 
   const empresaNome = nomeMatch[2].trim().toLowerCase();
 
+  // Continua usando o MongoDB diretamente para consultas simples
   const empresa = await db.collection("empresasClientes").findOne({
     numero,
     nome: empresaNome
