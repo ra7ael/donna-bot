@@ -539,6 +539,7 @@ app.post("/webhook", async (req, res) => {
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`)); 
   
-  // ✅ Export compatível com ESM sem quebrar o resto do server
-export const apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
+// disponibiliza internamente sem usar export ESM
+global.apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
+
 
