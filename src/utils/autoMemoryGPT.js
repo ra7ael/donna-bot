@@ -1,4 +1,7 @@
-import { askGPT } from "../server.js";
+// ===== autoMemoryGPT.js =====
+
+// Pega askGPT do global.apiExports para evitar import circular
+const { askGPT } = global.apiExports;
 import { enqueueSemanticMemory } from "./semanticQueue.js"; // ajuste o caminho se necessário
 
 // === EXTRAÇÃO AUTOMÁTICA DE MEMÓRIA + EMPRESAS CLIENTES ===
