@@ -537,10 +537,9 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-// ✅ disponibiliza internamente sem quebrar ESM
+// ✅ Coloque sua linha nova AQUI, depois de todas as funções e ANTES de iniciar o app
 global.apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
 
-
-
+// Agora inicia o server normalmente
+app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
