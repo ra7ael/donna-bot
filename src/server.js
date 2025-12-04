@@ -369,15 +369,11 @@ async function askGPT(prompt, history = []) {
 
 // Função para identificar palavras-chave no prompt
 function identificarPalavrasChave(texto) {
-  // Regex para pegar palavras com 3 ou mais caracteres
   const regex = /\b(\w{3,})\b/g;
   const palavras = texto.match(regex) || [];
-  
-  // Aqui, podemos adicionar uma lógica para filtrar palavras importantes
-  const palavrasChave = palavras.filter(p => p.length > 3);  // Filtra apenas palavras com 3 ou mais letras
+  const palavrasChave = palavras.filter(p => p.length > 3);
   return palavrasChave;
 }
-
 
 // Função para dividir a mensagem em partes
 function dividirMensagem(texto, limite = 120) {
@@ -402,7 +398,6 @@ async function sendMessageIfNeeded(to, text) {
   lastMessageSent = text;
   return true;
 }
-
 
 // Função para enviar mensagem via WhatsApp
 async function sendMessage(to, text) {
@@ -431,37 +426,36 @@ async function sendMessage(to, text) {
   }
 }
 
+// ✅ disponibiliza internamente sem quebrar ESM
 global.apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
 
-// ===== Webhook mantido with JSON.stringify on problematic fields =====
+// ===== Webhook mantido =====
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const from = messageObj?.from || null;
 
-    const from = messageObj?.from || null; // ✅ movido pra cima
-
-    if (messageObj.type === "document") { // ✅ lógica original mantida
+    if (messageObj.type === "document") {
       const mediaBuffer = await downloadMedia(messageObj.document?.id);
-      if (!mediaBuffer) { // lógica original mantida
-        await sendMessage(from, "⚠ Não consegui baixar o livro."); // ✅ agora from existe
+      if (!mediaBuffer) {
+        await sendMessage(from, "⚠ Não consegui baixar o livro.");
         return res.sendStatus(200);
       }
 
-      const textoExtraido = await pdfParse(Buffer.from(mediaBuffer, "base64")); // lógica original mantida
-      await saveBookContent(textoExtraido.text, "pdf", from); // lógica original mantida
-      await sendMessage(from, "✅ Livro salvo no banco. Me peça quando quiser ler."); // lógica original mantida
+      const textoExtraido = await pdfParse(Buffer.from(mediaBuffer, "base64"));
+      await saveBookContent(textoExtraido.text, "pdf", from);
+      await sendMessage(from, "✅ Livro salvo no banco. Me peça quando quiser ler.");
       return res.sendStatus(200);
     }
 
-    if (!messageObj) return res.sendStatus(200); // lógica original mantida
+    if (!messageObj) return res.sendStatus(200);
 
-    let body = ""; // lógica original mantida
+    let body = "";
+    if (messageObj.type === "text") body = messageObj.text?.body || "";
 
-    if (messageObj.type === "text") body = messageObj.text?.body || ""; // lógica original mantida
-
-    if (messageObj.type === "audio") { // lógica original mantida
+    if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = "audio: recebido"; // lógica original mantida
+      if (audioBuffer) body = "audio: recebido";
     }
 
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
@@ -507,7 +501,6 @@ app.post("/webhook", async (req, res) => {
     }
 
     await saveChatMemory(from, "user", JSON.stringify(body));
-
     enqueueSemanticMemory("chat geral", body, from, "user");
 
     const semanticResults = await querySemanticMemory(body, from, 3);
@@ -530,6 +523,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
+// ✅ Export mantido sem quebrar
 export { 
   askGPT,
   saveChatMemory,
@@ -537,5 +531,5 @@ export {
   querySemanticMemory
 };
 
-// Agora inicia o server normalmente
+// ✅ Mantém apenas UM listen no final do arquivo
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
