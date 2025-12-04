@@ -1,12 +1,19 @@
 // ===== autoMemoryGPT.js =====
-
-// Pega askGPT do global.apiExports para evitar import circular
-const { askGPT } = global.apiExports;
 import { enqueueSemanticMemory } from "./semanticQueue.js"; // ajuste o caminho se necessário
+
+// Função auxiliar para obter askGPT dinamicamente
+function getAskGPT() {
+  if (!global.apiExports?.askGPT) {
+    throw new Error("askGPT não está disponível em global.apiExports");
+  }
+  return global.apiExports.askGPT;
+}
 
 // === EXTRAÇÃO AUTOMÁTICA DE MEMÓRIA + EMPRESAS CLIENTES ===
 export async function extractAutoMemoryGPT(numero, mensagem) {
   try {
+    const askGPT = getAskGPT(); // pega dinamicamente
+
     const prompt = `
 Analise a mensagem abaixo e identifique informações que devem ser armazenadas como memória do usuário.
 Classifique dentro das seguintes categorias:
@@ -94,13 +101,13 @@ Mensagem do usuário: "${mensagem}"
 }
 
 // === BUSCA INTELIGENTE PARA CONSULTAR EMPRESAS ===
-export async function buscarEmpresa(numero, texto) {
+export async function buscarEmpresa(numero, texto, db) {
+  // Recebe a instância do db como parâmetro para evitar dependência global
   const nomeMatch = texto.toLowerCase().match(/(beneficios|taxa|ponto|pagamento|email).*?da\s(.+)/);
   if (!nomeMatch) return null;
 
   const empresaNome = nomeMatch[2].trim().toLowerCase();
 
-  // Continua usando o MongoDB diretamente para consultas simples
   const empresa = await db.collection("empresasClientes").findOne({
     numero,
     nome: empresaNome
