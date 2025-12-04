@@ -431,6 +431,7 @@ async function sendMessage(to, text) {
   }
 }
 
+global.apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
 
 // ===== Webhook mantido with JSON.stringify on problematic fields =====
 app.post("/webhook", async (req, res) => {
@@ -528,10 +529,6 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(500);
   }
 });
-
-
-// ✅ Coloque sua linha nova AQUI, depois de todas as funções e ANTES de iniciar o app
-global.apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
 
 export { 
   askGPT,
