@@ -25,7 +25,7 @@ import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import enqueueSemanticMemory from './utils/enqueueSemanticMemory.js';
-import { saveChatMemory, querySemanticMemory } from './utils/memory.js';
+import { saveChatMemory } from './utils/memory.js';
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
 
