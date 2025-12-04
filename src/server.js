@@ -113,8 +113,6 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ⚡ openai instanciado com a variável correta
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// ===== Imports =====
-import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
 
 // ===== Conexão com MongoDB =====
 let db;
