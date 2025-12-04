@@ -24,7 +24,7 @@ import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
-//import enqueueSemanticMemory from './utils/enqueueSemanticMemory.js';//
+import { enqueueSemanticMemory } from './src/utils/semanticQueue.js'; // ajuste o caminho se necessário
 import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
