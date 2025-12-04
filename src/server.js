@@ -25,7 +25,7 @@ import { funcoesExtras } from "./utils/funcoesExtras.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import enqueueSemanticMemory from './utils/enqueueSemanticMemory.js';
-import { saveChatMemory } from './utils/memory.js';
+import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
 
@@ -113,6 +113,9 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ⚡ openai instanciado com a variável correta
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// ===== Imports =====
+import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
+
 // ===== Conexão com MongoDB =====
 let db;
 
@@ -124,23 +127,23 @@ async function connectDB() {
       console.log("🔹 Tentando conectar ao MongoDB...");
       const client = await MongoClient.connect(MONGO_URI, {
         useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 60000, // ⬆️ aumentei
-        socketTimeoutMS: 90000           // ⬆️ aumentei
+        serverSelectionTimeoutMS: 60000,
+        socketTimeoutMS: 90000
       });
 
       db = client.db("donna");
       console.log("✅ Conectado ao MongoDB ✅");
 
       await mongoose.connect(MONGO_URI, {
-        serverSelectionTimeoutMS: 60000, // ⬆️ aumentei
-        connectTimeoutMS: 60000,         // ⬆️ aumentei
-        socketTimeoutMS: 90000,          // ⬆️ aumentei
+        serverSelectionTimeoutMS: 60000,
+        connectTimeoutMS: 60000,
+        socketTimeoutMS: 90000,
         maxPoolSize: 10
       });
 
       console.log("✅ Mongoose conectado com sucesso ✅");
       startReminderCron(db, sendMessage);
-      break; // se conectar, sai do loop
+      break;
 
     } catch (err) {
       tentativas--;
@@ -152,7 +155,6 @@ async function connectDB() {
         process.exit(1);
       }
 
-      // aguarda 5s antes de tentar de novo
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
@@ -161,9 +163,7 @@ async function connectDB() {
 await connectDB();
 export { db };
 
-// ===== 📚 Funções de Livros (colocar aqui) =====
-
-// Salvar conteúdo do livro no banco
+// ===== 📚 Funções de Livros =====
 async function saveBookContent(content, format, userId) {
   const contentChunks = content.split('\n').map(chunk => chunk.trim()).filter(chunk => chunk);
   for (let chunk of contentChunks) {
@@ -177,13 +177,11 @@ async function saveBookContent(content, format, userId) {
   console.log(`📚 Livro salvo no banco (${format})`);
 }
 
-// Consultar conteúdo do livro
 async function queryBookContent(userId) {
   const items = await db.collection('books').find({ userId }).toArray();
   return items.map(i => i.content).join('\n');
 }
 
-// Endpoint de upload do livro
 app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
   const { filename, mimetype } = req.file;
   const userId = req.body.userId || req.body.from || null;
@@ -198,98 +196,21 @@ app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
   res.status(200).send("✅ Livro processado");
 });
 
-// Endpoint de consulta do livro sem GPT
 app.get('/book-content/:userId', async (req, res) => {
   const { userId } = req.params;
   const content = await queryBookContent(userId);
   res.status(200).send(content || "📚 Nenhum livro salvo");
 });
 
+// ===== Recuperar memória do usuário (via memory.js) =====
+// Funções locais saveChatMemory e getChatMemory removidas
 
-// ===== Salvar memória do chat (cache evita duplicação) =====
-let chatCache = new Set();
-
-async function saveChatMemory(userId, role, content) {
-  if (!content || !content.toString().trim()) return;
-
-  // Sanitizar o conteúdo (remover espaços extras)
-  const sanitizedContent = content.toString().trim();
-
-  // Gerar chave de cache única
-  const key = `${userId}-${sanitizedContent}`;
-
-  // Verificar se já existe esse conteúdo no cache
-  if (chatCache.has(key)) {
-    console.log("💾 Conteúdo já está no cache, não salvando novamente.");
-    return;
-  }
-
-  // Verificar se o conteúdo já existe no banco de dados
-  try {
-    const existingMemory = await db.collection("chatMemory").findOne({ userId, content: sanitizedContent });
-    if (existingMemory) {
-      console.log("💾 Conteúdo já existe no banco de dados, não salvando novamente.");
-      return;
-    }
-
-    // Adicionar ao cache para evitar futuras duplicações
-    chatCache.add(key);
-
-    // Salvar conteúdo no banco de dados
-    await db.collection("chatMemory").insertOne({
-      userId,
-      role,
-      content: sanitizedContent,
-      createdAt: new Date()
-    });
-
-    console.log("💾 Chat salvo na chatMemory.");
-  } catch (err) {
-    console.error("❌ Erro ao salvar chat:", err.message);
-  }
-}
-
-// ===== Recuperar memória do usuário =====
-async function getChatMemory(userId, limit = 10) {
-  try {
-    return await db.collection("chatMemory")
-      .find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .toArray();
-  } catch (err) {
-    console.error("❌ Erro ao recuperar memória:", err.message);
-    return [];
-  }
-}
-
-// ===== Função de busca mantida =====
-async function buscarMemoria(userId) {
-  try {
-    const items = await getChatMemory(userId, 20);
-    if (!items.length) return null;
-    return items.map(m => ({
-      role: m.role,
-      content: m.content,
-      createdAt: m.createdAt
-    }));
-  } catch (err) {
-    console.error("❌ Erro ao buscar memória:", err.message);
-    return [];
-  }
-}
-
-// ===== Endpoint de memória mantido =====
+// Endpoint de memória atualizado
 app.get("/memoria/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const memories = await db.collection("chatMemory")
-      .find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(20)
-      .toArray();
-
-    res.json(memories.map(m => m.content));
+    const memories = await buscarMemoria(userId);
+    res.json(memories?.map(m => m.content) || []);
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
@@ -298,7 +219,6 @@ app.get("/memoria/:userId", async (req, res) => {
 // ===== Função para salvar memória semântica, verificando duplicação =====
 async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
   try {
-    // Verificar se a palavra-chave já está salva para o usuário
     const existingMemory = await db.collection("semanticMemory").findOne({
       userId,
       category,
@@ -310,7 +230,6 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
       return;
     }
 
-    // Caso não exista, salvar a palavra-chave no banco
     await db.collection("semanticMemory").insertOne({
       userId,
       category,
@@ -323,6 +242,7 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
     console.error("❌ Erro ao salvar memória semântica:", err.message);
   }
 }
+
 
 // ===== Função askGPT mantida e com cast seguro =====
 async function askGPT(prompt, history = []) {
