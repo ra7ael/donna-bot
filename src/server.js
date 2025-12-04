@@ -390,27 +390,19 @@ function dividirMensagem(texto, limite = 120) {
   return partes;
 }
 
-// Variável para armazenar a última mensagem enviada
 let lastMessageSent = null;
 
-// Função para evitar duplicação ao enviar mensagens
+// Envia apenas se não for igual à última e aguarda a conclusão
 async function sendMessageIfNeeded(to, text) {
-  if (text === lastMessageSent) {
-    console.log("💬 Mensagem duplicada, não enviando novamente.");
-    return;
-  }
-
-let lastMessageSent = null;
-
-async function sendMessageIfNeeded(to, text) {
-  if (text === lastMessageSent) {
+  if (!text || text === lastMessageSent) {
     console.log("💬 duplicada, pulando");
-    return;
+    return false;
   }
-
-  await sendMessage(to, text);  // Chama a função original de envio de mensagens
-  lastMessageSent = text;  // Atualiza a última mensagem enviada
+  await sendMessage(to, text);
+  lastMessageSent = text;
+  return true;
 }
+
 
 // Função para enviar mensagem via WhatsApp
 async function sendMessage(to, text) {
