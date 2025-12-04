@@ -447,16 +447,31 @@ import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!messageObj) return res.sendStatus(200);
 
-    const from = messageObj.from;
-    let body = "";
+    const from = messageObj?.from || null; // ✅ movido pra cima
 
-    if (messageObj.type === "text") body = messageObj.text?.body || "";
+    if (messageObj.type === "document") { // ✅ lógica original mantida
+      const mediaBuffer = await downloadMedia(messageObj.document?.id);
+      if (!mediaBuffer) { // lógica original mantida
+        await sendMessage(from, "⚠ Não consegui baixar o livro."); // ✅ agora from existe
+        return res.sendStatus(200);
+      }
 
-    if (messageObj.type === "audio") {
+      const textoExtraido = await pdfParse(Buffer.from(mediaBuffer, "base64")); // lógica original mantida
+      await saveBookContent(textoExtraido.text, "pdf", from); // lógica original mantida
+      await sendMessage(from, "✅ Livro salvo no banco. Me peça quando quiser ler."); // lógica original mantida
+      return res.sendStatus(200);
+    }
+
+    if (!messageObj) return res.sendStatus(200); // lógica original mantida
+
+    let body = ""; // lógica original mantida
+
+    if (messageObj.type === "text") body = messageObj.text?.body || ""; // lógica original mantida
+
+    if (messageObj.type === "audio") { // lógica original mantida
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = "audio: recebido";
+      if (audioBuffer) body = "audio: recebido"; // lógica original mantida
     }
 
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
