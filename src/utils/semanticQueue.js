@@ -8,7 +8,7 @@ let processing = false;
 export async function enqueueSemanticMemory(category, content, userId, role) {
   const item = { 
     category: category.toString(),
-    content: typeof content === "string" ? content : JSON.stringify(content),
+    content: content.toString(),
     userId: userId.toString(),
     role: role.toString()
   };
@@ -25,10 +25,15 @@ async function processQueue() {
   while (queue.length > 0) {
     const item = queue.shift();
     try {
-      await addSemanticMemory(item.category, item.content, item.userId, item.role);
+      await addSemanticMemory(
+        item.category,
+        item.content,
+        item.userId,
+        item.role
+      );
     } catch (err) {
-      console.error("❌ Erro ao processar fila de memória semântica:", err.message);
-      queue.push(item); // Reenfileirar
+      console.error("Erro ao salvar memória:", err.message);
+      queue.push(item);
       await new Promise(res => setTimeout(res, 5000));
     }
   }
