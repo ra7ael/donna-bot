@@ -160,6 +160,51 @@ async function connectDB() {
 await connectDB();
 export { db };
 
+// ===== 📚 Funções de Livros (colocar aqui) =====
+
+// Salvar conteúdo do livro no banco
+async function saveBookContent(content, format, userId) {
+  const contentChunks = content.split('\n').map(chunk => chunk.trim()).filter(chunk => chunk);
+  for (let chunk of contentChunks) {
+    await db.collection('books').insertOne({
+      userId,
+      format,
+      content: chunk,
+      createdAt: new Date(),
+    });
+  }
+  console.log(`📚 Livro salvo no banco (${format})`);
+}
+
+// Consultar conteúdo do livro
+async function queryBookContent(userId) {
+  const items = await db.collection('books').find({ userId }).toArray();
+  return items.map(i => i.content).join('\n');
+}
+
+// Endpoint de upload do livro
+app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
+  const { filename, mimetype } = req.file;
+  const userId = req.body.userId || req.body.from || null;
+  const filePath = path.join(__dirname, 'uploads', filename);
+  const format = mimetype.includes("pdf") ? "pdf" : "epub";
+
+  const buffer = fs.readFileSync(filePath);
+  const data = await pdfParse(buffer);
+  await saveBookContent(data.text, format, userId);
+  fs.unlinkSync(filePath);
+
+  res.status(200).send("✅ Livro processado");
+});
+
+// Endpoint de consulta do livro sem GPT
+app.get('/book-content/:userId', async (req, res) => {
+  const { userId } = req.params;
+  const content = await queryBookContent(userId);
+  res.status(200).send(content || "📚 Nenhum livro salvo");
+});
+
+
 // ===== Salvar memória do chat (cache evita duplicação) =====
 let chatCache = new Set();
 
@@ -352,6 +397,14 @@ let lastMessageSent = null;
 async function sendMessageIfNeeded(to, text) {
   if (text === lastMessageSent) {
     console.log("💬 Mensagem duplicada, não enviando novamente.");
+    return;
+  }
+
+let lastMessageSent = null;
+
+async function sendMessageIfNeeded(to, text) {
+  if (text === lastMessageSent) {
+    console.log("💬 duplicada, pulando");
     return;
   }
 
