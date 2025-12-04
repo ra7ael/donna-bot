@@ -5,7 +5,7 @@ const queue = [];
 let processing = false;
 
 // Adiciona item na fila
-export function enqueueSemanticMemory(prompt, answer, userId, role) {
+export async function enqueueSemanticMemory(category, content, userId, role) {
   // 🔹 Força tudo virar string antes de ir pra fila
   const item = { 
     prompt: prompt.toString(),
