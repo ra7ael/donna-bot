@@ -533,5 +533,12 @@ app.post("/webhook", async (req, res) => {
 // ✅ Coloque sua linha nova AQUI, depois de todas as funções e ANTES de iniciar o app
 global.apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
 
+export { 
+  askGPT,
+  saveChatMemory,
+  enqueueSemanticMemory,
+  querySemanticMemory
+};
+
 // Agora inicia o server normalmente
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
