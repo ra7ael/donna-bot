@@ -346,7 +346,7 @@ async function sendMessage(to, text) {
 }
 
 // ✅ disponibiliza internamente sem quebrar ESM
-global.apiExports = { askGPT, saveChatMemory, enqueueSemanticMemory, querySemanticMemory };
+global.apiExports = { askGPT, salvarMemoria, enqueueSemanticMemory, querySemanticMemory };
 
 // ===== Webhook mantido =====
 app.post("/webhook", async (req, res) => {
