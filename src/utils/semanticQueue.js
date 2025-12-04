@@ -32,3 +32,5 @@ async function processQueue() {
 
   processing = false;
 }
+
+export default enqueueSemanticMemory;
