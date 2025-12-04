@@ -440,9 +440,6 @@ async function sendMessage(to, text) {
 }
 
 
-// importar fila mantido
-import { enqueueSemanticMemory } from "./utils/semanticQueue.js";
-
 // ===== Webhook mantido with JSON.stringify on problematic fields =====
 app.post("/webhook", async (req, res) => {
   try {
