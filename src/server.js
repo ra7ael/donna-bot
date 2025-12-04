@@ -113,7 +113,6 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ⚡ openai instanciado com a variável correta
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-
 // ===== Conexão com MongoDB =====
 let db;
 
@@ -201,9 +200,6 @@ app.get('/book-content/:userId', async (req, res) => {
 });
 
 // ===== Recuperar memória do usuário (via memory.js) =====
-// Funções locais saveChatMemory e getChatMemory removidas
-
-// Endpoint de memória atualizado
 app.get("/memoria/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -241,7 +237,6 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
   }
 }
 
-
 // ===== Função askGPT mantida e com cast seguro =====
 async function askGPT(prompt, history = []) {
   try {
@@ -260,13 +255,8 @@ async function askGPT(prompt, history = []) {
     sanitizedMessages.unshift({ role: "system", content: contextoHorario });
     sanitizedMessages.push({ role: "user", content: prompt || "" });
 
-    // Identificar palavras-chave no prompt
     const palavrasChave = identificarPalavrasChave(prompt);
-
-    // Evitar duplicação: filtra palavras-chave já salvas
     const palavrasChaveUnicas = [...new Set(palavrasChave)];
-
-    // Se encontrar palavras-chave, salvar elas como memória semântica
     if (palavrasChaveUnicas.length > 0) {
       for (let palavra of palavrasChaveUnicas) {
         await enqueueSemanticMemory("palavras-chave", palavra, "user", "user");
@@ -286,7 +276,6 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-// Função para identificar palavras-chave no prompt
 function identificarPalavrasChave(texto) {
   const regex = /\b(\w{3,})\b/g;
   const palavras = texto.match(regex) || [];
@@ -294,7 +283,6 @@ function identificarPalavrasChave(texto) {
   return palavrasChave;
 }
 
-// Função para dividir a mensagem em partes
 function dividirMensagem(texto, limite = 120) {
   const partes = [];
   while (texto.length > limite) {
@@ -306,8 +294,6 @@ function dividirMensagem(texto, limite = 120) {
 }
 
 let lastMessageSent = null;
-
-// Envia apenas se não for igual à última e aguarda a conclusão
 async function sendMessageIfNeeded(to, text) {
   if (!text || text === lastMessageSent) {
     console.log("💬 duplicada, pulando");
@@ -318,7 +304,6 @@ async function sendMessageIfNeeded(to, text) {
   return true;
 }
 
-// Função para enviar mensagem via WhatsApp
 async function sendMessage(to, text) {
   try {
     const partes = dividirMensagem(text);
@@ -353,6 +338,7 @@ app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = messageObj?.from || null;
+    if (!messageObj) return res.sendStatus(200);
 
     if (messageObj.type === "document") {
       const mediaBuffer = await downloadMedia(messageObj.document?.id);
@@ -360,42 +346,36 @@ app.post("/webhook", async (req, res) => {
         await sendMessage(from, "⚠ Não consegui baixar o livro.");
         return res.sendStatus(200);
       }
-
       const textoExtraido = await pdfParse(Buffer.from(mediaBuffer, "base64"));
       await saveBookContent(textoExtraido.text, "pdf", from);
       await sendMessage(from, "✅ Livro salvo no banco. Me peça quando quiser ler.");
       return res.sendStatus(200);
     }
 
-    if (!messageObj) return res.sendStatus(200);
-
     let body = "";
     if (messageObj.type === "text") body = messageObj.text?.body || "";
-
     if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = "audio: recebido";
     }
 
+    // Comandos de memória
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
-      const items = await getChatMemory(from, 30);
-      if (!items.length) {
-        await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
-      } else {
-        const resposta = items.map(i => `• ${i.content}`).join("\n");
-        await sendMessage(from, `Memórias salvas:\n\n${resposta}`);
-      }
+      const items = await buscarMemoria(from);
+      if (!items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
+      else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
       return res.sendStatus(200);
     }
 
     if (body.toLowerCase().includes("qual é meu nome")) {
-      const items = await getChatMemory(from, 20);
+      const items = await buscarMemoria(from);
       const nomeItem = items.find(m => m.content.toLowerCase().startsWith("nome:"));
       const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
       await sendMessage(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
       return res.sendStatus(200);
     }
 
+    // Salvar informações de perfil, regras ou ideias
     const patterns = [
       { regex: /(meu nome é|eu sou o|sou o)/i, label: "nome do usuário" },
       { regex: /(me chama de|pode me chamar de)/i, label: "apelido do usuário" },
@@ -406,7 +386,7 @@ app.post("/webhook", async (req, res) => {
     for (const p of patterns) {
       if (p.regex.test(body)) {
         const valor = body.replace(p.regex, "").trim();
-        await saveChatMemory(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${JSON.stringify(valor)}`);
+        await salvarMemoria(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${JSON.stringify(valor)}`);
         enqueueSemanticMemory(p.label, valor, from, "user");
         await sendMessage(from, p.label.includes("ideia") ? `Salvei sua ideia 💡` : `Prontinho! Vou lembrar de você como ${JSON.stringify(valor)} ✨`);
         return res.sendStatus(200);
@@ -419,23 +399,19 @@ app.post("/webhook", async (req, res) => {
       enqueueSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user");
     }
 
-    await saveChatMemory(from, "user", JSON.stringify(body));
+    await salvarMemoria(from, "user", JSON.stringify(body));
     enqueueSemanticMemory("chat geral", body, from, "user");
 
     const semanticResults = await querySemanticMemory(body, from, 3);
-    let reply;
-    if (semanticResults && semanticResults.length) {
-      reply = await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`);
-    } else {
-      reply = await askGPT(body);
-    }
+    const reply = semanticResults && semanticResults.length
+      ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
+      : await askGPT(body);
 
-    await saveChatMemory(from, "assistant", JSON.stringify(reply));
+    await salvarMemoria(from, "assistant", JSON.stringify(reply));
     enqueueSemanticMemory("resposta GPT", reply, from, "assistant");
     await sendMessage(from, reply);
 
     return res.sendStatus(200);
-
   } catch (err) {
     console.error("❌ Webhook erro:", JSON.stringify(err.message));
     return res.sendStatus(500);
