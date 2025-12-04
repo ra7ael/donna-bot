@@ -442,13 +442,5 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ✅ Export mantido sem quebrar
-export { 
-  askGPT,
-  saveChatMemory,
-  enqueueSemanticMemory,
-  querySemanticMemory
-};
-
 // ✅ Mantém apenas UM listen no final do arquivo
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
