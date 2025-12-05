@@ -225,33 +225,6 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
   }
 }
 
-// Renomeie a função para algo como sendMessageViaWhatsapp
-async function sendMessageViaWhatsapp(to, text) {
-  try {
-    const partes = dividirMensagem(text);
-    for (let parte of partes) {
-      await axios.post(
-        `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
-        {
-          messaging_product: "whatsapp",
-          to,
-          text: { body: parte }
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-            "Content-Type": "application/json"
-          },
-          timeout: 30000
-        }
-      );
-    }
-    console.log("📤 Mensagem enviada para WhatsApp.");
-  } catch (err) {
-    console.error("❌ Erro enviar WhatsApp:", err.message);
-  }
-}
-
 
 
 /* ========================= GPT / utilitários ========================= */
