@@ -235,7 +235,7 @@ async function askGPT(prompt, history = []) {
     const sanitizedMessages = safeMessages.map(m => ({ role: m.role, content: m.content.toString().trim() }));
     
     // Contexto Donna adicionado no início
-    const contextoDonna = "Você é Donna, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no maximo 2 frases";
+    const contextoDonna = "Você é Donna, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no máximo 2 frases";
     sanitizedMessages.unshift({ role: "system", content: contextoDonna });
 
     // Adicionar a hora do Brasil
@@ -243,6 +243,12 @@ async function askGPT(prompt, history = []) {
     sanitizedMessages.unshift({ role: "system", content: contextoHorario });
 
     sanitizedMessages.push({ role: "user", content: prompt || "" });
+
+    // Verifica se o comando inclui um envio de WhatsApp
+    const comandoWhatsapp = processarComandoWhatsApp(prompt);
+    if (comandoWhatsapp) {
+      return comandoWhatsapp; // Retorna a resposta de envio do WhatsApp
+    }
 
     const palavrasChave = identificarPalavrasChave(prompt);
     const palavrasChaveUnicas = [...new Set(palavrasChave)];
@@ -274,6 +280,54 @@ async function askGPT(prompt, history = []) {
   }
 }
 
+// Função que processa comandos de envio de WhatsApp
+async function processarComandoWhatsApp(comando) {
+  // Regex para capturar a mensagem entre aspas e o número
+  const regex = /envia\s+['"](.*?)['"]\s+para\s+(\d{10,13})/i;
+  const match = comando.match(regex);
+
+  if (!match) {
+    return null; // Retorna null se não for um comando de WhatsApp válido
+  }
+
+  const mensagem = match[1];
+  const numero = match[2];
+
+  try {
+    await sendMessage(numero, mensagem);
+    return `✅ Mensagem enviada para ${numero}`; // Retorna confirmação
+  } catch (err) {
+    console.error("❌ Erro ao enviar WhatsApp:", err.message);
+    return "❌ Ocorreu um erro ao tentar enviar a mensagem."; // Retorna erro se falhar
+  }
+}
+
+// Função para enviar mensagem via WhatsApp
+async function sendMessage(to, text) {
+  try {
+    const partes = dividirMensagem(text);
+    for (let parte of partes) {
+      await axios.post(
+        `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
+        {
+          messaging_product: "whatsapp",
+          to,
+          text: { body: parte }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 30000
+        }
+      );
+    }
+    console.log("📤 Mensagem enviada para WhatsApp.");
+  } catch (err) {
+    console.error("❌ Erro enviar WhatsApp:", err.message);
+  }
+}
 
 function identificarPalavrasChave(texto) {
   const regex = /\b(\w{3,})\b/g;
@@ -283,7 +337,7 @@ function identificarPalavrasChave(texto) {
 }
 
 // Função para dividir a mensagem em várias partes
-function dividirMensagem(texto, limite = 120) {
+function dividirMensagem(texto, limite = 300) {
   const partes = [];
   let inicio = 0;
 
