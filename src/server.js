@@ -276,7 +276,6 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-
 /* ========================= Funções auxiliares ========================= */
 // Função para processar comandos de envio de WhatsApp
 async function processarComandoWhatsApp(comando) {
@@ -325,6 +324,12 @@ async function sendMessage(to, text) {
   } catch (err) {
     console.error("❌ Erro enviar WhatsApp:", err.message);
   }
+}
+
+// Função que permite à Donna enviar mensagens para outros números quando solicitada
+async function enviarMensagemDonna(mensagem, numero) {
+  const comando = `envia "${mensagem}" para ${numero}`;
+  return await processarComandoWhatsApp(comando);
 }
 
 /* ========================= Funções auxiliares ========================= */
@@ -384,7 +389,8 @@ global.apiExports = {
   askGPT,
   salvarMemoria,
   enqueueSemanticMemory,
-  querySemanticMemory
+  querySemanticMemory,
+  enviarMensagemDonna
 };
 
 /* ========================= Webhook WhatsApp ========================= */
