@@ -237,6 +237,130 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
   }
 }
 
+// ===== Conexão com MongoDB =====
+let db;
+
+async function connectDB() {
+  let tentativas = 5;
+
+  while (tentativas > 0) {
+    try {
+      console.log("🔹 Tentando conectar ao MongoDB...");
+      const client = await MongoClient.connect(MONGO_URI, {
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 60000,
+        socketTimeoutMS: 90000
+      });
+
+      db = client.db("donna");
+      console.log("✅ Conectado ao MongoDB ✅");
+
+      await mongoose.connect(MONGO_URI, {
+        serverSelectionTimeoutMS: 60000,
+        connectTimeoutMS: 60000,
+        socketTimeoutMS: 90000,
+        maxPoolSize: 10
+      });
+
+      console.log("✅ Mongoose conectado com sucesso ✅");
+      startReminderCron(db, sendMessage);
+      break;
+
+    } catch (err) {
+      tentativas--;
+      console.error(`❌ Falha ao conectar. Tentativas restantes: ${tentativas}`);
+      console.error(err.message);
+
+      if (tentativas === 0) {
+        console.error("❌ Não foi possível conectar ao banco. Encerrando...");
+        process.exit(1);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
+}
+
+await connectDB();
+export { db };
+
+// ===== 📚 Funções de Livros =====
+async function saveBookContent(content, format, userId) {
+  const contentChunks = content.split('\n').map(chunk => chunk.trim()).filter(chunk => chunk);
+  for (let chunk of contentChunks) {
+    await db.collection('books').insertOne({
+      userId,
+      format,
+      content: chunk,
+      createdAt: new Date(),
+    });
+  }
+  console.log(`📚 Livro salvo no banco (${format})`);
+}
+
+async function queryBookContent(userId) {
+  const items = await db.collection('books').find({ userId }).toArray();
+  return items.map(i => i.content).join('\n');
+}
+
+app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
+  const { filename, mimetype } = req.file;
+  const userId = req.body.userId || req.body.from || null;
+  const filePath = path.join(__dirname, 'uploads', filename);
+  const format = mimetype.includes("pdf") ? "pdf" : "epub";
+
+  const buffer = fs.readFileSync(filePath);
+  const data = await pdfParse(buffer);
+  await saveBookContent(data.text, format, userId);
+  fs.unlinkSync(filePath);
+
+  res.status(200).send("✅ Livro processado");
+});
+
+app.get('/book-content/:userId', async (req, res) => {
+  const { userId } = req.params;
+  const content = await queryBookContent(userId);
+  res.status(200).send(content || "📚 Nenhum livro salvo");
+});
+
+// ===== Recuperar memória do usuário (via memory.js) =====
+app.get("/memoria/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const memories = await buscarMemoria(userId);
+    res.json(memories?.map(m => m.content) || []);
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ===== Função para salvar memória semântica, verificando duplicação =====
+async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
+  try {
+    const existingMemory = await db.collection("semanticMemory").findOne({
+      userId,
+      category,
+      content: keyword,
+    });
+
+    if (existingMemory) {
+      console.log("💾 Palavra-chave já salva. Não salvando novamente.");
+      return;
+    }
+
+    await db.collection("semanticMemory").insertOne({
+      userId,
+      category,
+      content: keyword,
+      createdAt: new Date(),
+    });
+
+    console.log(`💾 Palavra-chave salva na categoria "${category}": ${keyword}`);
+  } catch (err) {
+    console.error("❌ Erro ao salvar memória semântica:", err.message);
+  }
+}
+
 // ===== Função askGPT mantida e com cast seguro =====
 async function askGPT(prompt, history = []) {
   try {
