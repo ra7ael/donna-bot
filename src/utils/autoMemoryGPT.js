@@ -56,14 +56,29 @@ Mensagem do usuário: "${mensagem}"
       return {};
     }
 
-    // ---- SALVA TODAS AS CATEGORIAS NA FILA DE MEMÓRIA SEMÂNTICA ----
+    // ---- AGRUPANDO E EVITANDO DUPLICAÇÃO DE PALAVRAS-CHAVE ----
+    const palavrasChave = new Set();
+
+    // Adiciona todas as palavras-chave relevantes em um único Set (evita duplicação)
+    if (dados.informacoes_pessoais) palavrasChave.add(JSON.stringify(dados.informacoes_pessoais));
+    if (dados.filhos?.length) dados.filhos.forEach(filho => palavrasChave.add(JSON.stringify(filho)));
+    if (dados.formacao) palavrasChave.add(JSON.stringify(dados.formacao));
+    if (dados.trabalho) palavrasChave.add(JSON.stringify(dados.trabalho));
+    if (dados.metas) palavrasChave.add(JSON.stringify(dados.metas));
+    if (dados.preferencias) palavrasChave.add(JSON.stringify(dados.preferencias));
+    if (dados.processos_rh) palavrasChave.add(JSON.stringify(dados.processos_rh));
+    if (dados.lembretes?.length) dados.lembretes.forEach(lembrete => palavrasChave.add(JSON.stringify(lembrete)));
+    if (dados.empresas_clientes?.length) dados.empresas_clientes.forEach(empresa => palavrasChave.add(JSON.stringify(empresa)));
+    if (dados.outros_dados_relevantes) palavrasChave.add(JSON.stringify(dados.outros_dados_relevantes));
+
+    // ---- SALVANDO AS PALAVRAS-CHAVE ----
+    for (const palavra of palavrasChave) {
+      await enqueueSemanticMemory("palavras-chave", palavra, numero, "user");
+    }
+
+    // ---- SALVANDO OUTROS DADOS SEPARADOS ----
     if (Object.keys(dados.informacoes_pessoais || {}).length > 0) {
-      enqueueSemanticMemory(
-        "informacoes_pessoais",
-        dados.informacoes_pessoais,
-        numero,
-        "user"
-      );
+      await enqueueSemanticMemory("informacoes_pessoais", dados.informacoes_pessoais, numero, "user");
     }
 
     if (dados.filhos?.length > 0) {
@@ -85,12 +100,7 @@ Mensagem do usuário: "${mensagem}"
     }
 
     if (Object.keys(dados.outros_dados_relevantes || {}).length > 0) {
-      enqueueSemanticMemory(
-        "outros_dados_relevantes",
-        dados.outros_dados_relevantes,
-        numero,
-        "user"
-      );
+      enqueueSemanticMemory("outros_dados_relevantes", dados.outros_dados_relevantes, numero, "user");
     }
 
     return dados;
@@ -102,7 +112,6 @@ Mensagem do usuário: "${mensagem}"
 
 // === BUSCA INTELIGENTE PARA CONSULTAR EMPRESAS ===
 export async function buscarEmpresa(numero, texto, db) {
-  // Recebe a instância do db como parâmetro para evitar dependência global
   const nomeMatch = texto.toLowerCase().match(/(beneficios|taxa|ponto|pagamento|email).*?da\s(.+)/);
   if (!nomeMatch) return null;
 
