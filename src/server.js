@@ -277,15 +277,55 @@ function identificarPalavrasChave(texto) {
   return palavrasChave;
 }
 
+// Função para dividir a mensagem em várias partes
 function dividirMensagem(texto, limite = 120) {
   const partes = [];
-  while (texto.length > limite) {
-    partes.push(texto.slice(0, limite));
-    texto = texto.slice(limite);
+  let inicio = 0;
+
+  while (inicio < texto.length) {
+    // Procurar o limite mais próximo de uma quebra de palavra
+    let fim = inicio + limite;
+
+    if (fim < texto.length) {
+      // Procurar o último espaço antes do limite
+      fim = texto.lastIndexOf(' ', fim);
+
+      if (fim === -1) {
+        // Se não houver espaço, cortar no limite
+        fim = inicio + limite;
+      }
+    }
+
+    partes.push(texto.slice(inicio, fim).trim());
+    inicio = fim + 1; // Avança um espaço para o próximo segmento
   }
-  partes.push(texto);
+
   return partes;
 }
+
+// Função para fazer a resposta mais objetiva
+function respostaObjetiva(texto, limite = 150) {
+  if (texto.length > limite) {
+    return `${texto.split(' ').slice(0, 25).join(' ')}...`;  // Pegando as 25 primeiras palavras
+  }
+  return texto;
+}
+
+// Exemplo de resposta cansativa
+const respostaCansativa = "Aqui está uma explicação bem detalhada, onde discutimos de maneira extensa vários pontos que podem ser bastante úteis no futuro e podem resolver as questões que temos atualmente.";
+
+// Utilizando a função de resposta objetiva para resumir
+const respostaResumida = respostaObjetiva(respostaCansativa);
+console.log(respostaResumida);  // "Aqui está uma explicação bem detalhada, onde discutimos de maneira extensa vários pontos..."
+
+// Caso a resposta seja muito longa, você pode dividir em partes
+const partesDaResposta = dividirMensagem(respostaCansativa, 120);  // Dividir em partes de até 120 caracteres
+
+console.log("Resposta dividida em partes:");
+partesDaResposta.forEach((parte, index) => {
+  console.log(`Parte ${index + 1}: ${parte}`);
+});
+
 
 /* ========================= Envio WhatsApp ========================= */
 async function sendMessage(to, text) {
