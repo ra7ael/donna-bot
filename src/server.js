@@ -290,9 +290,6 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
   }
 }
 
-/* =========================
-   GPT / utilitários
-   ========================= */
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
@@ -304,19 +301,11 @@ async function askGPT(prompt, history = []) {
       content: m.content.toString().trim()
     }));
 
-    const contextoDonna = `Você é Donna, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no maximo 2 frases`;
+    const contextoDonna = `Você é Donna, sua personalidade é baseada na icônica Donna Paulsen de Suits. Seja confiante, inteligente, sarcástica e profissional. Responda com autoridade, sendo direta, espirituosa, mas sempre respeitosa. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. Sempre responda com no máximo 2 frases.`;
 
     const contextoHorario = `Agora no Brasil são: ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
     sanitizedMessages.unshift({ role: "system", content: contextoHorario });
     sanitizedMessages.push({ role: "user", content: prompt || "" });
-
-    const palavrasChave = identificarPalavrasChave(prompt);
-    const palavrasChaveUnicas = [...new Set(palavrasChave)];
-    if (palavrasChaveUnicas.length > 0) {
-      for (let palavra of palavrasChaveUnicas) {
-        await enqueueSemanticMemory("palavras-chave", palavra, "user", "user");
-      }
-    }
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
@@ -331,45 +320,30 @@ async function askGPT(prompt, history = []) {
   }
 }
 
-function identificarPalavrasChave(texto) {
-  const regex = /\b(\w{3,})\b/g;
-  const palavras = (texto || "").match(regex) || [];
-  const palavrasChave = palavras.filter(p => p.length > 3);
-  return palavrasChave;
-}
-
-function dividirMensagem(texto, limite = 120) {
-  const partes = [];
-  while (texto.length > limite) {
-    partes.push(texto.slice(0, limite));
-    texto = texto.slice(limite);
-  }
-  partes.push(texto);
-  return partes;
-}
-
-/* =========================
-   Envio WhatsApp
-   ========================= */
-async function sendMessage(to, text) {
+async function sendMessage(to, text, isAudio = false) {
   try {
-    const partes = dividirMensagem(text);
-    for (let parte of partes) {
-      await axios.post(
-        `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
-        {
-          messaging_product: "whatsapp",
-          to,
-          text: { body: parte }
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-            "Content-Type": "application/json"
+    if (isAudio) {
+      const audioBuffer = await textToAudio(text); // Converte o texto para áudio
+      await sendAudioMessage(to, audioBuffer);
+    } else {
+      const partes = dividirMensagem(text);
+      for (let parte of partes) {
+        await axios.post(
+          `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
+          {
+            messaging_product: "whatsapp",
+            to,
+            text: { body: parte }
           },
-          timeout: 30000
-        }
-      );
+          {
+            headers: {
+              Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+              "Content-Type": "application/json"
+            },
+            timeout: 30000
+          }
+        );
+      }
     }
     console.log("📤 Mensagem enviada para WhatsApp.");
   } catch (err) {
@@ -377,10 +351,54 @@ async function sendMessage(to, text) {
   }
 }
 
-/* =========================
-   Exports internos para outros módulos
-   ========================= */
-global.apiExports = { askGPT, salvarMemoria, enqueueSemanticMemory, querySemanticMemory };
+async function sendAudioMessage(to, audioBuffer) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to,
+        audio: { link: audioBuffer } // Assumindo que o link do áudio é retornado
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 30000
+      }
+    );
+    console.log("📤 Áudio enviado para WhatsApp.");
+  } catch (err) {
+    console.error("❌ Erro ao enviar áudio:", err.message);
+  }
+}
+
+/* Função para converter texto em áudio (usando OpenAI ou TTS externo) */
+async function textToAudio(text) {
+  try {
+    const response = await axios.post(
+      "https://api.openai.com/v1/audio/generate", // URL para geração de áudio (ajuste conforme sua API de TTS)
+      {
+        model: "whisper-1", // Ou outro modelo de TTS, dependendo da sua API
+        input: text,
+        voice: "pt-BR", // ou qualquer voz que preferir
+        encoding: "mp3"
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    return response.data.audio_url; // Ou base64, dependendo da resposta
+  } catch (err) {
+    console.error("❌ Erro ao gerar áudio:", err.message);
+    return null;
+  }
+}
 
 /* =========================
    Webhook WhatsApp
@@ -392,10 +410,7 @@ app.post("/webhook", async (req, res) => {
     if (!messageObj) return res.sendStatus(200);
 
     // 🚨 1. BLOQUEIO: IGNORA MENSAGENS QUE NÃO SÃO DO USUÁRIO
-    // Se for mensagem enviada pela própria Donna → ignorar
     if (messageObj.id && messageObj.id.startsWith("wamid.")) {
-      // mensagens recebidas começam com "wamid." 
-      // mas as enviadas pela Donna voltam como "false_XXXXX"
       if (String(messageObj.id).includes("false_")) {
         console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
         return res.sendStatus(200);
@@ -429,10 +444,52 @@ app.post("/webhook", async (req, res) => {
     if (messageObj.type === "text") body = messageObj.text?.body || "";
     if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = "audio: recebido";
+      if (audioBuffer) {
+        // Transcrever o áudio para texto
+        const transcricao = await transcreverAudio(audioBuffer);
+        if (transcricao) {
+          body = transcricao; // Corpo da mensagem é a transcrição do áudio
+          await sendMessage(from, `🎤 Áudio transcrito: ${body}`);
+        } else {
+          await sendMessage(from, "⚠ Não consegui transcrever o áudio.");
+        }
+      }
     }
 
-    /* =========================
+    if (body) {
+      const respostaGPT = await askGPT(body);
+      const isAudioResponse = messageObj.type === "audio"; // Se a mensagem recebida foi um áudio, a resposta será em áudio também
+      await sendMessage(from, respostaGPT, isAudioResponse); // Enviar a resposta como áudio ou texto
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Erro no webhook:", err.message);
+    res.sendStatus(500);
+  }
+});
+
+/* =========================
+   Função de transcrição de áudio
+   ========================= */
+async function transcreverAudio(audioBuffer) {
+  try {
+    const transcricao = await axios.post(
+      "https://speech.googleapis.com/v1/speech:recognize",
+      {
+        config: { encoding: "LINEAR16", sampleRateHertz: 16000, languageCode: "pt-BR" },
+        audio: { content: audioBuffer.toString("base64") }
+      },
+      { headers: { Authorization: `Bearer ${process.env.GOOGLE_CLOUD_API_KEY}` } }
+    );
+
+    return transcricao.data?.results?.[0]?.alternatives?.[0]?.transcript || null;
+  } catch (err) {
+    console.error("❌ Erro ao transcrever áudio:", err.message);
+    return null;
+  }
+}
+
        MEMÓRIAS MANUAIS
        ========================= */
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
