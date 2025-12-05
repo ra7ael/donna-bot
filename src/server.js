@@ -34,6 +34,36 @@ const app = express();
 app.use(bodyParser.json());
 const uploadMulter = multer({ dest: "uploads/" });
 
+/* =========================
+   Controle de cron & dedup
+   ========================= */
+let cronStarted = false;
+let lastMessageSentByUser = {}; // controla a última mensagem enviada por número (deduplicação por usuário)
+
+/**
+ * Usa a função sendMessage existente para enviar, mas previne duplicação por usuário.
+ * Mantive o nome sendMessageIfNeeded para compatibilidade com onde vamos passá-la ao cron.
+ */
+async function sendMessageIfNeeded(to, text) {
+  if (!text) return false;
+  if (!to) return false;
+
+  if (!lastMessageSentByUser[to]) lastMessageSentByUser[to] = null;
+
+  if (lastMessageSentByUser[to] === text) {
+    console.log("💬 Mensagem duplicada para este usuário, pulando:", to);
+    return false;
+  }
+
+  await sendMessage(to, text);
+  lastMessageSentByUser[to] = text;
+  return true;
+}
+
+/* =========================
+   Variáveis e helpers gerais
+   ========================= */
+
 // ===== Papéis Profissionais =====
 const profissoes = [
   "Enfermeira Obstetra","Médica", "Nutricionista", "Personal Trainer", "Psicóloga", "Coach de Produtividade",
@@ -52,9 +82,8 @@ const profissoes = [
 let papelAtual = null;
 let papeisCombinados = [];
 
-// ===== Verificação de papel =====
 function verificarComandoProfissao(texto) {
-  const textoLower = texto.toLowerCase();
+  const textoLower = (texto || "").toLowerCase();
 
   if (
     textoLower.includes("sair do papel") ||
@@ -113,7 +142,9 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 // ⚡ openai instanciado com a variável correta
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// ===== Conexão com MongoDB =====
+/* =========================
+   Conexão com MongoDB (única)
+   ========================= */
 let db;
 
 async function connectDB() {
@@ -139,7 +170,16 @@ async function connectDB() {
       });
 
       console.log("✅ Mongoose conectado com sucesso ✅");
-      startReminderCron(db, sendMessage);
+
+      // Inicia o cron UMA ÚNICA VEZ usando sendMessageIfNeeded para evitar duplicações por usuário
+      if (!cronStarted) {
+        startReminderCron(db, sendMessageIfNeeded);
+        cronStarted = true;
+        console.log("⏰ Cron iniciado APENAS UMA VEZ (via sendMessageIfNeeded)");
+      } else {
+        console.log("⚠️ Cron já estava rodando, não iniciado novamente.");
+      }
+
       break;
 
     } catch (err) {
@@ -160,7 +200,9 @@ async function connectDB() {
 await connectDB();
 export { db };
 
-// ===== 📚 Funções de Livros =====
+/* =========================
+   Funções de livros e rotas
+   ========================= */
 async function saveBookContent(content, format, userId) {
   const contentChunks = content.split('\n').map(chunk => chunk.trim()).filter(chunk => chunk);
   for (let chunk of contentChunks) {
@@ -180,26 +222,38 @@ async function queryBookContent(userId) {
 }
 
 app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
-  const { filename, mimetype } = req.file;
-  const userId = req.body.userId || req.body.from || null;
-  const filePath = path.join(__dirname, 'uploads', filename);
-  const format = mimetype.includes("pdf") ? "pdf" : "epub";
+  try {
+    const { filename, mimetype } = req.file;
+    const userId = req.body.userId || req.body.from || null;
+    const filePath = path.join(__dirname, 'uploads', filename);
+    const format = mimetype.includes("pdf") ? "pdf" : "epub";
 
-  const buffer = fs.readFileSync(filePath);
-  const data = await pdfParse(buffer);
-  await saveBookContent(data.text, format, userId);
-  fs.unlinkSync(filePath);
+    const buffer = fs.readFileSync(filePath);
+    const data = await pdfParse(buffer);
+    await saveBookContent(data.text, format, userId);
+    fs.unlinkSync(filePath);
 
-  res.status(200).send("✅ Livro processado");
+    res.status(200).send("✅ Livro processado");
+  } catch (err) {
+    console.error("❌ Erro upload-book:", err);
+    res.status(500).send("Erro ao processar arquivo");
+  }
 });
 
 app.get('/book-content/:userId', async (req, res) => {
-  const { userId } = req.params;
-  const content = await queryBookContent(userId);
-  res.status(200).send(content || "📚 Nenhum livro salvo");
+  try {
+    const { userId } = req.params;
+    const content = await queryBookContent(userId);
+    res.status(200).send(content || "📚 Nenhum livro salvo");
+  } catch (err) {
+    console.error("❌ Erro book-content:", err);
+    res.status(500).send("Erro ao recuperar livro");
+  }
 });
 
-// ===== Recuperar memória do usuário (via memory.js) =====
+/* =========================
+   Recuperar / salvar memória
+   ========================= */
 app.get("/memoria/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -210,7 +264,6 @@ app.get("/memoria/:userId", async (req, res) => {
   }
 });
 
-// ===== Função para salvar memória semântica, verificando duplicação =====
 async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
   try {
     const existingMemory = await db.collection("semanticMemory").findOne({
@@ -237,131 +290,9 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
   }
 }
 
-// ===== Conexão com MongoDB =====
-let db;
-
-async function connectDB() {
-  let tentativas = 5;
-
-  while (tentativas > 0) {
-    try {
-      console.log("🔹 Tentando conectar ao MongoDB...");
-      const client = await MongoClient.connect(MONGO_URI, {
-        useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 60000,
-        socketTimeoutMS: 90000
-      });
-
-      db = client.db("donna");
-      console.log("✅ Conectado ao MongoDB ✅");
-
-      await mongoose.connect(MONGO_URI, {
-        serverSelectionTimeoutMS: 60000,
-        connectTimeoutMS: 60000,
-        socketTimeoutMS: 90000,
-        maxPoolSize: 10
-      });
-
-      console.log("✅ Mongoose conectado com sucesso ✅");
-      startReminderCron(db, sendMessage);
-      break;
-
-    } catch (err) {
-      tentativas--;
-      console.error(`❌ Falha ao conectar. Tentativas restantes: ${tentativas}`);
-      console.error(err.message);
-
-      if (tentativas === 0) {
-        console.error("❌ Não foi possível conectar ao banco. Encerrando...");
-        process.exit(1);
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    }
-  }
-}
-
-await connectDB();
-export { db };
-
-// ===== 📚 Funções de Livros =====
-async function saveBookContent(content, format, userId) {
-  const contentChunks = content.split('\n').map(chunk => chunk.trim()).filter(chunk => chunk);
-  for (let chunk of contentChunks) {
-    await db.collection('books').insertOne({
-      userId,
-      format,
-      content: chunk,
-      createdAt: new Date(),
-    });
-  }
-  console.log(`📚 Livro salvo no banco (${format})`);
-}
-
-async function queryBookContent(userId) {
-  const items = await db.collection('books').find({ userId }).toArray();
-  return items.map(i => i.content).join('\n');
-}
-
-app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
-  const { filename, mimetype } = req.file;
-  const userId = req.body.userId || req.body.from || null;
-  const filePath = path.join(__dirname, 'uploads', filename);
-  const format = mimetype.includes("pdf") ? "pdf" : "epub";
-
-  const buffer = fs.readFileSync(filePath);
-  const data = await pdfParse(buffer);
-  await saveBookContent(data.text, format, userId);
-  fs.unlinkSync(filePath);
-
-  res.status(200).send("✅ Livro processado");
-});
-
-app.get('/book-content/:userId', async (req, res) => {
-  const { userId } = req.params;
-  const content = await queryBookContent(userId);
-  res.status(200).send(content || "📚 Nenhum livro salvo");
-});
-
-// ===== Recuperar memória do usuário (via memory.js) =====
-app.get("/memoria/:userId", async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const memories = await buscarMemoria(userId);
-    res.json(memories?.map(m => m.content) || []);
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
-});
-
-// ===== Função para salvar memória semântica, verificando duplicação =====
-async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
-  try {
-    const existingMemory = await db.collection("semanticMemory").findOne({
-      userId,
-      category,
-      content: keyword,
-    });
-
-    if (existingMemory) {
-      console.log("💾 Palavra-chave já salva. Não salvando novamente.");
-      return;
-    }
-
-    await db.collection("semanticMemory").insertOne({
-      userId,
-      category,
-      content: keyword,
-      createdAt: new Date(),
-    });
-
-    console.log(`💾 Palavra-chave salva na categoria "${category}": ${keyword}`);
-  } catch (err) {
-    console.error("❌ Erro ao salvar memória semântica:", err.message);
-  }
-}
-
-// ===== Função askGPT mantida e com cast seguro =====
+/* =========================
+   GPT / utilitários
+   ========================= */
 async function askGPT(prompt, history = []) {
   try {
     const safeMessages = history
@@ -402,7 +333,7 @@ async function askGPT(prompt, history = []) {
 
 function identificarPalavrasChave(texto) {
   const regex = /\b(\w{3,})\b/g;
-  const palavras = texto.match(regex) || [];
+  const palavras = (texto || "").match(regex) || [];
   const palavrasChave = palavras.filter(p => p.length > 3);
   return palavrasChave;
 }
@@ -417,17 +348,9 @@ function dividirMensagem(texto, limite = 120) {
   return partes;
 }
 
-let lastMessageSent = null;
-async function sendMessageIfNeeded(to, text) {
-  if (!text || text === lastMessageSent) {
-    console.log("💬 duplicada, pulando");
-    return false;
-  }
-  await sendMessage(to, text);
-  lastMessageSent = text;
-  return true;
-}
-
+/* =========================
+   Envio WhatsApp
+   ========================= */
 async function sendMessage(to, text) {
   try {
     const partes = dividirMensagem(text);
@@ -454,10 +377,14 @@ async function sendMessage(to, text) {
   }
 }
 
-// ✅ disponibiliza internamente sem quebrar ESM
+/* =========================
+   Exports internos para outros módulos
+   ========================= */
 global.apiExports = { askGPT, salvarMemoria, enqueueSemanticMemory, querySemanticMemory };
 
-// ===== Webhook mantido =====
+/* =========================
+   Webhook WhatsApp
+   ========================= */
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -486,14 +413,14 @@ app.post("/webhook", async (req, res) => {
     // Comandos de memória
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
       const items = await buscarMemoria(from);
-      if (!items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
+      if (!items || !items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
       else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
       return res.sendStatus(200);
     }
 
     if (body.toLowerCase().includes("qual é meu nome")) {
       const items = await buscarMemoria(from);
-      const nomeItem = items.find(m => m.content.toLowerCase().startsWith("nome:"));
+      const nomeItem = (items || []).find(m => m.content.toLowerCase().startsWith("nome:"));
       const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
       await sendMessage(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
       return res.sendStatus(200);
@@ -542,5 +469,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ✅ Mantém apenas UM listen no final do arquivo
+/* =========================
+   Start server
+   ========================= */
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
