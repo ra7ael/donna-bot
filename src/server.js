@@ -490,8 +490,9 @@ async function transcreverAudio(audioBuffer) {
   }
 }
 
-       MEMÓRIAS MANUAIS
-       ========================= */
+
+  //MEMORIAS MANUAIS//
+
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
       .some(g => body.toLowerCase().includes(g))) {
 
