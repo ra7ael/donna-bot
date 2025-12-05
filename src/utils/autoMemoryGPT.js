@@ -73,6 +73,7 @@ Mensagem do usuário: "${mensagem}"
 
     // ---- SALVANDO AS PALAVRAS-CHAVE ----
     for (const palavra of palavrasChave) {
+      // Verifica se a palavra já foi salva para o usuário antes
       await enqueueSemanticMemory("palavras-chave", palavra, numero, "user");
     }
 
