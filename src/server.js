@@ -391,6 +391,25 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj?.from || null;
     if (!messageObj) return res.sendStatus(200);
 
+    // 🚨 1. BLOQUEIO: IGNORA MENSAGENS QUE NÃO SÃO DO USUÁRIO
+    // Se for mensagem enviada pela própria Donna → ignorar
+    if (messageObj.id && messageObj.id.startsWith("wamid.")) {
+      // mensagens recebidas começam com "wamid." 
+      // mas as enviadas pela Donna voltam como "false_XXXXX"
+      if (String(messageObj.id).includes("false_")) {
+        console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
+        return res.sendStatus(200);
+      }
+    }
+
+    // Se não for tipo reconhecido
+    if (!["text", "document", "audio"].includes(messageObj.type)) {
+      return res.sendStatus(200);
+    }
+
+    /* =========================
+       DOCUMENTOS
+       ========================= */
     if (messageObj.type === "document") {
       const mediaBuffer = await downloadMedia(messageObj.document?.id);
       if (!mediaBuffer) {
@@ -403,6 +422,9 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    /* =========================
+       TEXTO E ÁUDIO
+       ========================= */
     let body = "";
     if (messageObj.type === "text") body = messageObj.text?.body || "";
     if (messageObj.type === "audio") {
@@ -410,11 +432,18 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = "audio: recebido";
     }
 
-    // Comandos de memória
-    if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => body.toLowerCase().includes(g))) {
+    /* =========================
+       MEMÓRIAS MANUAIS
+       ========================= */
+    if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
+      .some(g => body.toLowerCase().includes(g))) {
+
       const items = await buscarMemoria(from);
       if (!items || !items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
-      else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
+      else await sendMessage(
+        from,
+        `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`
+      );
       return res.sendStatus(200);
     }
 
@@ -426,7 +455,9 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Salvar informações de perfil, regras ou ideias
+    /* =========================
+       PADRÕES DE PERFIL
+       ========================= */
     const patterns = [
       { regex: /(meu nome é|eu sou o|sou o)/i, label: "nome do usuário" },
       { regex: /(me chama de|pode me chamar de)/i, label: "apelido do usuário" },
@@ -439,37 +470,51 @@ app.post("/webhook", async (req, res) => {
         const valor = body.replace(p.regex, "").trim();
         await salvarMemoria(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${JSON.stringify(valor)}`);
         enqueueSemanticMemory(p.label, valor, from, "user");
-        await sendMessage(from, p.label.includes("ideia") ? `Salvei sua ideia 💡` : `Prontinho! Vou lembrar de você como ${JSON.stringify(valor)} ✨`);
+        await sendMessage(
+          from,
+          p.label.includes("ideia") ? `Salvei sua ideia 💡` : `Prontinho! Vou lembrar de você como ${JSON.stringify(valor)} ✨`
+        );
         return res.sendStatus(200);
       }
     }
 
+    /* =========================
+       MEMÓRIA AUTOMÁTICA
+       ========================= */
+
+    // ❌ AGREGAÇÃO DE GPT PARA AS RESPOSTAS DA DONNA REMOVIDO
     const extractedData = await extractAutoMemoryGPT(from, body);
+
     for (const [categoria, dados] of Object.entries(extractedData)) {
       if (!dados) continue;
       enqueueSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user");
     }
 
+    // ✔ SALVA APENAS MENSAGEM DO USUÁRIO
     await salvarMemoria(from, "user", JSON.stringify(body));
     enqueueSemanticMemory("chat geral", body, from, "user");
 
+    /* =========================
+       PROCESSAMENTO DE RESPOSTA GPT
+       ========================= */
     const semanticResults = await querySemanticMemory(body, from, 3);
-    const reply = semanticResults && semanticResults.length
-      ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
-      : await askGPT(body);
+    const reply =
+      semanticResults && semanticResults.length
+        ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
+        : await askGPT(body);
 
-    await salvarMemoria(from, "assistant", JSON.stringify(reply));
-    enqueueSemanticMemory("resposta GPT", reply, from, "assistant");
+    // ❌ NÃO SALVAR RESPOSTA DA DONNA COMO MEMÓRIA → CORTA LOOP!
+    // await salvarMemoria(from, "assistant", JSON.stringify(reply));
+    // enqueueSemanticMemory("resposta GPT", reply, from, "assistant");
+
     await sendMessage(from, reply);
 
     return res.sendStatus(200);
+
   } catch (err) {
     console.error("❌ Webhook erro:", JSON.stringify(err.message));
     return res.sendStatus(500);
   }
 });
 
-/* =========================
-   Start server
-   ========================= */
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
