@@ -244,12 +244,6 @@ async function askGPT(prompt, history = []) {
 
     sanitizedMessages.push({ role: "user", content: prompt || "" });
 
-    // Verifica se o comando inclui um envio de WhatsApp
-    const comandoWhatsapp = processarComandoWhatsApp(prompt);
-    if (comandoWhatsapp) {
-      return comandoWhatsapp; // Retorna a resposta de envio do WhatsApp
-    }
-
     const palavrasChave = identificarPalavrasChave(prompt);
     const palavrasChaveUnicas = [...new Set(palavrasChave)];
 
@@ -279,6 +273,7 @@ async function askGPT(prompt, history = []) {
     return "Hmm… ainda estou pensando!";
   }
 }
+
 
 // Função que processa comandos de envio de WhatsApp
 async function processarComandoWhatsApp(comando) {
