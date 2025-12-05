@@ -318,7 +318,7 @@ async function processarComandoWhatsApp(comando) {
   const numero = match[2];
 
   try {
-    await sendMessage(numero, mensagem);
+    await sendMessageViaWhatsapp(numero, mensagem); // Chamando a função renomeada
     return `✅ Mensagem enviada para ${numero}`; // Retorna confirmação
   } catch (err) {
     console.error("❌ Erro ao enviar WhatsApp:", err.message);
