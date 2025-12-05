@@ -400,46 +400,25 @@ async function textToAudio(text) {
   }
 }
 
-/* =========================
-   Webhook WhatsApp
-   ========================= */
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = messageObj?.from || null;
-    if (!messageObj) return res.sendStatus(200);
+    if (!messageObj) return res.sendStatus(200); // Garantir que a resposta seja dentro da função assíncrona.
 
     // 🚨 1. BLOQUEIO: IGNORA MENSAGENS QUE NÃO SÃO DO USUÁRIO
     if (messageObj.id && messageObj.id.startsWith("wamid.")) {
       if (String(messageObj.id).includes("false_")) {
         console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
-        return res.sendStatus(200);
+        return res.sendStatus(200); // Certifique-se que este return está no lugar correto.
       }
     }
 
     // Se não for tipo reconhecido
     if (!["text", "document", "audio"].includes(messageObj.type)) {
-      return res.sendStatus(200);
+      return res.sendStatus(200); // Retorno correto dentro da função assíncrona.
     }
 
-    /* =========================
-       DOCUMENTOS
-       ========================= */
-    if (messageObj.type === "document") {
-      const mediaBuffer = await downloadMedia(messageObj.document?.id);
-      if (!mediaBuffer) {
-        await sendMessage(from, "⚠ Não consegui baixar o livro.");
-        return res.sendStatus(200);
-      }
-      const textoExtraido = await pdfParse(Buffer.from(mediaBuffer, "base64"));
-      await saveBookContent(textoExtraido.text, "pdf", from);
-      await sendMessage(from, "✅ Livro salvo no banco. Me peça quando quiser ler.");
-      return res.sendStatus(200);
-    }
-
-    /* =========================
-       TEXTO E ÁUDIO
-       ========================= */
     let body = "";
     if (messageObj.type === "text") body = messageObj.text?.body || "";
     if (messageObj.type === "audio") {
@@ -448,7 +427,7 @@ app.post("/webhook", async (req, res) => {
         // Transcrever o áudio para texto
         const transcricao = await transcreverAudio(audioBuffer);
         if (transcricao) {
-          body = transcricao; // Corpo da mensagem é a transcrição do áudio
+          body = transcricao;
           await sendMessage(from, `🎤 Áudio transcrito: ${body}`);
         } else {
           await sendMessage(from, "⚠ Não consegui transcrever o áudio.");
@@ -462,7 +441,7 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, respostaGPT, isAudioResponse); // Enviar a resposta como áudio ou texto
     }
 
-    res.sendStatus(200);
+    res.sendStatus(200); // Resposta final, após todas as operações assíncronas.
   } catch (err) {
     console.error("❌ Erro no webhook:", err.message);
     res.sendStatus(500);
