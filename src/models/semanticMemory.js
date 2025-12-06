@@ -7,7 +7,7 @@ const semanticSchema = new mongoose.Schema({
   prompt: { type: String, required: true },
   answer: { type: String, required: true },
   role: { type: String, enum: ["user", "assistant"], required: true },
-  vector: { type: [Number], required: true },
+  vector: { type: [Number], required: true, index: '2dsphere' },
   createdAt: { type: Date, default: Date.now }
 });
 
