@@ -1,22 +1,44 @@
+// utils/sendMessage.js
 import axios from "axios";
+const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 
-// 🚀 Ajuste aqui a URL da sua API de WhatsApp
-const WHATSAPP_API_URL = process.env.WHATSAPP_API_URL || "http://localhost:3000/whatsapp/send";
+function dividirMensagem(texto, limite = 300) {
+  const partes = [];
+  let inicio = 0;
 
-export async function sendMessage(to, message) {
+  while (inicio < texto.length) {
+    let fim = inicio + limite;
+    if (fim < texto.length) {
+      fim = texto.lastIndexOf(" ", fim);
+      if (fim === -1) fim = inicio + limite;
+    }
+    partes.push(texto.slice(inicio, fim).trim());
+    inicio = fim + 1;
+  }
+  return partes;
+}
+
+export async function sendMessage(to, text) {
   try {
-    const payload = {
-      number: to,
-      message: message
-    };
-
-    const response = await axios.post(WHATSAPP_API_URL, payload);
-
-    console.log(`📨 Mensagem enviada para ${to}`);
-    return response.data;
-
-  } catch (error) {
-    console.error("❌ Erro ao enviar mensagem:", error.response?.data || error.message);
-    throw error;
+    const partes = dividirMensagem(text);
+    for (const parte of partes) {
+      await axios.post(
+        `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
+        {
+          messaging_product: "whatsapp",
+          to,
+          text: { body: parte }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+    }
+  } catch (err) {
+    console.error("❌ Erro enviar WhatsApp:", err.message);
   }
 }
