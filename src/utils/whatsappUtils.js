@@ -1,6 +1,8 @@
 // src/utils/whatsappUtils.js
 import { askGPT } from './server.js'; // ou do export global que você já definiu
 import { sendMessage } from "./sendMessage.js";
+const { askGPT } = global.apiExports;
+
 
 // Função para processar comandos do tipo: envia "mensagem" para 55xxxxxxxxx
 async function processarComandoWhatsApp(texto) {
