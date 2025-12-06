@@ -26,8 +26,6 @@ import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import { enqueueSemanticMemory } from './utils/semanticQueue.js';
 import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
-import { receberMensagemWhatsApp } from "./utils/whatsappUtils.js";
-import { sendMessage } from "./utils/sendMessage.js";
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
 dotenv.config();
