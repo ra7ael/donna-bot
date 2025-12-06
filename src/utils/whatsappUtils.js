@@ -1,5 +1,5 @@
 // src/utils/whatsappUtils.js
-import { askGPT } from "./askGPT.js";
+import { askGPT } from './server.js'; // ou do export global que você já definiu
 import { sendMessage } from "./sendMessage.js";
 
 // Função para processar comandos do tipo: envia "mensagem" para 55xxxxxxxxx
