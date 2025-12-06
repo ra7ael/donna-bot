@@ -227,75 +227,58 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
 
 
 
-/* ========================= GPT / utilitários ========================= */
-async function askGPT(prompt, history = []) {
-  try {
-    const safeMessages = history
-      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
-      .filter(m => m.content.trim() !== "");
+/* ========================= Funções auxiliares ========================= */
 
-    const sanitizedMessages = safeMessages.map(m => ({ role: m.role, content: m.content.toString().trim() }));
-    
-    // Contexto Donna adicionado no início
-    const contextoDonna = "Você é Donna, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no máximo 2 frases";
-    sanitizedMessages.unshift({ role: "system", content: contextoDonna });
-
-    // Adicionar a hora do Brasil
-    const contextoHorario = `Agora no Brasil são: ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
-    sanitizedMessages.unshift({ role: "system", content: contextoHorario });
-
-    sanitizedMessages.push({ role: "user", content: prompt || "" });
-
-    const palavrasChave = identificarPalavrasChave(prompt);
-    const palavrasChaveUnicas = [...new Set(palavrasChave)];
-
-    if (palavrasChaveUnicas.length > 0) {
-      for (let palavra of palavrasChaveUnicas) {
-        await enqueueSemanticMemory("palavras-chave", palavra, "user", "user");
-      }
-    }
-
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-5-mini",
-        messages: sanitizedMessages
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 30000
-      }
-    );
-    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
-  } catch (err) {
-    console.error("❌ Erro GPT:", JSON.stringify(err.message));
-    return "Hmm… ainda estou pensando!";
-  }
+// Função para identificar palavras-chave
+function identificarPalavrasChave(texto) {
+  const regex = /\b(\w{3,})\b/g;
+  const palavras = (texto || "").match(regex) || [];
+  const palavrasChave = palavras.filter(p => p.length > 3);
+  return palavrasChave;
 }
 
-/* ========================= Funções auxiliares ========================= */
+// Função para dividir a mensagem em várias partes
+function dividirMensagem(texto, limite = 300) {
+  const partes = [];
+  let inicio = 0;
+
+  while (inicio < texto.length) {
+    let fim = inicio + limite;
+    if (fim < texto.length) {
+      fim = texto.lastIndexOf(' ', fim);
+      if (fim === -1) fim = inicio + limite;
+    }
+    partes.push(texto.slice(inicio, fim).trim());
+    inicio = fim + 1;
+  }
+
+  return partes;
+}
+
+// Função para fazer a resposta mais objetiva
+function respostaObjetiva(texto, limite = 150) {
+  if (texto.length > limite) {
+    return `${texto.split(' ').slice(0, 25).join(' ')}...`;
+  }
+  return texto;
+}
+
 // Função para processar comandos de envio de WhatsApp
 async function processarComandoWhatsApp(comando) {
-  // Regex para capturar a mensagem entre aspas e o número
   const regex = /envia\s+['"](.*?)['"]\s+para\s+(\d{10,13})/i;
   const match = comando.match(regex);
 
-  if (!match) {
-    return null; // Retorna null se não for um comando de WhatsApp válido
-  }
+  if (!match) return null;
 
   const mensagem = match[1];
   const numero = match[2];
 
   try {
-    await sendMessage(numero, mensagem); // Chamando a função de envio padrão
-    return `✅ Mensagem enviada para ${numero}`; // Retorna confirmação
+    await sendMessage(numero, mensagem);
+    return `✅ Mensagem enviada para ${numero}`;
   } catch (err) {
     console.error("❌ Erro ao enviar WhatsApp:", err.message);
-    return "❌ Ocorreu um erro ao tentar enviar a mensagem."; // Retorna erro se falhar
+    return "❌ Ocorreu um erro ao tentar enviar a mensagem.";
   }
 }
 
@@ -332,59 +315,46 @@ async function enviarMensagemDonna(mensagem, numero) {
   return await processarComandoWhatsApp(comando);
 }
 
-/* ========================= Funções auxiliares ========================= */
+/* ========================= GPT / utilitários ========================= */
+async function askGPT(prompt, history = []) {
+  try {
+    const safeMessages = history
+      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
+      .filter(m => m.content.trim() !== "");
 
-// Função para dividir a mensagem em várias partes
-function dividirMensagem(texto, limite = 300) {
-  const partes = [];
-  let inicio = 0;
+    const sanitizedMessages = safeMessages.map(m => ({ role: "role", content: m.content.toString().trim() }));
 
-  while (inicio < texto.length) {
-    // Procurar o limite mais próximo de uma quebra de palavra
-    let fim = inicio + limite;
+    const contextoDonna = "Você é Donna, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no máximo 2 frases";
+    sanitizedMessages.unshift({ role: "system", content: contextoDonna });
 
-    if (fim < texto.length) {
-      // Procurar o último espaço antes do limite
-      fim = texto.lastIndexOf(' ', fim);
+    const contextoHorario = `Agora no Brasil são: ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
+    sanitizedMessages.unshift({ role: "system", content: contextoHorario });
 
-      if (fim === -1) {
-        // Se não houver espaço, cortar no limite
-        fim = inicio + limite;
+    sanitizedMessages.push({ role: "user", content: prompt || "" });
+
+    const palavrasChave = identificarPalavrasChave(prompt);
+    const palavrasChaveUnicas = [...new Set(palavrasChave)];
+
+    if (palavrasChaveUnicas.length > 0) {
+      for (let palavra of palavrasChaveUnicas) {
+        await enqueueSemanticMemory("palavras-chave", palavra, "user", "user");
       }
     }
 
-    partes.push(texto.slice(inicio, fim).trim());
-    inicio = fim + 1; // Avança um espaço para o próximo segmento
-  }
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      { model: "gpt-5-mini", messages: sanitizedMessages },
+      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" }, timeout: 30000 }
+    );
 
-  return partes;
+    return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
+  } catch (err) {
+    console.error("❌ Erro GPT:", JSON.stringify(err.message));
+    return "Hmm… ainda estou pensando!";
+  }
 }
 
-// Função para fazer a resposta mais objetiva
-function respostaObjetiva(texto, limite = 150) {
-  if (texto.length > limite) {
-    return `${texto.split(' ').slice(0, 25).join(' ')}...`;  // Pegando as 25 primeiras palavras
-  }
-  return texto;
-}
-
-// Exemplo de resposta cansativa
-const respostaCansativa = "Aqui está uma explicação bem detalhada, onde discutimos de maneira extensa vários pontos que podem ser bastante úteis no futuro e podem resolver as questões que temos atualmente.";
-
-// Utilizando a função de resposta objetiva para resumir
-const respostaResumida = respostaObjetiva(respostaCansativa);
-console.log(respostaResumida);  // "Aqui está uma explicação bem detalhada, onde discutimos de maneira extensa vários pontos..."
-
-// Caso a resposta seja muito longa, você pode dividir em partes
-const partesDaResposta = dividirMensagem(respostaCansativa, 120);  // Dividir em partes de até 120 caracteres
-
-console.log("Resposta dividida em partes:");
-partesDaResposta.forEach((parte, index) => {
-  console.log(`Parte ${index + 1}: ${parte}`);
-});
-
-
-/* ========================= Exports internos para outros módulos ========================= */
+/* ========================= Exports internos ========================= */
 global.apiExports = {
   askGPT,
   salvarMemoria,
