@@ -42,27 +42,27 @@ export async function querySemanticMemory(query, userId, limit = 1) {
     const results = await SemanticMemory.aggregate([
       { $match: { userId } },
 
-      // Injeta o vetor da query no pipeline para cálculos
+      // Injeta o vetor da query no pipeline
       {
         $addFields: {
           queryVector: queryVector
         }
       },
 
-      // Calcula similaridade (cosine similarity correta)
+      // Calcula similaridade (cosine similarity)
       {
         $addFields: {
           dotProduct: {
             $reduce: {
-              input: { $range: [0, { $size: "$vector" }] },
+              input: { $range: [0, { $size: { $ifNull: ["$vector", []] } }] },
               initialValue: 0,
               in: {
                 $add: [
                   "$$value",
                   {
                     $multiply: [
-                      { $arrayElemAt: ["$queryVector", "$$this"] },
-                      { $arrayElemAt: ["$vector", "$$this"] }
+                      { $arrayElemAt: [{ $ifNull: ["$queryVector", []] }, "$$this"] },
+                      { $arrayElemAt: [{ $ifNull: ["$vector", []] }, "$$this"] }
                     ]
                   }
                 ]
@@ -73,7 +73,7 @@ export async function querySemanticMemory(query, userId, limit = 1) {
           magnitudeQuery: {
             $sqrt: {
               $reduce: {
-                input: "$queryVector",
+                input: { $ifNull: ["$queryVector", []] },
                 initialValue: 0,
                 in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
               }
@@ -83,7 +83,7 @@ export async function querySemanticMemory(query, userId, limit = 1) {
           magnitudeDoc: {
             $sqrt: {
               $reduce: {
-                input: "$vector",
+                input: { $ifNull: ["$vector", []] },
                 initialValue: 0,
                 in: { $add: ["$$value", { $pow: ["$$this", 2] }] }
               }
@@ -97,9 +97,24 @@ export async function querySemanticMemory(query, userId, limit = 1) {
         $addFields: {
           similarity: {
             $cond: {
-              if: { $eq: [{ $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }, 0] },
+              if: { 
+                $eq: [
+                  { 
+                    $multiply: [
+                      "$magnitudeQuery",
+                      "$magnitudeDoc"
+                    ] 
+                  }, 
+                  0 
+                ] 
+              },
               then: 0,
-              else: { $divide: ["$dotProduct", { $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }] }
+              else: { 
+                $divide: [
+                  "$dotProduct",
+                  { $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }
+                ] 
+              }
             }
           }
         }
@@ -111,16 +126,15 @@ export async function querySemanticMemory(query, userId, limit = 1) {
       // Garante que answer é string
       {
         $project: {
-          answer: {
-            $toString: "$answer"
-          },
+          answer: { $toString: "$answer" },
           similarity: 1,
           _id: 0
         }
       }
-    ]).option({ maxTimeMS: 60000 }); // ⏳ Timeout de 60s adicionado na aggregate
+    ]).option({ maxTimeMS: 60000 });
 
     if (!results.length) return null;
+
     return results.map(r => r.answer);
 
   } catch (err) {
