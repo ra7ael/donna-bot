@@ -162,8 +162,7 @@ await connectDB();
 export { db };
 
 // Inicializa rotina/family module (usa sendMessage existente)
-await initRoutineFamily(db);
-initRoutineFamily(db, sendMessage);
+await initRoutineFamily(db, sendMessage);
 
 
 /* ========================= Funções de livros e rotas ========================= */
