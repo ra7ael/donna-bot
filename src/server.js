@@ -229,6 +229,12 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
 
 /* ========================= Funções auxiliares ========================= */
 
+  // 🔥 PREVISÃO DO TEMPO
+  if (msg.toLowerCase().includes("clima") || msg.toLowerCase().includes("tempo")) {
+    const resposta = await getWeather("Curitiba", "hoje");
+    return reply(resposta);
+  }
+
 // Função para identificar palavras-chave
 function identificarPalavrasChave(texto) {
   const regex = /\b(\w{3,})\b/g;
