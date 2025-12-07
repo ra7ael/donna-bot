@@ -27,6 +27,7 @@ import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.
 import { enqueueSemanticMemory } from './utils/semanticQueue.js';
 import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
 import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
+import { handleReminder } from './utils/routineFamily.js';
 
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
