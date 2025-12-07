@@ -430,6 +430,18 @@ app.post("/webhook", async (req, res) => {
       console.error("❌ erro handleCommand:", err.message || err);
     }
 
+        // ----------------- Comandos de Lembretes -----------------
+    try {
+      const lembreteCriado = await handleReminder(body, from);
+      if (lembreteCriado) {
+        res.sendStatus(200);
+        return;
+      }
+    } catch (err) {
+      console.error("❌ erro handleReminder:", err.message || err);
+    }
+
+
         /* ========================= COMANDO DE CLIMA ========================= */
     if (body.toLowerCase().includes("clima") || body.toLowerCase().includes("tempo")) {
       const resposta = await getWeather("Curitiba", "hoje");
