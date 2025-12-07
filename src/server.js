@@ -229,12 +229,6 @@ async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
 
 /* ========================= Funções auxiliares ========================= */
 
-  // 🔥 PREVISÃO DO TEMPO
-  if (msg.toLowerCase().includes("clima") || msg.toLowerCase().includes("tempo")) {
-    const resposta = await getWeather("Curitiba", "hoje");
-    return reply(resposta);
-  }
-
 // Função para identificar palavras-chave
 function identificarPalavrasChave(texto) {
   const regex = /\b(\w{3,})\b/g;
@@ -417,6 +411,15 @@ app.post("/webhook", async (req, res) => {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = "audio: recebido";
     }
+
+        /* ========================= COMANDO DE CLIMA ========================= */
+    if (body.toLowerCase().includes("clima") || body.toLowerCase().includes("tempo")) {
+      const resposta = await getWeather("Curitiba", "hoje");
+      await sendMessage(from, resposta);
+      res.sendStatus(200);
+      return;
+    }
+
 
     /* ========================= MEMÓRIAS MANUAIS ========================= */
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
