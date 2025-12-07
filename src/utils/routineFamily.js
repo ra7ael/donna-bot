@@ -58,7 +58,6 @@ export function initRoutineFamily(db, sendMessage) {
 /* -------------------- Helpers -------------------- */
 
 function parseRelativeTime(text) {
-  // Suporta: "daqui X horas", "daqui X minutos", "amanhã às HH[:MM]", "hoje às HH", "quinta às 14h"
   text = (text || "").toLowerCase();
 
   // daqui X horas/minutos
@@ -93,13 +92,12 @@ function parseRelativeTime(text) {
     const h = parseInt(m[3], 10);
     const min = m[5] ? parseInt(m[5], 10) : 0;
     let dt = DateTime.now();
-    // calcula próxima data com o dia da semana target
     const delta = (target - dt.weekday + 7) % 7 || 7;
     dt = dt.plus({ days: delta }).set({ hour: h, minute: min, second: 0 });
     return dt.toISO();
   }
 
-  // tentativa simples de parse de dd/mm ou dd/mm/aaaa
+  // dd/mm ou dd/mm/aaaa
   m = text.match(/(\d{1,2})\/(\d{1,2})(\/(\d{4}))?/);
   if (m) {
     const d = parseInt(m[1], 10);
@@ -116,21 +114,40 @@ function parseRelativeTime(text) {
 
 export async function createReminder(userId, text, whenText, meta = {}) {
   if (!_db) throw new Error("routineFamily não inicializado");
-  const dueAt = parseRelativeTime(whenText) || DateTime.fromISO(whenText, { zone: DateTime.now().zone }).isValid ? whenText : null;
-  const dueISO = dueAt || DateTime.now().toISO();
+
+  // garante ISO válida
+  let dueISO = parseRelativeTime(whenText);
+  if (!dueISO) {
+    const dt = DateTime.fromISO(whenText, { zone: DateTime.now().zone });
+    dueISO = dt.isValid ? dt.toISO() : DateTime.now().toISO();
+  }
+
   const doc = { userId, text, whenText: whenText || "", dueAt: dueISO, createdAt: new Date(), sent: false, meta };
   const r = await _db.collection("reminders").insertOne(doc);
   return { ok: true, id: r.insertedId, dueAt: dueISO };
 }
 
-export async function listReminders(userId) {
-  return await _db.collection("reminders").find({ userId }).sort({ dueAt: 1 }).toArray();
-}
+/* -------------------- Comando de alto nível -------------------- */
 
-export async function deleteReminder(userId, id) {
-  const { ObjectId } = require("mongodb");
-  return await _db.collection("reminders").deleteOne({ _id: new ObjectId(id), userId });
-}
+export async function handleCommand(text, from) {
+  const t = (text || "").toLowerCase();
+
+  // lembretes smart
+  if (t.startsWith("me lembra") || t.startsWith("lembrete:") || t.includes("lembre me") || t.includes("não me deixe")) {
+    const m = text.match(/(me lembra|lembrete:|não me deixe lembrar de|não me deixe esquecer de)\s*(.*)/i);
+    const body = m ? m[2] : text;
+
+    // extrai a parte temporal
+    const whenMatch = body.match(/daqui.*|amanh.*|hoje.*|domingo|segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|\d{1,2}\/\d{1,2}/i);
+    const whenText = whenMatch ? whenMatch[0] : "daqui 1 hora";
+
+    // texto real sem a parte de tempo
+    const textOnly = body.replace(whenText, "").trim() || body.trim();
+
+    const created = await createReminder(from, textOnly, whenText);
+    await _sendMessage(from, `✅ Lembrete criado para ${DateTime.fromISO(created.dueAt).toFormat("dd/MM/yyyy HH:mm")}`);
+    return true;
+  }
 
 /* -------------------- Shopping Lists -------------------- */
 
