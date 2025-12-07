@@ -40,7 +40,7 @@ export function initRoutineFamily(db, sendMessage) {
           .toArray();
 
         for (const c of chores) {
-          await _sendMessage(c.userId, `🧹 Tarefa: ${c.name} — ${c.note || ""}`);
+          await _sendMessage(c.userId, `🧹 Tarefa: ${c.name}${c.note ? ` — ${c.note}` : ""}`);
           const next = DateTime.fromISO(c.nextRun).setZone(ZONE).plus({ days: c.intervalDays || 7 }).toISO();
           await _db.collection("chores").updateOne(
             { _id: c._id },
@@ -61,8 +61,8 @@ function parseRelativeTime(text) {
   text = (text || "").toLowerCase();
   let m;
 
-  // "daqui X minutos/horas"
-  m = text.match(/daqui\s+(\d+)\s*(hora|minuto|horas|minutos)/i);
+  // "daqui X minutos/horas" ou "em X minutos/horas"
+  m = text.match(/(?:daqui|em)\s+(\d+)\s*(hora|minuto|horas|minutos)/i);
   if (m) {
     const n = parseInt(m[1], 10);
     if (/min/i.test(m[2])) return DateTime.now().setZone(ZONE).plus({ minutes: n }).toISO();
@@ -70,28 +70,28 @@ function parseRelativeTime(text) {
   }
 
   // "amanhã às HH:mm"
-  m = text.match(/amanh[ãa]\s*(às|as)?\s*(\d{1,2})([:h](\d{1,2}))?/i);
+  m = text.match(/amanh[ãa]\s*(?:às|as)?\s*(\d{1,2})(?:[:h](\d{1,2}))?/i);
   if (m) {
-    const h = parseInt(m[2], 10);
-    const min = m[4] ? parseInt(m[4], 10) : 0;
+    const h = parseInt(m[1], 10);
+    const min = m[2] ? parseInt(m[2], 10) : 0;
     return DateTime.now().setZone(ZONE).plus({ days: 1 }).set({ hour: h, minute: min, second: 0 }).toISO();
   }
 
   // "hoje às HH:mm"
-  m = text.match(/hoje\s*(às|as)?\s*(\d{1,2})([:h](\d{1,2}))?/i);
+  m = text.match(/hoje\s*(?:às|as)?\s*(\d{1,2})(?:[:h](\d{1,2}))?/i);
   if (m) {
-    const h = parseInt(m[2], 10);
-    const min = m[4] ? parseInt(m[4], 10) : 0;
+    const h = parseInt(m[1], 10);
+    const min = m[2] ? parseInt(m[2], 10) : 0;
     return DateTime.now().setZone(ZONE).set({ hour: h, minute: min, second: 0 }).toISO();
   }
 
   // Dias da semana
-  m = text.match(/(domingo|segunda|terca|terça|quarta|quinta|sexta|sabado|sábado)\s*(às|as)?\s*(\d{1,2})([:h](\d{1,2}))?/i);
+  m = text.match(/(domingo|segunda|terca|terça|quarta|quinta|sexta|sabado|sábado)\s*(?:às|as)?\s*(\d{1,2})(?:[:h](\d{1,2}))?/i);
   if (m) {
     const names = { domingo: 7, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6 };
     const target = names[m[1]];
-    const h = parseInt(m[3], 10);
-    const min = m[5] ? parseInt(m[5], 10) : 0;
+    const h = parseInt(m[2], 10);
+    const min = m[3] ? parseInt(m[3], 10) : 0;
     let dt = DateTime.now().setZone(ZONE);
     const delta = (target - dt.weekday + 7) % 7 || 7;
     dt = dt.plus({ days: delta }).set({ hour: h, minute: min, second: 0 });
@@ -99,11 +99,11 @@ function parseRelativeTime(text) {
   }
 
   // Data no formato dd/mm/yyyy
-  m = text.match(/(\d{1,2})\/(\d{1,2})(\/(\d{4}))?/);
+  m = text.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
   if (m) {
     const d = parseInt(m[1], 10);
     const mo = parseInt(m[2], 10);
-    const year = m[4] ? parseInt(m[4], 10) : DateTime.now().setZone(ZONE).year;
+    const year = m[3] ? parseInt(m[3], 10) : DateTime.now().setZone(ZONE).year;
     const dt = DateTime.fromObject({ year, month: mo, day: d, hour: 12, minute: 0 }).setZone(ZONE);
     if (dt.isValid) return dt.toISO();
   }
@@ -177,10 +177,13 @@ export async function handleCommand(text, from) {
   if (t.startsWith("me lembra") || t.startsWith("lembrete:") || t.includes("lembre me") || t.includes("não me deixe")) {
     const m = text.match(/(me lembra|lembrete:|não me deixe lembrar de|não me deixe esquecer de)\s*(.*)/i);
     const body = m ? m[2] : text;
-    const whenMatch = body.match(/daqui.*|amanh.*|hoje.*|domingo|segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|\d{1,2}\/\d{1,2}/i);
+
+    const whenMatch = body.match(/daqui.*|em.*|amanh.*|hoje.*|domingo|segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|\d{1,2}\/\d{1,2}/i);
     const whenText = whenMatch ? whenMatch[0] : "daqui 1 hora";
+
     const textOnly = body.replace(whenText, "").trim() || body.trim();
     const created = await createReminder(from, textOnly, whenText);
+
     await _sendMessage(from, `✅ Lembrete criado para ${DateTime.fromISO(created.dueAt).setZone(ZONE).toFormat("dd/MM/yyyy HH:mm")}`);
     return true;
   }
