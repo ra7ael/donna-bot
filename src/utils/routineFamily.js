@@ -187,3 +187,5 @@ export async function handleCommand(text, from) {
 
   return false;
 }
+
+export const handleReminder = handleCommand;
