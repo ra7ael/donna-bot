@@ -26,6 +26,8 @@ import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import { enqueueSemanticMemory } from './utils/semanticQueue.js';
 import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
+import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
+
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
 dotenv.config();
@@ -157,6 +159,10 @@ async function connectDB() {
 }
 await connectDB();
 export { db };
+
+// Inicializa rotina/family module (usa sendMessage existente)
+initRoutineFamily(db, sendMessage);
+
 
 /* ========================= Funções de livros e rotas ========================= */
 async function saveBookContent(content, format, userId) {
@@ -410,6 +416,18 @@ app.post("/webhook", async (req, res) => {
     if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = "audio: recebido";
+    }
+
+
+        // ----------------- Comandos de Rotina & Casa -----------------
+    try {
+      const handled = await handleCommand(body, from);
+      if (handled) {
+        res.sendStatus(200);
+        return;
+      }
+    } catch (err) {
+      console.error("❌ erro handleCommand:", err.message || err);
     }
 
         /* ========================= COMANDO DE CLIMA ========================= */
