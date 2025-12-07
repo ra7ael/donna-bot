@@ -173,7 +173,7 @@ export async function createDailyReport(userId, reportText) {
 export async function handleCommand(text, from) {
   const t = (text || "").toLowerCase();
 
-  // lembretes
+  /* -------------------- LEMBRETES -------------------- */
   if (t.startsWith("me lembra") || t.startsWith("lembrete:") || t.includes("lembre me") || t.includes("não me deixe")) {
     const m = text.match(/(me lembra|lembrete:|não me deixe lembrar de|não me deixe esquecer de)\s*(.*)/i);
     const body = m ? m[2] : text;
@@ -185,6 +185,92 @@ export async function handleCommand(text, from) {
     const created = await createReminder(from, textOnly, whenText);
 
     await _sendMessage(from, `✅ Lembrete criado para ${DateTime.fromISO(created.dueAt).setZone(ZONE).toFormat("dd/MM/yyyy HH:mm")}`);
+    return true;
+  }
+
+  /* -------------------- LISTAS DE COMPRAS -------------------- */
+  if (t.startsWith("criar lista")) {
+    const m = text.match(/criar lista\s+(\w+)\s*(?:com\s*(.*))?/i);
+    if (!m) {
+      await _sendMessage(from, "❌ Use: 'criar lista NOME [com item1, item2,...]'");
+      return true;
+    }
+    const name = m[1];
+    const items = m[2] ? m[2].split(",").map(i => i.trim()) : [];
+    const listId = await createShoppingList(from, name, items);
+    await _sendMessage(from, `✅ Lista "${name}" criada com ${items.length} itens.`);
+    return true;
+  }
+
+  if (t.startsWith("adicionar item")) {
+    const m = text.match(/adicionar item\s+(.+?)\s+na lista\s+(\w+)/i);
+    if (!m) {
+      await _sendMessage(from, "❌ Use: 'adicionar item ITEM na lista NOME'");
+      return true;
+    }
+    const item = m[1];
+    const name = m[2];
+    const lists = await getShoppingLists(from);
+    const list = lists.find(l => l.name === name);
+    if (list) {
+      await addItemToShoppingList(from, list._id, item);
+      await _sendMessage(from, `✅ Item "${item}" adicionado à lista "${name}".`);
+    } else {
+      await _sendMessage(from, `❌ Lista "${name}" não encontrada.`);
+    }
+    return true;
+  }
+
+  /* -------------------- TAREFAS (CHORES) -------------------- */
+  if (t.startsWith("adicionar tarefa")) {
+    const m = text.match(/adicionar tarefa\s+(.+?)(?:\s+intervalo\s+(\d+))?(?:\s+nota\s+(.+))?$/i);
+    if (!m) {
+      await _sendMessage(from, "❌ Use: 'adicionar tarefa NOME [intervalo DIAS] [nota NOTA]'");
+      return true;
+    }
+    const name = m[1];
+    const intervalDays = m[2] ? parseInt(m[2], 10) : 7;
+    const note = m[3] || "";
+    await addChore(from, name, intervalDays, note);
+    await _sendMessage(from, `✅ Tarefa "${name}" adicionada, repetindo a cada ${intervalDays} dias.`);
+    return true;
+  }
+
+  if (t.startsWith("listar tarefas") || t.startsWith("tarefas")) {
+    const chores = await listChores(from);
+    if (chores.length === 0) {
+      await _sendMessage(from, "📋 Nenhuma tarefa cadastrada.");
+    } else {
+      const listText = chores.map(c => `- ${c.name} (próxima: ${DateTime.fromISO(c.nextRun).setZone(ZONE).toFormat("dd/MM/yyyy HH:mm")})`).join("\n");
+      await _sendMessage(from, `📋 Suas tarefas:\n${listText}`);
+    }
+    return true;
+  }
+
+  /* -------------------- MENUS -------------------- */
+  if (t.startsWith("salvar menu")) {
+    const m = text.match(/salvar menu\s+(\w+)\s*:\s*(.+)/i);
+    if (!m) {
+      await _sendMessage(from, "❌ Use: 'salvar menu SEMANA: item1, item2, ...'");
+      return true;
+    }
+    const weekKey = m[1];
+    const items = m[2].split(",").map(i => i.trim());
+    const menuObj = { items };
+    await saveWeeklyMenu(from, weekKey, menuObj);
+    await _sendMessage(from, `✅ Menu da semana "${weekKey}" salvo.`);
+    return true;
+  }
+
+  /* -------------------- RELATÓRIO DIÁRIO -------------------- */
+  if (t.startsWith("relatório") || t.startsWith("meu diário")) {
+    const m = text.match(/(?:relatório|meu diário)\s*:\s*(.+)/i);
+    if (!m) {
+      await _sendMessage(from, "❌ Use: 'relatório: texto do diário'");
+      return true;
+    }
+    await createDailyReport(from, m[1]);
+    await _sendMessage(from, "✅ Relatório diário salvo.");
     return true;
   }
 
