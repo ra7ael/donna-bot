@@ -495,7 +495,31 @@ if (textoLower.startsWith("gerar senior")) {
   }
 }
 
+    /* ========================= DOCUMENTOS ========================= */
+if (messageObj.type === "document") {
+  const mediaBuffer = await downloadMedia(messageObj.document?.id);
+  if (!mediaBuffer) {
+    await sendMessage(from, "⚠ Não consegui baixar o arquivo.");
+    res.sendStatus(200);
+    return;
+  }
 
+  const arquivoTemp = `uploads/${messageObj.document.filename || "arquivo.xlsx"}`;
+  fs.writeFileSync(arquivoTemp, Buffer.from(mediaBuffer, "base64"));
+
+  // 🔹 Aqui você chama a função para processar o XLSX
+  import { processarPlanilha } from "./utils/pontoDonna.js";
+  await processarPlanilha(arquivoTemp, from);
+
+  // Apaga o arquivo temporário se quiser
+  fs.unlinkSync(arquivoTemp);
+
+  res.sendStatus(200);
+  return;
+}
+
+
+    
     // ----------------- Comandos de Rotina & Casa -----------------
     try {
       const handled = await handleCommand(body, from);
