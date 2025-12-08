@@ -26,11 +26,11 @@
     "say": "^0.16.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
-      "fs-extra": "^11.1.1",
-      "xlsx": "^0.18.5",
-      "pdfkit": "^0.13.0",
-      "node-fetch": "^3.3.2",
-      "form-data": "^4.0.0"
+    "nodemon": "^3.0.1",
+    "fs-extra": "^11.1.1",
+    "xlsx": "^0.18.5",
+    "pdfkit": "^0.13.0",
+    "node-fetch": "^3.3.2",
+    "form-data": "^4.0.0"
   }
 }
