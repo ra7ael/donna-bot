@@ -1,10 +1,11 @@
 import axios from "axios";
 import fs from "fs";
+import FormData from "form-data";
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-export async function enviarMensagemDonna(to, { document, caption }) {
+export async function enviarDocumentoWhatsApp(to, { document, caption }) {
   try {
     const fileData = fs.readFileSync(document);
 
