@@ -327,6 +327,17 @@ app.post("/gerar-senior", async (req, res) => {
   try {
     const dados = req.body;
 
+    // Validação mínima
+    const camposObrigatorios = ["nome", "cpf", "admissao", "cargo", "tipoContrato", "jornada", "salario", "setor", "matricula"];
+    const faltando = camposObrigatorios.filter(c => !dados[c]);
+
+    if (faltando.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        erro: `Campos faltando: ${faltando.join(", ")}`
+      });
+    }
+
     const filePath = gerarArquivoSenior(dados);
 
     return res.json({
