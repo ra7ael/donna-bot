@@ -115,7 +115,7 @@ const __dirname = path.dirname(__filename);
 
 app.use('/audio', express.static(path.join(__dirname, 'public/audio')));
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
