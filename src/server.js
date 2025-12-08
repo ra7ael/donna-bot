@@ -362,6 +362,8 @@ async function askGPT(prompt, history = []) {
   }
 }
 
+app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
+
 /* ========================= Exports internos ========================= */
 global.apiExports = {
   askGPT,
@@ -561,8 +563,4 @@ app.post("/webhook", async (req, res) => {
     console.error("❌ Webhook erro:", JSON.stringify(err.message));
     res.sendStatus(500);
   }
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
 });
