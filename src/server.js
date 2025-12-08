@@ -421,7 +421,7 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = "audio: recebido";
     }
 
-    const textoLower = body.toLowerCase();
+    /* ========================= SENIOR ========================= */
 
     if (textoLower.startsWith("gerar senior")) {
   try {
@@ -451,11 +451,41 @@ app.post("/webhook", async (req, res) => {
     dados.setor = dados.setor || "Geral";
     dados.matricula = dados.matricula || "0000";
 
-    // gerar arquivo Senior
-    const filePath = gerarArquivoSenior(dados);
+    // gera pasta e arquivo Senior com caminho absoluto
+    const dirPath = path.join(process.cwd(), "generated");
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 
-    // envia arquivo com mensagem de sucesso em uma única chamada
-    await enviarDocumentoWhatsApp(from, filePath, `✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu.`);
+    const nomeArquivo = `senior_${dados.cpf}.txt`;
+    const filePath = path.join(dirPath, nomeArquivo);
+
+    const registro = [
+      dados.nome,
+      dados.cpf,
+      dados.admissao,
+      dados.cargo,
+      dados.tipoContrato,
+      dados.jornada,
+      dados.salario,
+      dados.setor,
+      dados.matricula
+    ].join("|");
+
+    fs.writeFileSync(filePath, registro, "utf-8");
+    console.log("📝 Arquivo Senior gerado em:", filePath);
+
+    // valida arquivo antes de enviar
+    if (!fs.existsSync(filePath)) {
+      await sendMessage(from, "❌ Arquivo Senior não foi gerado.");
+      res.sendStatus(500);
+      return;
+    }
+
+    // envia documento WhatsApp
+    await enviarDocumentoWhatsApp(
+      from,
+      filePath,
+      `✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu.`
+    );
 
     res.sendStatus(200);
     return;
