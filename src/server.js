@@ -30,7 +30,6 @@ import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
 import { handleReminder } from './utils/routineFamily.js';
 import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarMensagemDonna.js";
-import { processarPlanilha } from "./utils/pontoDonna.js";
 
 
 
@@ -375,8 +374,7 @@ global.apiExports = {
   enqueueSemanticMemory,
   querySemanticMemory,
   enviarMensagemDonna,
-  enviarDocumentoWhatsApp,
-  processarPlanilha
+  enviarDocumentoWhatsApp
 };
 
 /* ========================= Webhook WhatsApp ========================= */
@@ -499,30 +497,6 @@ if (textoLower.startsWith("gerar senior")) {
     return;
   }
 }
-
-    /* ========================= DOCUMENTOS ========================= */
-if (messageObj.type === "document") {
-  const mediaBuffer = await downloadMedia(messageObj.document?.id);
-  if (!mediaBuffer) {
-    await sendMessage(from, "⚠ Não consegui baixar o arquivo.");
-    res.sendStatus(200);
-    return;
-  }
-
-  const arquivoTemp = `uploads/${messageObj.document.filename || "arquivo.xlsx"}`;
-  fs.writeFileSync(arquivoTemp, Buffer.from(mediaBuffer, "base64"));
-
-  // 🔹 Chama a função para processar o XLSX
-  await processarPlanilha(arquivoTemp, from);
-
-  // Apaga o arquivo temporário
-  fs.unlinkSync(arquivoTemp);
-
-  res.sendStatus(200);
-  return;
-}
-
-
     
     // ----------------- Comandos de Rotina & Casa -----------------
     try {
