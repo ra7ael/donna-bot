@@ -295,7 +295,7 @@ async function sendMessage(to, text) {
     const partes = dividirMensagem(text);
     for (let parte of partes) {
       await axios.post(
-        `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_ID}/messages`,
+        `https://graph.facebook.com/v23.0/${WHATSAPP_PHONE_ID}/messages`,
         {
           messaging_product: "whatsapp",
           to,
