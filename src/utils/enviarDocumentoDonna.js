@@ -1,43 +1,47 @@
 // src/utils/enviarDocumentoDonna.js
 import fs from "fs";
-import axios from "axios";
-import FormData from "form-data";
+import fetch from "node-fetch"; // ou axios se preferir
+import path from "path";
 
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN; // seu token do WhatsApp Cloud API
-const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID; // ID do número do WhatsApp
+const WHATSAPP_API_URL = "https://graph.facebook.com/v23.0/YOUR_PHONE_NUMBER_ID/messages";
+const TOKEN = process.env.WHATSAPP_TOKEN; // seu token da API do WhatsApp
 
 export async function enviarDocumentoWhatsApp(to, filePath, caption = "") {
-  try {
-    const form = new FormData();
-    form.append("messaging_product", "whatsapp");
-    form.append("to", to);
-    form.append("type", "document");
-    form.append("document", fs.createReadStream(filePath), {
-      filename: filePath.split("/").pop(),
-    });
-    if (caption) form.append("caption", caption);
+  if (!fs.existsSync(filePath)) throw new Error("Arquivo não encontrado: " + filePath);
 
-    const response = await axios.post(
-      `https://graph.facebook.com/v15.0/${WHATSAPP_PHONE_ID}/messages`,
-      form,
-      {
-        headers: {
-          ...form.getHeaders(),
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      }
-    );
+  // opcional: gerar link público do arquivo, se necessário
+  // se o servidor estiver publicamente acessível, você pode apenas usar a URL
+  const fileName = path.basename(filePath);
+  const fileBuffer = fs.readFileSync(filePath);
+  const base64File = fileBuffer.toString("base64");
 
-    console.log("✅ Documento enviado com sucesso:", response.data);
-    return response.data;
+  // payload de envio do documento
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "document",
+    document: {
+      caption,
+      filename: fileName,
+      // se quiser enviar como base64 diretamente:
+      // media: base64File
+      link: `https://meuservidor.com/generated/${fileName}` // ou use sua URL pública
+    }
+  };
 
-  } catch (err) {
-    console.error(
-      "❌ Erro ao enviar documento via WhatsApp:",
-      err.response?.data || err.message
-    );
-    throw err;
+  const response = await fetch(WHATSAPP_API_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Erro ao enviar documento WhatsApp: ${response.status} ${errorText}`);
   }
+
+  console.log(`✅ Documento enviado para ${to}: ${fileName}`);
 }
