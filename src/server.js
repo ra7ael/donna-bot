@@ -14,6 +14,7 @@ import { downloadMedia } from './utils/downloadMedia.js';
 import cron from "node-cron";
 import { numerosAutorizados } from "./config/autorizados.js";
 import fs from "fs";
+import fs from "fs-extra";
 import path from "path";
 import { fileURLToPath } from "url";
 import FormData from "form-data";
