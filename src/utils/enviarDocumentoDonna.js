@@ -1,47 +1,63 @@
 // src/utils/enviarDocumentoDonna.js
 import fs from "fs";
-import fetch from "node-fetch"; // ou axios se preferir
-import path from "path";
+import fetch from "node-fetch";
 
-const WHATSAPP_API_URL = "https://graph.facebook.com/v23.0/YOUR_PHONE_NUMBER_ID/messages";
-const TOKEN = process.env.WHATSAPP_TOKEN; // seu token da API do WhatsApp
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
+// 1️⃣ Função para enviar documento
 export async function enviarDocumentoWhatsApp(to, filePath, caption = "") {
   if (!fs.existsSync(filePath)) throw new Error("Arquivo não encontrado: " + filePath);
 
-  // opcional: gerar link público do arquivo, se necessário
-  // se o servidor estiver publicamente acessível, você pode apenas usar a URL
-  const fileName = path.basename(filePath);
+  // lê o arquivo
   const fileBuffer = fs.readFileSync(filePath);
-  const base64File = fileBuffer.toString("base64");
+  const fileName = filePath.split("/").pop();
 
-  // payload de envio do documento
-  const payload = {
-    messaging_product: "whatsapp",
-    to,
-    type: "document",
-    document: {
-      caption,
-      filename: fileName,
-      // se quiser enviar como base64 diretamente:
-      // media: base64File
-      link: `https://meuservidor.com/generated/${fileName}` // ou use sua URL pública
-    }
-  };
+  try {
+    // 2️⃣ Primeiro faz upload do arquivo para o WhatsApp
+    const uploadResponse = await fetch(`https://graph.facebook.com/v23.0/${WHATSAPP_PHONE_ID}/media`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${WHATSAPP_TOKEN}`
+      },
+      body: new URLSearchParams({
+        "file": fileBuffer.toString("base64"),
+        "type": "text/plain",
+        "filename": fileName
+      })
+    });
+    const uploadData = await uploadResponse.json();
+    if (!uploadData.id) throw new Error("Upload falhou: " + JSON.stringify(uploadData));
 
-  const response = await fetch(WHATSAPP_API_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${TOKEN}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
+    // 3️⃣ Envia a mensagem com o documento usando o mediaId retornado
+    const payload = {
+      messaging_product: "whatsapp",
+      to,
+      type: "document",
+      document: {
+        id: uploadData.id,
+        caption,
+        filename: fileName
+      }
+    };
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Erro ao enviar documento WhatsApp: ${response.status} ${errorText}`);
+    const response = await fetch(`https://graph.facebook.com/v23.0/${WHATSAPP_PHONE_ID}/messages`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const sendData = await response.json();
+    if (!response.ok) throw new Error(`Erro ao enviar documento: ${JSON.stringify(sendData)}`);
+
+    console.log(`✅ Documento enviado para ${to}: ${fileName}`);
+    return sendData;
+
+  } catch (err) {
+    console.error("❌ Erro enviarDocumentoWhatsApp:", err.message || err);
+    throw err;
   }
-
-  console.log(`✅ Documento enviado para ${to}: ${fileName}`);
 }
