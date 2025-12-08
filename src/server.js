@@ -322,6 +322,26 @@ async function enviarMensagemDonna(mensagem, numero) {
   return await processarComandoWhatsApp(comando);
 }
 
+/* ========================= Geração de arquivo Senior ========================= */
+app.post("/gerar-senior", async (req, res) => {
+  try {
+    const dados = req.body;
+
+    const filePath = gerarArquivoSenior(dados);
+
+    return res.json({
+      ok: true,
+      arquivo: filePath,
+      mensagem: "Arquivo TXT para o Senior gerado com sucesso."
+    });
+
+  } catch (err) {
+    console.error("Erro ao gerar TXT Senior:", err);
+    return res.status(500).json({ ok: false, erro: err.message });
+  }
+});
+
+
 /* ========================= GPT / utilitários ========================= */
 async function askGPT(prompt, history = []) {
   try {
