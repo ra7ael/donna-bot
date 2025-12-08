@@ -322,38 +322,6 @@ async function enviarMensagemDonna(mensagem, numero) {
   return await processarComandoWhatsApp(comando);
 }
 
-// ========================= GERAR ARQUIVO SENIOR =========================
-if (textoLower.startsWith("gerar senior")) {
-  try {
-    // Extrai os campos enviados: "nome=joao cpf=123 cargo=auxiliaradm"
-    const partes = textoLower.replace("gerar senior", "").trim().split(" ");
-
-    const dados = {};
-    for (let p of partes) {
-      const [chave, valor] = p.split("=");
-      if (chave && valor) dados[chave] = valor;
-    }
-
-    // Valores padrão caso o usuário não envie
-    dados.admissao = dados.admissao || "2025-01-01";
-    dados.tipoContrato = dados.tipocontrato || "CLT";
-    dados.jornada = dados.jornada || "44h";
-    dados.salario = dados.salario || "0";
-    dados.setor = dados.setor || "RH";
-    dados.matricula = dados.matricula || String(Date.now());
-
-    const filePath = gerarArquivoSenior(dados);
-
-    await sendMessage(from, `Registro Senior criado com sucesso.\nArquivo: ${filePath}`);
-
-    return res.sendStatus(200);
-  } catch (err) {
-    console.error(err);
-    await sendMessage(from, "❌ Erro ao gerar arquivo Senior.");
-    return res.sendStatus(200);
-  }
-}
-
 
 /* ========================= GPT / utilitários ========================= */
 async function askGPT(prompt, history = []) {
