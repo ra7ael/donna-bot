@@ -30,6 +30,10 @@ import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
 import { handleReminder } from './utils/routineFamily.js';
 import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarMensagemDonna.js";
+import { processarPlanilha } from "./utils/pontoDonna.js";
+
+
+
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
 dotenv.config();
 
@@ -371,7 +375,8 @@ global.apiExports = {
   enqueueSemanticMemory,
   querySemanticMemory,
   enviarMensagemDonna,
-  enviarDocumentoWhatsApp
+  enviarDocumentoWhatsApp,
+  processarPlanilha
 };
 
 /* ========================= Webhook WhatsApp ========================= */
