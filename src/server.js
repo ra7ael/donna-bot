@@ -29,7 +29,6 @@ import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memo
 import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
 import { handleReminder } from './utils/routineFamily.js';
 import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
-import { enviarMensagemDonna } from "./utils/enviarMensagemDonna.js";
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
 dotenv.config();
