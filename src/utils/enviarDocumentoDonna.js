@@ -9,23 +9,20 @@ export async function enviarDocumentoWhatsApp(to, filePath, caption = "") {
   const fileBuffer = fs.readFileSync(filePath);
   const fileName = filePath.split("/").pop();
 
-  // 1️⃣ Upload da mídia
   const form = new FormData();
   form.append("file", fileBuffer, { filename: fileName });
-  form.append("type", "document"); // isso é crucial!
+  form.append("type", "document"); // tipo do arquivo
+  form.append("messaging_product", "whatsapp"); // ESSENCIAL
 
-  const uploadRes = await fetch(`https://graph.facebook.com/v23.0/${WHATSAPP_PHONE_ID}/media`, {
+  const uploadRes = await fetch(`https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/media`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${WHATSAPP_TOKEN}`
-    },
+    headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
     body: form
   });
 
   const uploadData = await uploadRes.json();
   if (!uploadData.id) throw new Error("Upload falhou: " + JSON.stringify(uploadData));
 
-  // 2️⃣ Envio do documento
   const payload = {
     messaging_product: "whatsapp",
     to,
@@ -37,7 +34,7 @@ export async function enviarDocumentoWhatsApp(to, filePath, caption = "") {
     }
   };
 
-  const sendRes = await fetch(`https://graph.facebook.com/v23.0/${WHATSAPP_PHONE_ID}/messages`, {
+  const sendRes = await fetch(`https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${WHATSAPP_TOKEN}`,
