@@ -1,4 +1,3 @@
-// src/utils/enviarDocumentoDonna.js
 import fs from "fs";
 import fetch from "node-fetch";
 
@@ -15,6 +14,7 @@ export async function enviarDocumentoWhatsApp(to, filePath, caption = "") {
     // Upload do arquivo
     const formData = new FormData();
     formData.append("file", new Blob([fileBuffer], { type: "text/plain" }), fileName);
+    formData.append("messaging_product", "whatsapp"); // ❗ ESSENCIAL
 
     const uploadResponse = await fetch(`https://graph.facebook.com/v23.0/${WHATSAPP_PHONE_ID}/media`, {
       method: "POST",
