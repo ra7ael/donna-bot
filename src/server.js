@@ -421,6 +421,10 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = "audio: recebido";
     }
 
+    // converte para minúsculas PARA COMANDOS
+    const textoLower = body.toLowerCase();
+
+    
     /* ========================= SENIOR ========================= */
 
     if (textoLower.startsWith("gerar senior")) {
