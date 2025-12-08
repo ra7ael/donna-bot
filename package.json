@@ -27,5 +27,6 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
+    "fs-extra": "^11.1.1"
   }
 }
