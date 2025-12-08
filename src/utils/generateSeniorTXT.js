@@ -1,19 +1,5 @@
-// src/utils/generateSeniorTXT.js
 import fs from "fs";
 import path from "path";
-
-/*
- Modelo básico para o Senior:
- 1 Nome
- 2 CPF
- 3 Data de admissão (YYYY-MM-DD)
- 4 Cargo
- 5 Tipo de contrato
- 6 Jornada
- 7 Salário
- 8 Setor
- 9 Matrícula
-*/
 
 export function gerarArquivoSenior(dados) {
   const registro = [
@@ -29,13 +15,13 @@ export function gerarArquivoSenior(dados) {
   ].join("|");
 
   const nomeArquivo = `senior_${dados.cpf}.txt`;
-  const filePath = path.join("generated", nomeArquivo);
 
-  // cria pasta se não existir
-  if (!fs.existsSync("generated")) {
-    fs.mkdirSync("generated");
-  }
+  // caminho absoluto usando __dirname
+  const dirPath = path.join(process.cwd(), "generated"); // ou __dirname se preferir
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
 
+  const filePath = path.join(dirPath, nomeArquivo);
   fs.writeFileSync(filePath, registro, "utf-8");
+
   return filePath;
 }
