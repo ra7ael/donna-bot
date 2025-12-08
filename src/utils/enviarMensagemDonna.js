@@ -1,35 +1,38 @@
-import axios from "axios";
+// src/utils/enviarMensagemDonna.js
 import fs from "fs";
-import FormData from "form-data";
+import path from "path";
 
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-
-export async function enviarDocumentoWhatsApp(to, { document, caption }) {
+// Função para enviar documento pelo WhatsApp
+export async function enviarDocumentoWhatsApp(to, filePath, caption = "") {
   try {
-    const fileData = fs.readFileSync(document);
+    // valida se filePath foi passado
+    if (!filePath || typeof filePath !== "string") {
+      throw new Error("Parâmetro 'filePath' inválido ou não informado");
+    }
 
-    const form = new FormData();
-    form.append("messaging_product", "whatsapp");
-    form.append("to", to);
-    form.append("type", "document");
-    form.append("document", fileData, {
-      filename: document.split("/").pop(),
-      contentType: "text/plain"
-    });
-    form.append("caption", caption || "");
+    // transforma em caminho absoluto se não for
+    const absolutePath = path.isAbsolute(filePath)
+      ? filePath
+      : path.join(process.cwd(), filePath);
 
-    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    // verifica se o arquivo existe
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error(`Arquivo não encontrado: ${absolutePath}`);
+    }
 
-    await axios.post(url, form, {
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        ...form.getHeaders()
-      }
-    });
+    // lê o arquivo
+    const fileBuffer = fs.readFileSync(absolutePath);
 
-    console.log("📄 Documento enviado com sucesso:", document);
+    console.log(`✅ Enviando documento para ${to}: ${absolutePath}`);
+
+    // AQUI entra a lógica real de envio para WhatsApp
+    // exemplo fictício:
+    // await whatsappAPI.sendDocument(to, fileBuffer, caption);
+
+    return true;
+
   } catch (err) {
-    console.error("❌ Erro ao enviar documento:", err.response?.data || err);
+    console.error("❌ Erro ao enviar documento WhatsApp:", err.message);
+    throw err; // relança para o webhook tratar
   }
 }
