@@ -421,57 +421,50 @@ app.post("/webhook", async (req, res) => {
 
     const textoLower = body.toLowerCase();
 
-    /* ========================= COMANDO: GERAR SENIOR ========================= */
     if (textoLower.startsWith("gerar senior")) {
-      try {
-        const dados = {};
-        // remover "gerar senior" e transformar parâmetros em chave=valor
-        body.replace(/gerar senior/i, "")
-          .trim()
-          .split(" ")
-          .forEach(par => {
-            const [chave, valor] = par.split("=");
-            if (chave && valor) dados[chave] = valor;
-          });
+  try {
+    const dados = {};
+    body.replace(/gerar senior/i, "")
+      .trim()
+      .split(" ")
+      .forEach(par => {
+        const [chave, valor] = par.split("=");
+        if (chave && valor) dados[chave] = valor;
+      });
 
-        // validação mínima
-        if (!dados.nome || !dados.cpf || !dados.cargo) {
-          await sendMessage(from,
-            "Para gerar o arquivo Senior, envie assim:\n" +
-            "gerar senior nome=joao cpf=123 cargo=auxiliaradm admissao=2025-01-01 salario=2000 setor=rh matricula=001"
-          );
-          res.sendStatus(200);
-          return;
-        }
-
-        // valores padrão
-        dados.admissao = dados.admissao || "2025-01-01";
-        dados.tipoContrato = dados.tipoContrato || "CLT";
-        dados.jornada = dados.jornada || "44h";
-        dados.salario = dados.salario || "0";
-        dados.setor = dados.setor || "Geral";
-        dados.matricula = dados.matricula || "0000";
-
-        // gerar arquivo Senior
-        const filePath = gerarArquivoSenior(dados);
-
-        await sendMessage(from, `Registro Senior criado com sucesso.\nArquivo: ${filePath}`);
-
-        // enviar arquivo pelo WhatsApp
-        await enviarDocumentoWhatsApp(from, {
-          document: filePath,
-          caption: "Aqui está o arquivo Senior que você pediu."
-        });
-
-        res.sendStatus(200);
-        return;
-      } catch (err) {
-        console.error("Erro ao gerar Senior:", err);
-        await sendMessage(from, "Não consegui gerar o arquivo Senior.");
-        res.sendStatus(200);
-        return;
-      }
+    if (!dados.nome || !dados.cpf || !dados.cargo) {
+      await sendMessage(from,
+        "Para gerar o arquivo Senior, envie assim:\n" +
+        "gerar senior nome=joao cpf=123 cargo=auxiliaradm admissao=2025-01-01 salario=2000 setor=rh matricula=001"
+      );
+      res.sendStatus(200);
+      return;
     }
+
+    // valores padrão
+    dados.admissao = dados.admissao || "2025-01-01";
+    dados.tipoContrato = dados.tipoContrato || "CLT";
+    dados.jornada = dados.jornada || "44h";
+    dados.salario = dados.salario || "0";
+    dados.setor = dados.setor || "Geral";
+    dados.matricula = dados.matricula || "0000";
+
+    // gerar arquivo Senior
+    const filePath = gerarArquivoSenior(dados);
+
+    // envia arquivo com mensagem de sucesso em uma única chamada
+    await enviarDocumentoWhatsApp(from, filePath, `✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu.`);
+
+    res.sendStatus(200);
+    return;
+
+  } catch (err) {
+    console.error("Erro ao gerar Senior:", err);
+    await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
+    res.sendStatus(200);
+    return;
+  }
+}
 
     // ----------------- Comandos de Rotina & Casa -----------------
     try {
