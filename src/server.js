@@ -415,16 +415,14 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    // 🚨 1. BLOQUEIO: IGNORAR MENSAGENS QUE NÃO SÃO DO USUÁRIO
-    if (messageObj.id && messageObj.id.startsWith("wamid.")) {
-      if (String(messageObj.id).includes("false_")) {
-        console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
-        res.sendStatus(200);
-        return;
-      }
+    // 🚨 BLOQUEIO: IGNORAR mensagens enviadas pela Donna para evitar loop
+    if (messageObj.id && messageObj.id.startsWith("wamid.") && String(messageObj.id).includes("false_")) {
+      console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
+      res.sendStatus(200);
+      return;
     }
 
-    // Se não for tipo reconhecido
+    // Se tipo de mensagem não é suportado
     if (!["text", "document", "audio"].includes(messageObj.type)) {
       res.sendStatus(200);
       return;
@@ -453,11 +451,12 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = "audio: recebido";
     }
 
+    const textoLower = body.toLowerCase();
+
     /* ========================= COMANDO: GERAR SENIOR ========================= */
-    if (body.toLowerCase().startsWith("gerar senior")) {
+    if (textoLower.startsWith("gerar senior")) {
       try {
         const dados = {};
-
         // remover "gerar senior" e transformar parâmetros em chave=valor
         body.replace(/gerar senior/i, "")
           .trim()
@@ -477,7 +476,7 @@ app.post("/webhook", async (req, res) => {
           return;
         }
 
-        // valores padrões caso nada seja enviado
+        // valores padrão
         dados.admissao = dados.admissao || "2025-01-01";
         dados.tipoContrato = dados.tipoContrato || "CLT";
         dados.jornada = dados.jornada || "44h";
@@ -485,20 +484,19 @@ app.post("/webhook", async (req, res) => {
         dados.setor = dados.setor || "Geral";
         dados.matricula = dados.matricula || "0000";
 
-        // gerar o TXT
+        // gerar arquivo Senior
         const filePath = gerarArquivoSenior(dados);
 
         await sendMessage(from, `Registro Senior criado com sucesso.\nArquivo: ${filePath}`);
 
-        // enviar o arquivo pelo WhatsApp
-        await enviarMensagemDonna(from, {
+        // enviar arquivo pelo WhatsApp
+        await enviarDocumentoWhatsApp(from, {
           document: filePath,
           caption: "Aqui está o arquivo Senior que você pediu."
         });
 
         res.sendStatus(200);
         return;
-
       } catch (err) {
         console.error("Erro ao gerar Senior:", err);
         await sendMessage(from, "Não consegui gerar o arquivo Senior.");
@@ -530,7 +528,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     /* ========================= COMANDO DE CLIMA ========================= */
-    if (body.toLowerCase().includes("clima") || body.toLowerCase().includes("tempo")) {
+    if (textoLower.includes("clima") || textoLower.includes("tempo")) {
       const resposta = await getWeather("Curitiba", "hoje");
       await sendMessage(from, resposta);
       res.sendStatus(200);
@@ -539,7 +537,7 @@ app.post("/webhook", async (req, res) => {
 
     /* ========================= MEMÓRIAS MANUAIS ========================= */
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
-      .some(g => body.toLowerCase().includes(g))) {
+      .some(g => textoLower.includes(g))) {
       const items = await buscarMemoria(from);
       if (!items || !items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
       else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
@@ -547,7 +545,7 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    if (body.toLowerCase().includes("qual é meu nome")) {
+    if (textoLower.includes("qual é meu nome")) {
       const items = await buscarMemoria(from);
       const nomeItem = (items || []).find(m => m.content.toLowerCase().startsWith("nome:"));
       const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
@@ -597,9 +595,11 @@ app.post("/webhook", async (req, res) => {
 
     await sendMessage(from, reply);
     res.sendStatus(200);
+
   } catch (err) {
     console.error("❌ Webhook erro:", JSON.stringify(err.message));
     res.sendStatus(500);
   }
 });
+
 
