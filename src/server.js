@@ -493,6 +493,28 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
+          // =============================
+      // ROTA DO SENIOR (coloque aqui)
+      // =============================
+      app.post("/gerar-senior", async (req, res) => {
+        try {
+          const dados = req.body;
+      
+          const filePath = gerarArquivoSenior(dados);
+      
+          return res.json({
+            ok: true,
+            arquivo: filePath,
+            mensagem: "Arquivo TXT para o Senior gerado com sucesso."
+          });
+      
+        } catch (err) {
+          console.error("Erro ao gerar TXT Senior:", err);
+          return res.status(500).json({ ok: false, erro: err.message });
+        }
+      });
+
+
     /* ========================= MEMÓRIA AUTOMÁTICA ========================= */
     const extractedData = await extractAutoMemoryGPT(from, body);
     for (const [categoria, dados] of Object.entries(extractedData)) {
