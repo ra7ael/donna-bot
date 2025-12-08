@@ -476,14 +476,14 @@ if (textoLower.startsWith("gerar senior")) {
     fs.writeFileSync(filePath, registro, "utf-8");
     console.log("📝 Arquivo Senior gerado em:", filePath);
 
-    // valida arquivo antes de enviar
+    // valida arquivo
     if (!fs.existsSync(filePath)) {
       await sendMessage(from, "❌ Arquivo Senior não foi gerado.");
       res.sendStatus(500);
       return;
     }
 
-    // ✅ envia documento usando multipart/form-data
+    // ✅ envia documento via multipart
     const { enviarDocumentoWhatsApp } = await import("./utils/enviarDocumentoDonna.js");
     await enviarDocumentoWhatsApp(
       from,
@@ -501,6 +501,7 @@ if (textoLower.startsWith("gerar senior")) {
     return;
   }
 }
+
 
 
     // envia documento WhatsApp
