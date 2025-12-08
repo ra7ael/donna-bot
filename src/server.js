@@ -503,25 +503,6 @@ if (textoLower.startsWith("gerar senior")) {
 }
 
 
-
-    // envia documento WhatsApp
-    await enviarDocumentoWhatsApp(
-      from,
-      filePath,
-      `✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu.`
-    );
-
-    res.sendStatus(200);
-    return;
-
-  } catch (err) {
-    console.error("Erro ao gerar Senior:", err);
-    await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
-    res.sendStatus(200);
-    return;
-  }
-}
-
     // ----------------- Comandos de Rotina & Casa -----------------
     try {
       const handled = await handleCommand(body, from);
