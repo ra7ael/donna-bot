@@ -512,11 +512,10 @@ if (messageObj.type === "document") {
   const arquivoTemp = `uploads/${messageObj.document.filename || "arquivo.xlsx"}`;
   fs.writeFileSync(arquivoTemp, Buffer.from(mediaBuffer, "base64"));
 
-  // 🔹 Aqui você chama a função para processar o XLSX
-  import { processarPlanilha } from "./utils/pontoDonna.js";
+  // 🔹 Chama a função para processar o XLSX
   await processarPlanilha(arquivoTemp, from);
 
-  // Apaga o arquivo temporário se quiser
+  // Apaga o arquivo temporário
   fs.unlinkSync(arquivoTemp);
 
   res.sendStatus(200);
