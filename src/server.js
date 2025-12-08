@@ -322,35 +322,37 @@ async function enviarMensagemDonna(mensagem, numero) {
   return await processarComandoWhatsApp(comando);
 }
 
-/* ========================= Geração de arquivo Senior ========================= */
-app.post("/gerar-senior", async (req, res) => {
+// ========================= GERAR ARQUIVO SENIOR =========================
+if (textoLower.startsWith("gerar senior")) {
   try {
-    const dados = req.body;
+    // Extrai os campos enviados: "nome=joao cpf=123 cargo=auxiliaradm"
+    const partes = textoLower.replace("gerar senior", "").trim().split(" ");
 
-    // Validação mínima
-    const camposObrigatorios = ["nome", "cpf", "admissao", "cargo", "tipoContrato", "jornada", "salario", "setor", "matricula"];
-    const faltando = camposObrigatorios.filter(c => !dados[c]);
-
-    if (faltando.length > 0) {
-      return res.status(400).json({
-        ok: false,
-        erro: `Campos faltando: ${faltando.join(", ")}`
-      });
+    const dados = {};
+    for (let p of partes) {
+      const [chave, valor] = p.split("=");
+      if (chave && valor) dados[chave] = valor;
     }
+
+    // Valores padrão caso o usuário não envie
+    dados.admissao = dados.admissao || "2025-01-01";
+    dados.tipoContrato = dados.tipocontrato || "CLT";
+    dados.jornada = dados.jornada || "44h";
+    dados.salario = dados.salario || "0";
+    dados.setor = dados.setor || "RH";
+    dados.matricula = dados.matricula || String(Date.now());
 
     const filePath = gerarArquivoSenior(dados);
 
-    return res.json({
-      ok: true,
-      arquivo: filePath,
-      mensagem: "Arquivo TXT para o Senior gerado com sucesso."
-    });
+    await sendMessage(from, `Registro Senior criado com sucesso.\nArquivo: ${filePath}`);
 
+    return res.sendStatus(200);
   } catch (err) {
-    console.error("Erro ao gerar TXT Senior:", err);
-    return res.status(500).json({ ok: false, erro: err.message });
+    console.error(err);
+    await sendMessage(from, "❌ Erro ao gerar arquivo Senior.");
+    return res.sendStatus(200);
   }
-});
+}
 
 
 /* ========================= GPT / utilitários ========================= */
@@ -450,7 +452,7 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = "audio: recebido";
     }
 
-        /* ========================= COMANDO: GERAR SENIOR ========================= */
+    /* ========================= COMANDO: GERAR SENIOR ========================= */
     if (body.toLowerCase().startsWith("gerar senior")) {
       try {
         const dados = {};
@@ -504,10 +506,7 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-
-
-    
-        // ----------------- Comandos de Rotina & Casa -----------------
+    // ----------------- Comandos de Rotina & Casa -----------------
     try {
       const handled = await handleCommand(body, from);
       if (handled) {
@@ -518,7 +517,7 @@ app.post("/webhook", async (req, res) => {
       console.error("❌ erro handleCommand:", err.message || err);
     }
 
-        // ----------------- Comandos de Lembretes -----------------
+    // ----------------- Comandos de Lembretes -----------------
     try {
       const lembreteCriado = await handleReminder(body, from);
       if (lembreteCriado) {
@@ -529,15 +528,13 @@ app.post("/webhook", async (req, res) => {
       console.error("❌ erro handleReminder:", err.message || err);
     }
 
-
-        /* ========================= COMANDO DE CLIMA ========================= */
+    /* ========================= COMANDO DE CLIMA ========================= */
     if (body.toLowerCase().includes("clima") || body.toLowerCase().includes("tempo")) {
       const resposta = await getWeather("Curitiba", "hoje");
       await sendMessage(from, resposta);
       res.sendStatus(200);
       return;
     }
-
 
     /* ========================= MEMÓRIAS MANUAIS ========================= */
     if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
@@ -580,28 +577,6 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-          // =============================
-      // ROTA DO SENIOR (coloque aqui)
-      // =============================
-      app.post("/gerar-senior", async (req, res) => {
-        try {
-          const dados = req.body;
-      
-          const filePath = gerarArquivoSenior(dados);
-      
-          return res.json({
-            ok: true,
-            arquivo: filePath,
-            mensagem: "Arquivo TXT para o Senior gerado com sucesso."
-          });
-      
-        } catch (err) {
-          console.error("Erro ao gerar TXT Senior:", err);
-          return res.status(500).json({ ok: false, erro: err.message });
-        }
-      });
-
-
     /* ========================= MEMÓRIA AUTOMÁTICA ========================= */
     const extractedData = await extractAutoMemoryGPT(from, body);
     for (const [categoria, dados] of Object.entries(extractedData)) {
@@ -627,4 +602,3 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
