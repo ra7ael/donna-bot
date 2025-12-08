@@ -425,9 +425,8 @@ app.post("/webhook", async (req, res) => {
     const textoLower = body.toLowerCase();
 
     
-    /* ========================= SENIOR ========================= */
-
-    if (textoLower.startsWith("gerar senior")) {
+/* ========================= SENIOR ========================= */
+if (textoLower.startsWith("gerar senior")) {
   try {
     const dados = {};
     body.replace(/gerar senior/i, "")
@@ -455,7 +454,7 @@ app.post("/webhook", async (req, res) => {
     dados.setor = dados.setor || "Geral";
     dados.matricula = dados.matricula || "0000";
 
-    // gera pasta e arquivo Senior com caminho absoluto
+    // gera pasta e arquivo Senior
     const dirPath = path.join(process.cwd(), "generated");
     if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 
@@ -483,6 +482,26 @@ app.post("/webhook", async (req, res) => {
       res.sendStatus(500);
       return;
     }
+
+    // ✅ envia documento usando multipart/form-data
+    const { enviarDocumentoWhatsApp } = await import("./utils/enviarDocumentoDonna.js");
+    await enviarDocumentoWhatsApp(
+      from,
+      filePath,
+      "✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu."
+    );
+
+    res.sendStatus(200);
+    return;
+
+  } catch (err) {
+    console.error("Erro ao gerar Senior:", err);
+    await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
+    res.sendStatus(200);
+    return;
+  }
+}
+
 
     // envia documento WhatsApp
     await enviarDocumentoWhatsApp(
