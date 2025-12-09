@@ -9,12 +9,10 @@ const filePath = path.join(folderPath, "empresas.xlsx");
 
 // Garante que a pasta e o arquivo existam
 function ensureFile() {
-  // Cria pasta caso não exista
   if (!fs.existsSync(folderPath)) {
     fs.mkdirSync(folderPath, { recursive: true });
   }
 
-  // Cria o arquivo caso não exista
   if (!fs.existsSync(filePath)) {
     const workbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.json_to_sheet([]);
@@ -28,11 +26,10 @@ export function listarEmpresas() {
   ensureFile();
   const workbook = XLSX.readFile(filePath);
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const dados = XLSX.utils.sheet_to_json(sheet);
-  return dados;
+  return XLSX.utils.sheet_to_json(sheet);
 }
 
-// Buscar empresa
+// Buscar empresa por nome ou código
 export function buscarEmpresa(termo) {
   termo = termo.toLowerCase();
   const empresas = listarEmpresas();
@@ -56,7 +53,29 @@ export function adicionarEmpresa(data) {
   XLSX.writeFile(workbook, filePath);
 }
 
-// Formata a resposta enviada pelo WhatsApp
+// Atualizar um campo específico de uma empresa
+export function atualizarCampo(codigo, campo, novoValor) {
+  ensureFile();
+
+  const lista = listarEmpresas();
+  const index = lista.findIndex(e => String(e.CODIGO).toLowerCase() === String(codigo).toLowerCase());
+
+  if (index === -1) {
+    return { ok: false, mensagem: "Empresa não encontrada." };
+  }
+
+  // Se o campo não existir, cria
+  lista[index][campo.toUpperCase()] = novoValor;
+
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.json_to_sheet(lista);
+  XLSX.utils.book_append_sheet(workbook, sheet, "Empresas");
+  XLSX.writeFile(workbook, filePath);
+
+  return { ok: true, mensagem: "Campo atualizado com sucesso.", empresa: lista[index] };
+}
+
+// Formatar resposta para WhatsApp
 export function formatarEmpresa(e) {
   return `
 Código: ${e.CODIGO || "-"}
