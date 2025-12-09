@@ -427,6 +427,58 @@ app.post("/webhook", async (req, res) => {
     // converte para minúsculas PARA COMANDOS
     const textoLower = body.toLowerCase();
 
+/* ========================= EMPRESAS ========================= */
+
+/* Buscar empresa:
+   empresa buscar ACME
+*/
+if (textoLower.startsWith("empresa buscar")) {
+  const termo = body.replace(/empresa buscar/i, "").trim();
+  if (!termo) {
+    await sendMessage(from, "Envie assim: empresa buscar nome-da-empresa");
+    res.sendStatus(200);
+    return;
+  }
+
+  const lista = buscarEmpresa(termo);
+  if (lista.length === 0) {
+    await sendMessage(from, "Nenhuma empresa encontrada.");
+    res.sendStatus(200);
+    return;
+  }
+
+  const resposta = lista.map(e => formatarEmpresa(e)).join("\n\n");
+  await sendMessage(from, resposta);
+  res.sendStatus(200);
+  return;
+}
+
+/* Adicionar empresa:
+   empresa adicionar CODIGO;NOME;BENEFICIOS;VT;VR;VA;OBS
+*/
+if (textoLower.startsWith("empresa adicionar")) {
+  const dados = body.replace(/empresa adicionar/i, "").trim().split(";");
+
+  if (dados.length < 2) {
+    await sendMessage(from, "Formato: empresa adicionar codigo;nome;beneficios;vt;vr;va;obs");
+    res.sendStatus(200);
+    return;
+  }
+
+  const nova = {
+    CODIGO: dados[0],
+    EMPRESA: dados[1],
+    BENEFICIOS: dados[2] || "",
+    VT: dados[3] || "",
+    VR: dados[4] || "",
+    VA: dados[5] || "",
+    OBS: dados[6] || ""
+  };
+
+  adicionarEmpresa(nova);
+  await sendMessage(from, "Empresa adicionada com
+
+    
     
 /* ========================= SENIOR ========================= */
 if (textoLower.startsWith("gerar senior")) {
