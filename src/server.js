@@ -30,8 +30,7 @@ import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
 import { handleReminder } from './utils/routineFamily.js';
 import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarMensagemDonna.js";
-import {buscarEmpresa,adicionarEmpresa,atualizarCampo,formatarEmpresa} from "./utils/empresas.js";
-
+import { buscarEmpresa,adicionarEmpresa,atualizarCampo,formatarEmpresa} from "./utils/handleEmpresa.js";
 
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
