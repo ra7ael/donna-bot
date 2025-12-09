@@ -25,7 +25,8 @@ export function startReminderCron(db, sendMessage) {
       const formatted = DateTime.fromJSDate(now, { zone: "America/Sao_Paulo" })
         .toFormat("yyyy-MM-dd HH:mm");
 
-      console.log(`🔍 Buscando lembretes para o minuto: ${formatted}`);
+      // ❗️REMOVIDO: log a cada minuto
+      // console.log(`🔍 Buscando lembretes para o minuto: ${formatted}`);
 
       const reminders = await db.collection("lembretes")
         .find({
@@ -34,13 +35,13 @@ export function startReminderCron(db, sendMessage) {
         })
         .toArray();
 
-      if (reminders.length === 0) {
-        console.log("🔹 Nenhum lembrete pendente encontrado.");
-        return;
-      }
+      //❗️ Se não tiver lembretes, fica totalmente silencioso
+      if (reminders.length === 0) return;
+
+      console.log(`🔔 ${reminders.length} lembrete(s) encontrados para ${formatted}`);
 
       for (const r of reminders) {
-        console.log(`🔔 Enviando lembrete para ${r.numero}: ${r.titulo}`);
+        console.log(`📨 Enviando lembrete para ${r.numero}: ${r.titulo}`);
 
         await sendMessage(
           r.numero,
