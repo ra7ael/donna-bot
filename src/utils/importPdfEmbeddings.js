@@ -37,6 +37,7 @@ async function importarPDFs() {
       .trim();
 
     console.log("📄 Tamanho do texto extraído:", texto.length);
+    
 
     const trechos = [];
 
