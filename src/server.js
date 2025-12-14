@@ -649,7 +649,7 @@ if (textoLower.startsWith("gerar senior")) {
 let respostaFinal = null;
 
 try {
-  const trechosLivro = await searchBook(body, 3);
+ const trechosLivro = await searchBook(body, 3, from);
 
   if (trechosLivro && trechosLivro.length) {
     const promptLivro = `
