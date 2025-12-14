@@ -650,6 +650,8 @@ let respostaFinal = null;
 
 try {
  const trechosLivro = await searchBook(body, 3, from);
+  
+  console.log("📘 Trechos encontrados no livro:", trechosLivro.length);
 
   if (trechosLivro && trechosLivro.length) {
     const promptLivro = `
