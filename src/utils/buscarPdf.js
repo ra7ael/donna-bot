@@ -14,7 +14,7 @@ const colecao = "pdfEmbeddings";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function buscarPergunta(pergunta, topK = 3) {
+export async function buscarPergunta(pergunta, topK = 6) {
   await client.connect();
   const db = client.db(dbName);
   const collection = db.collection(colecao);
@@ -40,6 +40,17 @@ export async function buscarPergunta(pergunta, topK = 3) {
 
   const scored = trechos.map(t => ({ ...t, score: similaridade(perguntaEmbedding, t.embedding) }));
   scored.sort((a, b) => b.score - a.score);
+
+    // 🔍 DEBUG — VER SE O LIVRO ESTÁ SENDO ENCONTRADO
+  console.log(
+    "📊 Top similaridades:",
+    scored.slice(0, 6).map(s => ({
+      score: s.score.toFixed(3),
+      trecho: s.trecho.slice(0, 120) + "..."
+    }))
+  );
+
+const topTrechos = scored.slice(0, topK);
 
   const topTrechos = scored.slice(0, topK);
 
