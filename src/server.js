@@ -336,7 +336,7 @@ async function askGPT(prompt, history = []) {
 
     const sanitizedMessages = safeMessages.map(m => ({ role: "role", content: m.content.toString().trim() }));
 
-    const contextoDonna = "Você é Donna, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no máximo 2 frases";
+    const contextoDonna = "Você é Amber, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no máximo 2 frases";
     sanitizedMessages.unshift({ role: "system", content: contextoDonna });
 
     const contextoHorario = `Agora no Brasil são: ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
@@ -649,32 +649,46 @@ if (textoLower.startsWith("gerar senior")) {
 let respostaFinal = null;
 
 try {
- const trechosLivro = await searchBook(body, 3, from);
-  
-  console.log("📘 Trechos encontrados no livro:", trechosLivro.length);
+  const resultadosLivro = await buscarPergunta(body, 6);
 
-  if (trechosLivro && trechosLivro.length) {
-    const promptLivro = `
-Você é Donna, assistente de RH.
-Responda APENAS com base no conteúdo abaixo.
-Se a resposta não estiver no conteúdo, diga claramente que não consta no manual.
+  if (resultadosLivro?.length) {
+    const topScore = resultadosLivro[0].score;
 
-${trechosLivro.join("\n\n")}
+    console.log("📈 Score mais alto do livro:", topScore.toFixed(3));
 
-Pergunta do usuário:
+    // 🔐 LIMIAR SEMÂNTICO
+    if (topScore >= 0.7) {
+      const contextoLivro = resultadosLivro
+        .slice(0, 3)
+        .map(r => r.trecho)
+        .join("\n\n");
+
+      const promptLivro = `
+Você é Amber, assistente do Rafael.
+Responda SOMENTE com base no conteúdo abaixo.
+Se a resposta não estiver claramente no texto, diga: "Isso não consta no manual."
+
+CONTEÚDO:
+${contextoLivro}
+
+PERGUNTA:
 ${body}
 `;
 
-    const responseLivro = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: promptLivro }]
-    });
+      const responseLivro = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: promptLivro }]
+      });
 
-    respostaFinal = responseLivro.choices[0].message.content;
+      respostaFinal = responseLivro.choices[0].message.content;
+    } else {
+      console.log("📉 Score baixo demais, ignorando livro");
+    }
   }
 } catch (err) {
   console.error("⚠ Erro ao consultar livro:", err.message);
 }
+
 
 // 2️⃣ Se NÃO achou resposta no livro, usa o fluxo atual
 if (!respostaFinal) {
