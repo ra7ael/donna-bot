@@ -31,6 +31,7 @@ import { handleReminder } from './utils/routineFamily.js';
 import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarMensagemDonna.js";
 import { buscarEmpresa,adicionarEmpresa,atualizarCampo,formatarEmpresa} from "./utils/handleEmpresa.js";
+import { searchBook } from "./utils/searchBook.js";
 
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
@@ -642,14 +643,50 @@ if (textoLower.startsWith("gerar senior")) {
     await salvarMemoria(from, "user", JSON.stringify(body));
     enqueueSemanticMemory("chat geral", body, from, "user");
 
-    /* ========================= PROCESSAMENTO DE RESPOSTA GPT ========================= */
-    const semanticResults = await querySemanticMemory(body, from, 3);
-    const reply = semanticResults && semanticResults.length
-      ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
-      : await askGPT(body);
+/* ========================= PROCESSAMENTO DE RESPOSTA DONNA ========================= */
 
-    await sendMessage(from, reply);
-    res.sendStatus(200);
+// 1️⃣ Tenta consultar o livro
+let respostaFinal = null;
+
+try {
+  const trechosLivro = await searchBook(body, 3);
+
+  if (trechosLivro && trechosLivro.length) {
+    const promptLivro = `
+Você é Donna, assistente de RH.
+Responda APENAS com base no conteúdo abaixo.
+Se a resposta não estiver no conteúdo, diga claramente que não consta no manual.
+
+${trechosLivro.join("\n\n")}
+
+Pergunta do usuário:
+${body}
+`;
+
+    const responseLivro = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: promptLivro }]
+    });
+
+    respostaFinal = responseLivro.choices[0].message.content;
+  }
+} catch (err) {
+  console.error("⚠ Erro ao consultar livro:", err.message);
+}
+
+// 2️⃣ Se NÃO achou resposta no livro, usa o fluxo atual
+if (!respostaFinal) {
+  const semanticResults = await querySemanticMemory(body, from, 3);
+
+  respostaFinal = semanticResults && semanticResults.length
+    ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
+    : await askGPT(body);
+}
+
+// 3️⃣ Envia resposta
+await sendMessage(from, respostaFinal);
+res.sendStatus(200);
+
 
   } catch (err) {
     console.error("❌ Webhook erro:", JSON.stringify(err.message));
