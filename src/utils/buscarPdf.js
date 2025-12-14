@@ -52,11 +52,22 @@ export async function buscarPergunta(pergunta, topK = 6) {
     }))
   );
 
-  const topTrechos = scored.slice(0, topK);
+const topTrechos = scored.slice(0, topK);
 
-  await client.close();
+// 🔍 LOG DE DIAGNÓSTICO
+console.log(
+  "📊 TOP TRECHOS:",
+  topTrechos.map(t => ({
+    score: t.score.toFixed(3),
+    trecho: t.trecho.slice(0, 120) + "..."
+  }))
+);
 
-  return topTrechos
-    .map(t => `${t.trecho}\n\n[Fonte: ${t.arquivo || "PDF"}]`)
-    .join("\n\n");
-}
+await client.close();
+
+// 👉 AGORA DEVOLVE OBJETO, NÃO STRING
+return topTrechos.map(t => ({
+  trecho: t.trecho,
+  score: t.score
+}));
+
