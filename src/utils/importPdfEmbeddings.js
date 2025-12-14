@@ -13,6 +13,10 @@ const colecao = "pdfEmbeddings";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// 🔧 Configurações ajustáveis
+const TAMANHO_TRECHO = 1200;
+const TAMANHO_MINIMO = 200;
+
 async function importarPDFs() {
   await client.connect();
   const db = client.db(dbName);
@@ -22,15 +26,28 @@ async function importarPDFs() {
   const arquivos = fs.readdirSync(pdfDir).filter(f => f.endsWith(".pdf"));
 
   for (const arquivo of arquivos) {
+    console.log(`📖 Processando: ${arquivo}`);
+
     const caminho = path.join(pdfDir, arquivo);
     const dataBuffer = fs.readFileSync(caminho);
     const data = await pdf(dataBuffer);
-    const texto = data.text.replace(/\s+/g, " ").trim();
+
+    const texto = data.text
+      .replace(/\s+/g, " ")
+      .trim();
+
+    console.log("📄 Tamanho do texto extraído:", texto.length);
 
     const trechos = [];
-    for (let i = 0; i < texto.length; i += 500) {
-      trechos.push(texto.slice(i, i + 500));
+
+    for (let i = 0; i < texto.length; i += TAMANHO_TRECHO) {
+      const trecho = texto.slice(i, i + TAMANHO_TRECHO).trim();
+      if (trecho.length >= TAMANHO_MINIMO) {
+        trechos.push(trecho);
+      }
     }
+
+    console.log(`📚 ${trechos.length} trechos válidos gerados`);
 
     for (const trecho of trechos) {
       const embeddingRes = await openai.embeddings.create({
@@ -38,22 +55,20 @@ async function importarPDFs() {
         input: trecho
       });
 
-      const embedding = embeddingRes.data[0].embedding;
-
       await collection.insertOne({
         arquivo,
         trecho,
-        embedding,
+        embedding: embeddingRes.data[0].embedding,
         criadoEm: new Date()
       });
     }
 
-    console.log(`✅ "${arquivo}" importado com ${trechos.length} trechos!`);
+    console.log(`✅ "${arquivo}" importado com sucesso!\n`);
   }
 
   console.log("🎉 Todos os PDFs importados com embeddings!");
   await client.close();
 }
 
-// 👉 AQUI (exportação correta!)
+// 👉 Exportação correta
 export { importarPDFs as processarPdf };
