@@ -3,8 +3,6 @@
 import OpenAI from "openai";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
-
 
 dotenv.config();
 
@@ -19,7 +17,7 @@ export async function buscarPergunta(pergunta, topK = 6) {
   const db = client.db(dbName);
   const collection = db.collection(colecao);
 
-  // Criar embedding da pergunta
+  // 🔹 Embedding da pergunta
   const embeddingRes = await openai.embeddings.create({
     model: "text-embedding-3-small",
     input: pergunta
@@ -27,21 +25,25 @@ export async function buscarPergunta(pergunta, topK = 6) {
 
   const perguntaEmbedding = embeddingRes.data[0].embedding;
 
-  // Recuperar todos os trechos
+  // 🔹 Buscar trechos do livro
   const trechos = await collection.find().toArray();
 
-  // Calcular similaridade (cosseno)
+  // 🔹 Similaridade cosseno
   const similaridade = (a, b) => {
     const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
-    const magA = Math.sqrt(a.reduce((sum, val) => sum + val*val, 0));
-    const magB = Math.sqrt(b.reduce((sum, val) => sum + val*val, 0));
+    const magA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+    const magB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
     return dot / (magA * magB);
   };
 
-  const scored = trechos.map(t => ({ ...t, score: similaridade(perguntaEmbedding, t.embedding) }));
+  const scored = trechos.map(t => ({
+    ...t,
+    score: similaridade(perguntaEmbedding, t.embedding)
+  }));
+
   scored.sort((a, b) => b.score - a.score);
 
-    // 🔍 DEBUG — VER SE O LIVRO ESTÁ SENDO ENCONTRADO
+  // 🔍 DEBUG CRÍTICO
   console.log(
     "📊 Top similaridades:",
     scored.slice(0, 6).map(s => ({
@@ -50,22 +52,10 @@ export async function buscarPergunta(pergunta, topK = 6) {
     }))
   );
 
-const topTrechos = scored.slice(0, topK);
-
   const topTrechos = scored.slice(0, topK);
 
   await client.close();
 
-  // Junta os trechos com a fonte dinâmica
   return topTrechos
-    .map(t => `${t.trecho}\n\n[Fonte: ${t.fonte || "Desconhecida"}]`)
-    .join("\n\n");
-}
-
-// Exemplo de uso local (opcional)
-if (import.meta.url === `file://${process.argv[1]}`) {
-  (async () => {
-    const resposta = await buscarPergunta("O que Freud dizia sobre o inconsciente?");
-    console.log(resposta);
-  })();
-}
+    .map(t => `${t.trecho}\n\n[Fonte: ${t.arquivo || "PDF"}]`)
+    .join("\n\n"
