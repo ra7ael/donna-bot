@@ -58,4 +58,5 @@ export async function buscarPergunta(pergunta, topK = 6) {
 
   return topTrechos
     .map(t => `${t.trecho}\n\n[Fonte: ${t.arquivo || "PDF"}]`)
-    .join("\n\n"
+    .join("\n\n");
+}
