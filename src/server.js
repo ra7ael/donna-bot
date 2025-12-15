@@ -418,73 +418,82 @@ app.post("/webhook", async (req, res) => {
       return;
     }
     /* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
-    if (messageObj.type === "document") {
-      const mediaBuffer = await downloadMedia(messageObj.document?.id);
-      if (!mediaBuffer) {
-        await sendMessage(from, "⚠ Não consegui baixar o PDF.");
-        res.sendStatus(200);
-        return;
-      }
+if (messageObj.type === "document") {
+  try {
+    console.log("📥 Recebido documento, iniciando download...");
+    const mediaBuffer = await downloadMedia(messageObj.document?.id);
     
-      let textoExtraido = "";
-    
-      try {
-        // 1️⃣ Extrai texto normalmente
-        const pdfData = await pdfParse(Buffer.from(mediaBuffer, "base64"));
-        textoExtraido = pdfData.text;
-    
-        // 2️⃣ Se texto muito curto, usa OCR
-        if (!textoExtraido || textoExtraido.trim().length < 10) {
-          await sendMessage(from, "🕵️ PDF parece imagem, tentando OCR...");
-    
-          const pdfjsLib = require("pdfjs-dist");
-          const { createWorker } = require("tesseract.js");
-    
-          const pdf = await pdfjsLib.getDocument({ data: mediaBuffer }).promise;
-          const worker = await createWorker();
-    
-          await worker.load();
-          await worker.loadLanguage("eng+por"); // português + inglês
-          await worker.initialize("eng+por");
-    
-          for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 2.0 });
-            const canvasFactory = new pdfjsLib.NodeCanvasFactory();
-            const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
-            await page.render({ canvasContext: context, viewport, canvasFactory }).promise;
-    
-            const { data: text } = await worker.recognize(canvas);
-            textoExtraido += text + "\n";
-          }
-    
-          await worker.terminate();
-        }
-    
-        // 3️⃣ Salva no banco
-        await saveBookContent(textoExtraido, "pdf", from);
-    
-        // 4️⃣ Gera embeddings automáticos (memória semântica)
-        const embeddingRes = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: textoExtraido
-        });
-        const embedding = embeddingRes.data[0].embedding;
-        await saveEmbeddingToDB(from, textoExtraido, embedding);
-    
-        // 5️⃣ Confirmação de sucesso (SEM PREVIEW)
-        await sendMessage(from, "✅ PDF processado com sucesso e salvo no banco.");
-        res.sendStatus(200);
-        return;
-    
-      } catch (err) {
-        console.error("Erro ao processar PDF:", err);
-        await sendMessage(from, "❌ Não consegui processar o PDF.");
-        res.sendStatus(200);
-        return;
-      }
+    if (!mediaBuffer || mediaBuffer.length === 0) {
+      console.log("⚠ Não consegui baixar o PDF ou arquivo vazio");
+      await sendMessage(from, "⚠ Não consegui baixar o PDF.");
+      res.sendStatus(200);
+      return;
     }
-  
+    console.log(`📥 PDF baixado com sucesso, tamanho: ${mediaBuffer.length} bytes`);
+
+    let textoExtraido = "";
+
+    // 1️⃣ Tenta extrair texto normalmente
+    const pdfData = await pdfParse(Buffer.from(mediaBuffer, "base64"));
+    textoExtraido = pdfData.text;
+    console.log("🔍 Texto extraído com pdf-parse:", textoExtraido.slice(0, 200));
+
+    // 2️⃣ Se texto muito curto ou vazio, usa OCR
+    if (!textoExtraido || textoExtraido.trim().length < 10) {
+      console.log("🕵️ PDF parece imagem, iniciando OCR...");
+      const pdfjsLib = require("pdfjs-dist");
+      const { createWorker } = require("tesseract.js");
+
+      const pdf = await pdfjsLib.getDocument({ data: mediaBuffer }).promise;
+      const worker = await createWorker({
+        logger: m => console.log("📝 OCR:", m)
+      });
+
+      await worker.load();
+      await worker.loadLanguage("eng+por"); // inglês + português
+      await worker.initialize("eng+por");
+
+      const canvasFactory = new pdfjsLib.NodeCanvasFactory();
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        console.log(`📄 Processando página ${i}/${pdf.numPages}`);
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
+        await page.render({ canvasContext: context, viewport, canvasFactory }).promise;
+
+        const { data: text } = await worker.recognize(canvas);
+        textoExtraido += text + "\n";
+        console.log(`✅ Página ${i} processada, texto parcial:`, text.slice(0, 100));
+      }
+
+      await worker.terminate();
+      console.log("✅ OCR concluído, texto extraído total:", textoExtraido.slice(0, 300));
+    }
+
+    // 3️⃣ Salva no banco
+    await saveBookContent(textoExtraido, "pdf", from);
+    console.log("📚 Livro salvo no banco (pdf)");
+
+    // 4️⃣ Gera embeddings automáticos
+    const embeddingRes = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: textoExtraido
+    });
+    const embedding = embeddingRes.data[0].embedding;
+    await saveEmbeddingToDB(from, textoExtraido, embedding);
+    console.log("🧠 Embedding salvo no banco");
+
+    // 5️⃣ Confirmação de sucesso
+    await sendMessage(from, "✅ PDF processado com sucesso e salvo no banco.");
+    res.sendStatus(200);
+
+  } catch (err) {
+    console.error("❌ Erro ao processar PDF:", err);
+    await sendMessage(from, "❌ Não consegui processar o PDF.");
+    res.sendStatus(200);
+  }
+}
 
     /* ========================= TEXTO E ÁUDIO ========================= */
     let body = "";
