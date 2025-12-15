@@ -170,13 +170,23 @@ await initRoutineFamily(db, sendMessage);
 
 
 /* ========================= Funções de livros e rotas ========================= */
-async function saveBookContent(content, format, userId) {
-  const contentChunks = content.split('\n').map(chunk => chunk.trim()).filter(chunk => chunk);
-  for (let chunk of contentChunks) {
-    await db.collection('books').insertOne({ userId, format, content: chunk, createdAt: new Date(), });
+async function saveBookContent(content, format, userId, bookId) {
+  // Divide em trechos de 1000 palavras para manter contexto
+  const trechos = dividirTextoEmTrechos(content, 1000);
+
+  for (const trecho of trechos) {
+    await db.collection('books').insertOne({
+      userId,
+      bookId,      // identifica o livro
+      format,
+      content: trecho,
+      createdAt: new Date()
+    });
   }
-  console.log("📚 Livro salvo no banco (" + format + ")");
+
+  console.log(`📚 Livro salvo no banco (${format}) com bookId: ${bookId}`);
 }
+
 
 async function queryBookContent(userId) {
   const items = await db.collection('books').find({ userId }).toArray();
@@ -191,7 +201,10 @@ app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
     const format = mimetype.includes("pdf") ? "pdf" : "epub";
     const buffer = fs.readFileSync(filePath);
     const data = await pdfParse(buffer);
-    await saveBookContent(data.text, format, userId);
+
+    const bookId = filename; // usa o nome do arquivo como referência
+    await saveBookContent(data.text, format, userId, bookId);
+
     fs.unlinkSync(filePath);
     res.status(200).send("✅ Livro processado");
   } catch (err) {
@@ -419,7 +432,7 @@ app.post("/webhook", async (req, res) => {
     }
 
 
-    // Função para verificar se o PDF já foi processado
+   // Função para verificar se o PDF já foi processado
 async function checkPDFProcessed(pdfId) {
   try {
     // Supondo que você tenha um modelo 'ProcessedPDFs' para armazenar IDs de PDFs processados
@@ -430,8 +443,8 @@ async function checkPDFProcessed(pdfId) {
     return false; // Caso haja erro, assume-se que o PDF não foi processado
   }
 }
-    
-  /* ========================= Função para dividir texto em trechos ========================= */
+
+/* ========================= Função para dividir texto em trechos ========================= */
 function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
   const palavras = texto.split(/\s+/);
   const trechos = [];
@@ -444,6 +457,7 @@ function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
 /* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
 if (messageObj.type === "document") {
   const pdfId = messageObj.document?.id;
+  const nomeArquivo = messageObj.document?.filename || "livro_sem_nome"; // <-- adicionado
 
   // 0️⃣ Verifica se já processamos esse PDF
   const jaProcessado = await checkPDFProcessed(pdfId);
@@ -493,8 +507,8 @@ if (messageObj.type === "document") {
       await worker.terminate();
     }
 
-    // 3️⃣ Salva no banco (conteúdo completo do PDF)
-    await saveBookContent(textoExtraido, "pdf", from, pdfId);
+    // 3️⃣ Salva no banco (conteúdo completo do PDF e nome do arquivo)
+    await saveBookContent(textoExtraido, "pdf", from, pdfId, nomeArquivo);
 
     // 4️⃣ Divide em trechos e gera embeddings
     const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
@@ -551,7 +565,6 @@ function cosineSimilarity(vecA, vecB) {
   const magB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
   return dot / (magA * magB);
 }
-
 
     /* ========================= TEXTO E ÁUDIO ========================= */
     let body = "";
