@@ -454,7 +454,7 @@ if (messageObj.type === "document") {
     const pdfData = await pdfParse(Buffer.from(mediaBuffer, "base64"));
     textoExtraido = pdfData.text || "";
 
-    // 2️⃣ Se texto curto ou incompleto, usa OCR página por página
+    // 2️⃣ Se texto curto ou incompleto, usa OCR
     if (!textoExtraido || textoExtraido.trim().length < 200) {
       await sendMessage(from, "🕵️ PDF parece imagem ou incompleto, ativando OCR...");
 
@@ -463,7 +463,6 @@ if (messageObj.type === "document") {
 
       const pdf = await pdfjsLib.getDocument({ data: mediaBuffer }).promise;
       const worker = await createWorker();
-
       await worker.load();
       await worker.loadLanguage("eng+por");
       await worker.initialize("eng+por");
@@ -473,7 +472,6 @@ if (messageObj.type === "document") {
         const viewport = page.getViewport({ scale: 2.0 });
         const canvasFactory = new pdfjsLib.NodeCanvasFactory();
         const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
-
         await page.render({ canvasContext: context, viewport, canvasFactory }).promise;
         const { data: text } = await worker.recognize(canvas);
         textoExtraido += text + "\n";
@@ -482,10 +480,10 @@ if (messageObj.type === "document") {
       await worker.terminate();
     }
 
-    // 3️⃣ Salva no banco (conteúdo completo do PDF) uma única vez
+    // 3️⃣ Salva no banco (conteúdo completo do PDF)
     await saveBookContent(textoExtraido, "pdf", from, pdfId);
 
-    // 4️⃣ Divide o texto em trechos e gera embeddings
+    // 4️⃣ Divide em trechos e gera embeddings
     const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
     for (const trecho of trechos) {
       const embeddingRes = await openai.embeddings.create({
@@ -493,20 +491,52 @@ if (messageObj.type === "document") {
         input: trecho
       });
       const embedding = embeddingRes.data[0].embedding;
-
-      // 5️⃣ Salva cada embedding no banco
       await saveEmbeddingToDB(from, trecho, embedding, pdfId);
     }
 
-    // 6️⃣ Confirmação de sucesso (uma única mensagem)
+    // ✅ Mensagem única de sucesso
     await sendMessage(from, "✅ PDF processado com sucesso e embeddings salvos no banco.");
     res.sendStatus(200);
-
   } catch (err) {
     console.error("❌ Erro ao processar PDF:", err);
     await sendMessage(from, "❌ Não consegui processar o PDF.");
     res.sendStatus(200);
   }
+}
+
+/* ========================= CONSULTA POR SIMILARIDADE ========================= */
+async function buscarTrechosSimilares(from, queryText, pdfId, topN = 5) {
+  // 1️⃣ Gera embedding do texto de consulta
+  const queryRes = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: queryText
+  });
+  const queryEmbedding = queryRes.data[0].embedding;
+
+  // 2️⃣ Busca embeddings do PDF no DB
+  const embeddingsSalvos = await getEmbeddingsFromDB(from, pdfId);
+
+  // 3️⃣ Calcula similaridade
+  const similaridades = embeddingsSalvos.map(e => ({
+    trecho: e.trecho,
+    score: cosineSimilarity(queryEmbedding, e.embedding)
+  }));
+
+  // 4️⃣ Ordena e pega top N
+  const topTrechos = similaridades.sort((a, b) => b.score - a.score).slice(0, topN);
+
+  console.log("📊 Top similaridades:", topTrechos.map(t => t.score));
+  console.log("📊 TOP TRECHOS:", topTrechos.map(t => t.trecho));
+
+  return topTrechos;
+}
+
+// ========================= FUNÇÃO DE SIMILARIDADE COSENO =========================
+function cosineSimilarity(vecA, vecB) {
+  const dot = vecA.reduce((acc, val, i) => acc + val * vecB[i], 0);
+  const magA = Math.sqrt(vecA.reduce((acc, val) => acc + val * val, 0));
+  const magB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
+  return dot / (magA * magB);
 }
 
 
