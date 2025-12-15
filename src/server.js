@@ -418,9 +418,13 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-     // === Intercepta comandos de envio de WhatsApp ===
-    if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(messageText)) {
-      const resultado = await processarComandoWhatsApp(messageText);
+    // ========================= Captura o texto da mensagem =========================
+    const body = messageObj.text?.body || "";
+    const textoLower = body.toLowerCase();
+
+    // === Intercepta comandos de envio de WhatsApp ===
+    if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(body)) {
+      const resultado = await processarComandoWhatsApp(body);
       await sendMessage(from, resultado); // envia só a confirmação
       res.sendStatus(200);
       return; // ⚡ impede que o resto do fluxo envie mensagens extras
