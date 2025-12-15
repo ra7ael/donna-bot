@@ -425,142 +425,130 @@ app.post("/webhook", async (req, res) => {
       if (audioBuffer) body = "audio: recebido";
     }
 
-    // converte para minúsculas PARA COMANDOS
     const textoLower = body.toLowerCase();
 
-/* ========================= EMPRESAS: BUSCAR ========================= */
-if (textoLower.startsWith("empresa buscar")) {
-  const termo = body.replace(/empresa buscar/i, "").trim();
-  const lista = buscarEmpresa(termo);
+    /* ========================= EMPRESAS ========================= */
+    if (textoLower.startsWith("empresa buscar")) {
+      const termo = body.replace(/empresa buscar/i, "").trim();
+      const lista = buscarEmpresa(termo);
 
-  if (!lista.length) {
-    await sendMessage(from, "Nenhuma empresa encontrada.");
-    res.sendStatus(200);
-    return;
-  }
+      if (!lista.length) {
+        await sendMessage(from, "Nenhuma empresa encontrada.");
+        res.sendStatus(200);
+        return;
+      }
 
-  const resposta = lista.map(formatarEmpresa).join("\n\n");
-  await sendMessage(from, resposta);
-  res.sendStatus(200);
-  return;
-}
-
-
-    /* ========================= EMPRESAS: ADICIONAR ========================= */
-if (textoLower.startsWith("empresa adicionar")) {
-  const partes = body.replace(/empresa adicionar/i, "").trim().split(";");
-
-  const nova = {
-    codigo: partes[0] || "",
-    empresa: partes[1] || "",
-    beneficios: partes[2] || "",
-    vt: partes[3] || "",
-    vr: partes[4] || "",
-    va: partes[5] || "",
-    observacao: partes[6] || "",
-  };
-
-  adicionarEmpresa(nova);
-
-  await sendMessage(from, "Empresa adicionada com sucesso.");
-  res.sendStatus(200);
-  return;
-}
-
-
-    /* ========================= EMPRESAS: ATUALIZAR ========================= */
-if (textoLower.startsWith("empresa atualizar")) {
-  const partes = body.split(" ");
-  const nomeEmpresa = partes[2];
-  const campo = partes[3]?.toUpperCase();
-  const valor = partes.slice(4).join(" ");
-
-  const ok = atualizarCampo(nomeEmpresa, campo, valor);
-
-  if (!ok) {
-    await sendMessage(from, "Empresa não encontrada ou campo inválido.");
-    res.sendStatus(200);
-    return;
-  }
-
-  await sendMessage(from, `Atualizado: ${campo} = ${valor}`);
-  res.sendStatus(200);
-  return;
-}
-
-
-    
-    
-/* ========================= SENIOR ========================= */
-if (textoLower.startsWith("gerar senior")) {
-  try {
-    const dados = {};
-    body.replace(/gerar senior/i, "")
-      .trim()
-      .split(" ")
-      .forEach(par => {
-        const [chave, valor] = par.split("=");
-        if (chave && valor) dados[chave] = valor;
-      });
-
-    if (!dados.nome || !dados.cpf || !dados.cargo) {
-      await sendMessage(from,
-        "Para gerar o arquivo Senior, envie assim:\n" +
-        "gerar senior nome=joao cpf=123 cargo=auxiliaradm admissao=2025-01-01 salario=2000 setor=rh matricula=001"
-      );
+      const resposta = lista.map(formatarEmpresa).join("\n\n");
+      await sendMessage(from, resposta);
       res.sendStatus(200);
       return;
     }
 
-    // valores padrão
-    dados.admissao = dados.admissao || "2025-01-01";
-    dados.tipoContrato = dados.tipoContrato || "CLT";
-    dados.jornada = dados.jornada || "44h";
-    dados.salario = dados.salario || "0";
-    dados.setor = dados.setor || "Geral";
-    dados.matricula = dados.matricula || "0000";
+    if (textoLower.startsWith("empresa adicionar")) {
+      const partes = body.replace(/empresa adicionar/i, "").trim().split(";");
 
-    // gera pasta e arquivo Senior
-    const dirPath = path.join(process.cwd(), "generated");
-    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+      const nova = {
+        codigo: partes[0] || "",
+        empresa: partes[1] || "",
+        beneficios: partes[2] || "",
+        vt: partes[3] || "",
+        vr: partes[4] || "",
+        va: partes[5] || "",
+        observacao: partes[6] || "",
+      };
 
-    const nomeArquivo = `senior_${dados.cpf}.txt`;
-    const filePath = path.join(dirPath, nomeArquivo);
+      adicionarEmpresa(nova);
+      await sendMessage(from, "Empresa adicionada com sucesso.");
+      res.sendStatus(200);
+      return;
+    }
 
-    const registro = [
-      dados.nome,
-      dados.cpf,
-      dados.admissao,
-      dados.cargo,
-      dados.tipoContrato,
-      dados.jornada,
-      dados.salario,
-      dados.setor,
-      dados.matricula
-    ].join("|");
+    if (textoLower.startsWith("empresa atualizar")) {
+      const partes = body.split(" ");
+      const nomeEmpresa = partes[2];
+      const campo = partes[3]?.toUpperCase();
+      const valor = partes.slice(4).join(" ");
 
-    fs.writeFileSync(filePath, registro, "utf-8");
-    console.log("📝 Arquivo Senior gerado em:", filePath);
+      const ok = atualizarCampo(nomeEmpresa, campo, valor);
 
-    // envia documento via WhatsApp
-    const { enviarDocumentoWhatsApp } = await import("./utils/enviarDocumentoDonna.js");
-    await enviarDocumentoWhatsApp(
-      from,
-      filePath,
-      "✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu."
-    );
+      if (!ok) {
+        await sendMessage(from, "Empresa não encontrada ou campo inválido.");
+        res.sendStatus(200);
+        return;
+      }
 
-    res.sendStatus(200);
-    return;
+      await sendMessage(from, `Atualizado: ${campo} = ${valor}`);
+      res.sendStatus(200);
+      return;
+    }
 
-  } catch (err) {
-    console.error("Erro ao gerar Senior:", err);
-    await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
-    res.sendStatus(200);
-    return;
-  }
-}
-    
+    /* ========================= SENIOR ========================= */
+    if (textoLower.startsWith("gerar senior")) {
+      try {
+        const dados = {};
+        body.replace(/gerar senior/i, "")
+          .trim()
+          .split(" ")
+          .forEach(par => {
+            const [chave, valor] = par.split("=");
+            if (chave && valor) dados[chave] = valor;
+          });
+
+        if (!dados.nome || !dados.cpf || !dados.cargo) {
+          await sendMessage(from,
+            "Para gerar o arquivo Senior, envie assim:\n" +
+            "gerar senior nome=joao cpf=123 cargo=auxiliaradm admissao=2025-01-01 salario=2000 setor=rh matricula=001"
+          );
+          res.sendStatus(200);
+          return;
+        }
+
+        dados.admissao = dados.admissao || "2025-01-01";
+        dados.tipoContrato = dados.tipoContrato || "CLT";
+        dados.jornada = dados.jornada || "44h";
+        dados.salario = dados.salario || "0";
+        dados.setor = dados.setor || "Geral";
+        dados.matricula = dados.matricula || "0000";
+
+        const dirPath = path.join(process.cwd(), "generated");
+        if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+
+        const nomeArquivo = `senior_${dados.cpf}.txt`;
+        const filePath = path.join(dirPath, nomeArquivo);
+
+        const registro = [
+          dados.nome,
+          dados.cpf,
+          dados.admissao,
+          dados.cargo,
+          dados.tipoContrato,
+          dados.jornada,
+          dados.salario,
+          dados.setor,
+          dados.matricula
+        ].join("|");
+
+        fs.writeFileSync(filePath, registro, "utf-8");
+        console.log("📝 Arquivo Senior gerado em:", filePath);
+
+        const { enviarDocumentoWhatsApp } = await import("./utils/enviarDocumentoDonna.js");
+        await enviarDocumentoWhatsApp(
+          from,
+          filePath,
+          "✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu."
+        );
+
+        res.sendStatus(200);
+        return;
+
+      } catch (err) {
+        console.error("Erro ao gerar Senior:", err);
+        await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
+        res.sendStatus(200);
+        return;
+      }
+    }
+
     // ----------------- Comandos de Rotina & Casa -----------------
     try {
       const handled = await handleCommand(body, from);
@@ -592,8 +580,7 @@ if (textoLower.startsWith("gerar senior")) {
     }
 
     /* ========================= MEMÓRIAS MANUAIS ========================= */
-    if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
-      .some(g => textoLower.includes(g))) {
+    if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"].some(g => textoLower.includes(g))) {
       const items = await buscarMemoria(from);
       if (!items || !items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
       else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
@@ -639,31 +626,22 @@ if (textoLower.startsWith("gerar senior")) {
       enqueueSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user");
     }
 
-    // ✔ SALVA APENAS MENSAGEM DO USUÁRIO
     await salvarMemoria(from, "user", JSON.stringify(body));
     enqueueSemanticMemory("chat geral", body, from, "user");
 
-/* ========================= PROCESSAMENTO DE RESPOSTA DONNA ========================= */
+    /* ========================= PROCESSAMENTO DE RESPOSTA DONNA ========================= */
+    let respostaFinal = null;
 
-// 1️⃣ Tenta consultar o livro
-let respostaFinal = null;
+    try {
+      const resultadosLivro = await buscarPergunta(body, 6);
 
-try {
-  const resultadosLivro = await buscarPergunta(body, 6);
+      if (resultadosLivro?.length) {
+        const topScore = resultadosLivro[0].score;
+        console.log("📈 Score mais alto do livro:", topScore.toFixed(3));
 
-  if (resultadosLivro?.length) {
-    const topScore = resultadosLivro[0].score;
-
-    console.log("📈 Score mais alto do livro:", topScore.toFixed(3));
-
-    // 🔐 LIMIAR SEMÂNTICO
-    if (topScore >= 0.7) {
-      const contextoLivro = resultadosLivro
-        .slice(0, 3)
-        .map(r => r.trecho)
-        .join("\n\n");
-
-      const promptLivro = `
+        if (topScore >= 0.7) {
+          const contextoLivro = resultadosLivro.slice(0, 3).map(r => r.trecho).join("\n\n");
+          const promptLivro = `
 Você é Amber, assistente do Rafael.
 Responda SOMENTE com base no conteúdo abaixo.
 Se a resposta não estiver claramente no texto, diga: "Isso não consta no manual."
@@ -675,37 +653,33 @@ PERGUNTA:
 ${body}
 `;
 
-      const responseLivro = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: promptLivro }]
-      });
+          const responseLivro = await openai.chat.completions.create({
+            model: "gpt-4.1-mini",
+            messages: [{ role: "user", content: promptLivro }]
+          });
 
-      respostaFinal = responseLivro.choices[0].message.content;
-    } else {
-      console.log("📉 Score baixo demais, ignorando livro");
+          respostaFinal = responseLivro.choices[0].message.content;
+        } else {
+          console.log("📉 Score baixo demais, ignorando livro");
+        }
+      }
+    } catch (err) {
+      console.error("⚠ Erro ao consultar livro:", err.message);
     }
-  }
-} catch (err) {
-  console.error("⚠ Erro ao consultar livro:", err.message);
-}
 
+    if (!respostaFinal) {
+      const semanticResults = await querySemanticMemory(body, from, 3);
+      respostaFinal = semanticResults && semanticResults.length
+        ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
+        : await askGPT(body);
+    }
 
-// 2️⃣ Se NÃO achou resposta no livro, usa o fluxo atual
-if (!respostaFinal) {
-  const semanticResults = await querySemanticMemory(body, from, 3);
-
-  respostaFinal = semanticResults && semanticResults.length
-    ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
-    : await askGPT(body);
-}
-
-// 3️⃣ Envia resposta
-await sendMessage(from, respostaFinal);
-res.sendStatus(200);
-
+    await sendMessage(from, respostaFinal);
+    res.sendStatus(200);
 
   } catch (err) {
     console.error("❌ Webhook erro:", JSON.stringify(err.message));
     res.sendStatus(500);
   }
 });
+
