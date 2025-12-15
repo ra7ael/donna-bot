@@ -578,16 +578,17 @@ function cosineSimilarity(vecA, vecB) {
   return dot / (magA * magB);
 }
 
+
     /* ========================= TEXTO E ÁUDIO ========================= */
-    let body = "";
     if (messageObj.type === "text") body = messageObj.text?.body || "";
     if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = "audio: recebido";
     }
-
+    
     // converte para minúsculas PARA COMANDOS
     const textoLower = body.toLowerCase();
+
 
 /* ========================= EMPRESAS: BUSCAR ========================= */
 if (textoLower.startsWith("empresa buscar")) {
