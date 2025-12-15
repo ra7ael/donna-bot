@@ -418,7 +418,17 @@ app.post("/webhook", async (req, res) => {
       return;
     }
     
-    /* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
+  /* ========================= Função para dividir texto em trechos ========================= */
+function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
+  const palavras = texto.split(/\s+/);
+  const trechos = [];
+  for (let i = 0; i < palavras.length; i += tamanhoMax) {
+    trechos.push(palavras.slice(i, i + tamanhoMax).join(" "));
+  }
+  return trechos;
+}
+
+/* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
 if (messageObj.type === "document") {
   const mediaBuffer = await downloadMedia(messageObj.document?.id);
   if (!mediaBuffer) {
@@ -445,7 +455,7 @@ if (messageObj.type === "document") {
       const worker = await createWorker();
 
       await worker.load();
-      await worker.loadLanguage("eng+por"); // português + inglês
+      await worker.loadLanguage("eng+por");
       await worker.initialize("eng+por");
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -466,18 +476,21 @@ if (messageObj.type === "document") {
     // 3️⃣ Salva no banco (conteúdo completo do PDF)
     await saveBookContent(textoExtraido, "pdf", from);
 
-    // 4️⃣ Gera embeddings automáticos
-    const embeddingRes = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: textoExtraido
-    });
-    const embedding = embeddingRes.data[0].embedding;
+    // 4️⃣ Divide o texto em trechos menores para gerar embeddings
+    const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
+    for (const trecho of trechos) {
+      const embeddingRes = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: trecho
+      });
+      const embedding = embeddingRes.data[0].embedding;
 
-    // 5️⃣ Salva embeddings no banco
-    await saveEmbeddingToDB(from, textoExtraido, embedding);
+      // 5️⃣ Salva cada embedding no banco
+      await saveEmbeddingToDB(from, trecho, embedding);
+    }
 
     // 6️⃣ Confirmação de sucesso
-    await sendMessage(from, "✅ PDF processado com sucesso e salvo no banco.");
+    await sendMessage(from, "✅ PDF processado com sucesso e embeddings salvos no banco.");
     res.sendStatus(200);
     return;
 
@@ -488,6 +501,7 @@ if (messageObj.type === "document") {
     return;
   }
 }
+
 
     /* ========================= TEXTO E ÁUDIO ========================= */
     let body = "";
