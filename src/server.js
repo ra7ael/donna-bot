@@ -320,6 +320,22 @@ async function sendMessage(to, text) {
   }
 }
 
+/* ========================= Função para salvar embeddings ========================= */
+async function saveEmbeddingToDB(userId, text, embedding) {
+  try {
+    const collection = db.collection("embeddings"); // cria/usa a coleção 'embeddings'
+    await collection.insertOne({
+      userId,
+      text,
+      embedding,
+      createdAt: new Date()
+    });
+    console.log("✅ Embedding salvo no banco");
+  } catch (err) {
+    console.error("❌ Erro ao salvar embedding:", err);
+  }
+}
+
 // Função que permite à Donna enviar mensagens para outros números quando solicitada
 async function enviarMensagemDonna(mensagem, numero) {
   const comando = `envia "${mensagem}" para ${numero}`;
@@ -468,7 +484,7 @@ app.post("/webhook", async (req, res) => {
         return;
       }
     }
-   
+  
 
     /* ========================= TEXTO E ÁUDIO ========================= */
     let body = "";
