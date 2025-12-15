@@ -430,7 +430,17 @@ function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
 
 /* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
 if (messageObj.type === "document") {
-  const mediaBuffer = await downloadMedia(messageObj.document?.id);
+  const pdfId = messageObj.document?.id;
+
+  // 0️⃣ Verifica se já processamos esse PDF
+  const jaProcessado = await checkPDFProcessed(pdfId);
+  if (jaProcessado) {
+    await sendMessage(from, "⚠ Esse PDF já foi processado anteriormente.");
+    res.sendStatus(200);
+    return;
+  }
+
+  const mediaBuffer = await downloadMedia(pdfId);
   if (!mediaBuffer) {
     await sendMessage(from, "⚠ Não consegui baixar o PDF.");
     res.sendStatus(200);
@@ -465,7 +475,6 @@ if (messageObj.type === "document") {
         const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
 
         await page.render({ canvasContext: context, viewport, canvasFactory }).promise;
-
         const { data: text } = await worker.recognize(canvas);
         textoExtraido += text + "\n";
       }
@@ -473,10 +482,10 @@ if (messageObj.type === "document") {
       await worker.terminate();
     }
 
-    // 3️⃣ Salva no banco (conteúdo completo do PDF)
-    await saveBookContent(textoExtraido, "pdf", from);
+    // 3️⃣ Salva no banco (conteúdo completo do PDF) uma única vez
+    await saveBookContent(textoExtraido, "pdf", from, pdfId);
 
-    // 4️⃣ Divide o texto em trechos menores para gerar embeddings
+    // 4️⃣ Divide o texto em trechos e gera embeddings
     const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
     for (const trecho of trechos) {
       const embeddingRes = await openai.embeddings.create({
@@ -486,19 +495,17 @@ if (messageObj.type === "document") {
       const embedding = embeddingRes.data[0].embedding;
 
       // 5️⃣ Salva cada embedding no banco
-      await saveEmbeddingToDB(from, trecho, embedding);
+      await saveEmbeddingToDB(from, trecho, embedding, pdfId);
     }
 
-    // 6️⃣ Confirmação de sucesso
+    // 6️⃣ Confirmação de sucesso (uma única mensagem)
     await sendMessage(from, "✅ PDF processado com sucesso e embeddings salvos no banco.");
     res.sendStatus(200);
-    return;
 
   } catch (err) {
     console.error("❌ Erro ao processar PDF:", err);
     await sendMessage(from, "❌ Não consegui processar o PDF.");
     res.sendStatus(200);
-    return;
   }
 }
 
