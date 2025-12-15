@@ -417,6 +417,19 @@ app.post("/webhook", async (req, res) => {
       res.sendStatus(200);
       return;
     }
+
+
+    // Função para verificar se o PDF já foi processado
+async function checkPDFProcessed(pdfId) {
+  try {
+    // Supondo que você tenha um modelo 'ProcessedPDFs' para armazenar IDs de PDFs processados
+    const result = await ProcessedPDFs.findOne({ pdfId });
+    return result !== null; // Se encontrar o PDF no banco, retorna true
+  } catch (error) {
+    console.error("Erro ao verificar se o PDF foi processado:", error);
+    return false; // Caso haja erro, assume-se que o PDF não foi processado
+  }
+}
     
   /* ========================= Função para dividir texto em trechos ========================= */
 function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
