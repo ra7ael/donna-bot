@@ -418,6 +418,14 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+     // === Intercepta comandos de envio de WhatsApp ===
+    if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(messageText)) {
+      const resultado = await processarComandoWhatsApp(messageText);
+      await sendMessage(from, resultado); // envia só a confirmação
+      res.sendStatus(200);
+      return; // ⚡ impede que o resto do fluxo envie mensagens extras
+    }
+
     // 🚨 BLOQUEIO: IGNORAR mensagens enviadas pela Donna para evitar loop
     if (messageObj.id && messageObj.id.startsWith("wamid.") && String(messageObj.id).includes("false_")) {
       console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
