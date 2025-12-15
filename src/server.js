@@ -407,7 +407,6 @@ global.apiExports = {
   enviarDocumentoWhatsApp
 };
 
-/* ========================= Webhook WhatsApp ========================= */
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -419,10 +418,22 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ========================= Captura o texto da mensagem =========================
-    const body = messageObj.text?.body || "";
-    const textoLower = body.toLowerCase();
+    let body = messageObj.text?.body || "";
+    let textoLower = body.toLowerCase();
 
-    // === Intercepta comandos de envio de WhatsApp ===
+    // ========================= TEXTO E ÁUDIO =========================
+    if (messageObj.type === "text") {
+      body = messageObj.text?.body || "";
+      textoLower = body.toLowerCase();
+    }
+
+    if (messageObj.type === "audio") {
+      const audioBuffer = await downloadMedia(messageObj.audio?.id);
+      if (audioBuffer) body = "audio: recebido";
+      textoLower = body.toLowerCase();
+    }
+
+    // ========================= Intercepta comandos de envio de WhatsApp =========================
     if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(body)) {
       const resultado = await processarComandoWhatsApp(body);
       await sendMessage(from, resultado); // envia só a confirmação
