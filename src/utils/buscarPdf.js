@@ -70,4 +70,5 @@ return topTrechos.map(t => ({
   trecho: t.trecho,
   score: t.score
 }));
+}
 
