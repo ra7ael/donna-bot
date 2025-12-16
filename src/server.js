@@ -421,17 +421,19 @@ app.post("/webhook", async (req, res) => {
     let body = messageObj.text?.body || "";
     let textoLower = body.toLowerCase();
 
-    // ========================= TEXTO E ÁUDIO =========================
-    if (messageObj.type === "text") {
-      body = messageObj.text?.body || "";
+      /* ========================= TEXTO E ÁUDIO ========================= */
+      if (messageObj.type === "text") {
+        body = messageObj.text?.body || "";
+      }
+      
+      if (messageObj.type === "audio") {
+        const audioBuffer = await downloadMedia(messageObj.audio?.id);
+        if (audioBuffer) body = "audio: recebido";
+      }
+      
+      // 🔹 gera o textoLower UMA VEZ, após body estar definido
       textoLower = body.toLowerCase();
-    }
 
-    if (messageObj.type === "audio") {
-      const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = "audio: recebido";
-      textoLower = body.toLowerCase();
-    }
 
     // ========================= Intercepta comandos de envio de WhatsApp =========================
     if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(body)) {
