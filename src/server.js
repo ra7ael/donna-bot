@@ -32,6 +32,7 @@ import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarMensagemDonna.js";
 import { buscarEmpresa,adicionarEmpresa,atualizarCampo,formatarEmpresa} from "./utils/handleEmpresa.js";
 import { searchBook } from "./utils/searchBook.js";
+import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
 
 
 mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
@@ -412,50 +413,23 @@ app.post("/webhook", async (req, res) => {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = messageObj?.from || null;
 
-    if (!messageObj) {
-      res.sendStatus(200);
-      return;
-    }
+    // 🚪 PORTEIRO: decide se a mensagem deve ser ignorada
+if (shouldIgnoreMessage(messageObj, from)) {
+  res.sendStatus(200);
+  return;
+}
 
-    // ========================= Captura o texto da mensagem =========================
-    let body = messageObj.text?.body || "";
-    let textoLower = body.toLowerCase();
+// 🧠 TRADUTOR: normaliza a mensagem
+const normalized = normalizeMessage(messageObj);
+if (!normalized) {
+  res.sendStatus(200);
+  return;
+}
 
-    // ========================= TEXTO E ÁUDIO =========================
-    if (messageObj.type === "text") {
-      body = messageObj.text?.body || "";
-      textoLower = body.toLowerCase();
-    }
+const { body, bodyLower: textoLower, type } = normalized;
 
-    if (messageObj.type === "audio") {
-      const audioBuffer = await downloadMedia(messageObj.audio?.id);
-      if (audioBuffer) body = "audio: recebido";
-      textoLower = body.toLowerCase();
-    }
+console.log("📩 Mensagem recebida:", { body, type });
 
-    // ========================= Intercepta comandos de envio de WhatsApp =========================
-    if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(body)) {
-      const resultado = await processarComandoWhatsApp(body);
-      await sendMessage(from, resultado);
-      res.sendStatus(200);
-      return;
-    }
-
-    // 🚨 BLOQUEIO: IGNORAR mensagens enviadas pela Donna para evitar loop
-    if (
-      messageObj.id &&
-      messageObj.id.startsWith("wamid.") &&
-      String(messageObj.id).includes("false_")
-    ) {
-      console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
-      res.sendStatus(200);
-      return;
-    }
-
-    if (!["text", "document", "audio"].includes(messageObj.type)) {
-      res.sendStatus(200);
-      return;
-    }
 
     async function checkPDFProcessed(pdfId) {
       try {
