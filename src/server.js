@@ -579,7 +579,7 @@ app.post("/webhook", async (req, res) => {
     console.error("❌ Erro geral no webhook:", err);
     res.sendStatus(200);
   }
-}
+});
 
 /* ========================= CONSULTA POR SIMILARIDADE ========================= */
 async function buscarTrechosSimilares(from, queryText, pdfId, topN = 5) {
