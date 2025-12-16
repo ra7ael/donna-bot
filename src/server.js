@@ -407,32 +407,31 @@ global.apiExports = {
   enviarDocumentoWhatsApp
 };
 
-     /* ========================= WEBHOOK ========================= */
-  app.post("/webhook", async (req, res) => {
-    try {
-      const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-      const from = messageObj?.from || null;
-  
-      if (!messageObj) {
-        res.sendStatus(200);
-        return;
+app.post("/webhook", async (req, res) => {
+  try {
+    const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const from = messageObj?.from || null;
+
+    if (!messageObj) {
+      res.sendStatus(200);
+      return;
     }
 
     // ========================= Captura o texto da mensagem =========================
-    let body = "";
+    let body = messageObj.text?.body || "";
+    let textoLower = body.toLowerCase();
 
-    /* ========================= TEXTO E ÁUDIO ========================= */
+    // ========================= TEXTO E ÁUDIO =========================
     if (messageObj.type === "text") {
       body = messageObj.text?.body || "";
+      textoLower = body.toLowerCase();
     }
 
     if (messageObj.type === "audio") {
       const audioBuffer = await downloadMedia(messageObj.audio?.id);
       if (audioBuffer) body = "audio: recebido";
+      textoLower = body.toLowerCase();
     }
-
-    // 🔹 gera o textoLower UMA ÚNICA VEZ
-    let textoLower = body.toLowerCase();
 
     // ========================= Intercepta comandos de envio de WhatsApp =========================
     if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(body)) {
@@ -453,13 +452,11 @@ global.apiExports = {
       return;
     }
 
-    // Se tipo de mensagem não é suportado
     if (!["text", "document", "audio"].includes(messageObj.type)) {
       res.sendStatus(200);
       return;
     }
 
-    // ========================= Função para verificar se o PDF já foi processado =========================
     async function checkPDFProcessed(pdfId) {
       try {
         const result = await ProcessedPDFs.findOne({ pdfId });
@@ -470,7 +467,6 @@ global.apiExports = {
       }
     }
 
-    /* ========================= Função para dividir texto em trechos ========================= */
     function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
       const palavras = texto.split(/\s+/);
       const trechos = [];
@@ -480,13 +476,11 @@ global.apiExports = {
       return trechos;
     }
 
-    /* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
     if (messageObj.type === "document") {
       const pdfId = messageObj.document?.id;
       const nomeArquivo =
         messageObj.document?.filename || "livro_sem_nome";
 
-      // 0️⃣ Verifica se já processamos esse PDF
       const jaProcessado = await checkPDFProcessed(pdfId);
       if (jaProcessado) {
         await sendMessage(from, "⚠ Esse PDF já foi processado anteriormente.");
@@ -504,11 +498,9 @@ global.apiExports = {
       let textoExtraido = "";
 
       try {
-        // 1️⃣ Extrai texto normalmente
         const pdfData = await pdfParse(Buffer.from(mediaBuffer, "base64"));
         textoExtraido = pdfData.text || "";
 
-        // 2️⃣ OCR se necessário
         if (!textoExtraido || textoExtraido.trim().length < 200) {
           await sendMessage(
             from,
@@ -532,6 +524,7 @@ global.apiExports = {
               viewport.width,
               viewport.height
             );
+
             await page.render({
               canvasContext: context,
               viewport,
@@ -545,7 +538,6 @@ global.apiExports = {
           await worker.terminate();
         }
 
-        // 3️⃣ Salva conteúdo completo
         await saveBookContent(
           textoExtraido,
           "pdf",
@@ -554,7 +546,6 @@ global.apiExports = {
           nomeArquivo
         );
 
-        // 4️⃣ Embeddings
         const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
         for (const trecho of trechos) {
           const embeddingRes = await openai.embeddings.create({
@@ -577,11 +568,6 @@ global.apiExports = {
         res.sendStatus(200);
       }
     }
-  } catch (err) {
-    console.error("❌ Erro geral no webhook:", err);
-    res.sendStatus(200);
-  }
-});
 
 /* ========================= CONSULTA POR SIMILARIDADE ========================= */
 async function buscarTrechosSimilares(from, queryText, pdfId, topN = 5) {
