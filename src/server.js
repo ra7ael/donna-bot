@@ -406,7 +406,6 @@ global.apiExports = {
   enviarMensagemDonna,
   enviarDocumentoWhatsApp
 };
-
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -418,33 +417,35 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ========================= Captura o texto da mensagem =========================
-    let body = messageObj.text?.body || "";
+    let body = "";
+
+    /* ========================= TEXTO E ÁUDIO ========================= */
+    if (messageObj.type === "text") {
+      body = messageObj.text?.body || "";
+    }
+
+    if (messageObj.type === "audio") {
+      const audioBuffer = await downloadMedia(messageObj.audio?.id);
+      if (audioBuffer) body = "audio: recebido";
+    }
+
+    // 🔹 gera o textoLower UMA ÚNICA VEZ
     let textoLower = body.toLowerCase();
-
-      /* ========================= TEXTO E ÁUDIO ========================= */
-      if (messageObj.type === "text") {
-        body = messageObj.text?.body || "";
-      }
-      
-      if (messageObj.type === "audio") {
-        const audioBuffer = await downloadMedia(messageObj.audio?.id);
-        if (audioBuffer) body = "audio: recebido";
-      }
-      
-      // 🔹 gera o textoLower UMA VEZ, após body estar definido
-      textoLower = body.toLowerCase();
-
 
     // ========================= Intercepta comandos de envio de WhatsApp =========================
     if (/envia\s+["'].*?["']\s+para\s+\d{10,13}/i.test(body)) {
       const resultado = await processarComandoWhatsApp(body);
-      await sendMessage(from, resultado); // envia só a confirmação
+      await sendMessage(from, resultado);
       res.sendStatus(200);
-      return; // ⚡ impede que o resto do fluxo envie mensagens extras
+      return;
     }
 
     // 🚨 BLOQUEIO: IGNORAR mensagens enviadas pela Donna para evitar loop
-    if (messageObj.id && messageObj.id.startsWith("wamid.") && String(messageObj.id).includes("false_")) {
+    if (
+      messageObj.id &&
+      messageObj.id.startsWith("wamid.") &&
+      String(messageObj.id).includes("false_")
+    ) {
       console.log("⚠ Ignorando mensagem enviada pela Donna (evita loop).");
       res.sendStatus(200);
       return;
@@ -456,102 +457,126 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+    // ========================= Função para verificar se o PDF já foi processado =========================
+    async function checkPDFProcessed(pdfId) {
+      try {
+        const result = await ProcessedPDFs.findOne({ pdfId });
+        return result !== null;
+      } catch (error) {
+        console.error("Erro ao verificar se o PDF foi processado:", error);
+        return false;
+      }
+    }
 
-   // Função para verificar se o PDF já foi processado
-async function checkPDFProcessed(pdfId) {
-  try {
-    // Supondo que você tenha um modelo 'ProcessedPDFs' para armazenar IDs de PDFs processados
-    const result = await ProcessedPDFs.findOne({ pdfId });
-    return result !== null; // Se encontrar o PDF no banco, retorna true
-  } catch (error) {
-    console.error("Erro ao verificar se o PDF foi processado:", error);
-    return false; // Caso haja erro, assume-se que o PDF não foi processado
-  }
-}
+    /* ========================= Função para dividir texto em trechos ========================= */
+    function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
+      const palavras = texto.split(/\s+/);
+      const trechos = [];
+      for (let i = 0; i < palavras.length; i += tamanhoMax) {
+        trechos.push(palavras.slice(i, i + tamanhoMax).join(" "));
+      }
+      return trechos;
+    }
 
-/* ========================= Função para dividir texto em trechos ========================= */
-function dividirTextoEmTrechos(texto, tamanhoMax = 1000) {
-  const palavras = texto.split(/\s+/);
-  const trechos = [];
-  for (let i = 0; i < palavras.length; i += tamanhoMax) {
-    trechos.push(palavras.slice(i, i + tamanhoMax).join(" "));
-  }
-  return trechos;
-}
+    /* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
+    if (messageObj.type === "document") {
+      const pdfId = messageObj.document?.id;
+      const nomeArquivo =
+        messageObj.document?.filename || "livro_sem_nome";
 
-/* ========================= DOCUMENTOS COM OCR + EMBEDDINGS ========================= */
-if (messageObj.type === "document") {
-  const pdfId = messageObj.document?.id;
-  const nomeArquivo = messageObj.document?.filename || "livro_sem_nome"; // <-- adicionado
-
-  // 0️⃣ Verifica se já processamos esse PDF
-  const jaProcessado = await checkPDFProcessed(pdfId);
-  if (jaProcessado) {
-    await sendMessage(from, "⚠ Esse PDF já foi processado anteriormente.");
-    res.sendStatus(200);
-    return;
-  }
-
-  const mediaBuffer = await downloadMedia(pdfId);
-  if (!mediaBuffer) {
-    await sendMessage(from, "⚠ Não consegui baixar o PDF.");
-    res.sendStatus(200);
-    return;
-  }
-
-  let textoExtraido = "";
-
-  try {
-    // 1️⃣ Extrai texto normalmente com pdf-parse
-    const pdfData = await pdfParse(Buffer.from(mediaBuffer, "base64"));
-    textoExtraido = pdfData.text || "";
-
-    // 2️⃣ Se texto curto ou incompleto, usa OCR
-    if (!textoExtraido || textoExtraido.trim().length < 200) {
-      await sendMessage(from, "🕵️ PDF parece imagem ou incompleto, ativando OCR...");
-
-      const pdfjsLib = require("pdfjs-dist");
-      const { createWorker } = require("tesseract.js");
-
-      const pdf = await pdfjsLib.getDocument({ data: mediaBuffer }).promise;
-      const worker = await createWorker();
-      await worker.load();
-      await worker.loadLanguage("eng+por");
-      await worker.initialize("eng+por");
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 2.0 });
-        const canvasFactory = new pdfjsLib.NodeCanvasFactory();
-        const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
-        await page.render({ canvasContext: context, viewport, canvasFactory }).promise;
-        const { data: text } = await worker.recognize(canvas);
-        textoExtraido += text + "\n";
+      // 0️⃣ Verifica se já processamos esse PDF
+      const jaProcessado = await checkPDFProcessed(pdfId);
+      if (jaProcessado) {
+        await sendMessage(from, "⚠ Esse PDF já foi processado anteriormente.");
+        res.sendStatus(200);
+        return;
       }
 
-      await worker.terminate();
+      const mediaBuffer = await downloadMedia(pdfId);
+      if (!mediaBuffer) {
+        await sendMessage(from, "⚠ Não consegui baixar o PDF.");
+        res.sendStatus(200);
+        return;
+      }
+
+      let textoExtraido = "";
+
+      try {
+        // 1️⃣ Extrai texto normalmente
+        const pdfData = await pdfParse(Buffer.from(mediaBuffer, "base64"));
+        textoExtraido = pdfData.text || "";
+
+        // 2️⃣ OCR se necessário
+        if (!textoExtraido || textoExtraido.trim().length < 200) {
+          await sendMessage(
+            from,
+            "🕵️ PDF parece imagem ou incompleto, ativando OCR..."
+          );
+
+          const pdfjsLib = require("pdfjs-dist");
+          const { createWorker } = require("tesseract.js");
+
+          const pdf = await pdfjsLib.getDocument({ data: mediaBuffer }).promise;
+          const worker = await createWorker();
+          await worker.load();
+          await worker.loadLanguage("eng+por");
+          await worker.initialize("eng+por");
+
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvasFactory = new pdfjsLib.NodeCanvasFactory();
+            const { canvas, context } = canvasFactory.create(
+              viewport.width,
+              viewport.height
+            );
+            await page.render({
+              canvasContext: context,
+              viewport,
+              canvasFactory
+            }).promise;
+
+            const { data: text } = await worker.recognize(canvas);
+            textoExtraido += text + "\n";
+          }
+
+          await worker.terminate();
+        }
+
+        // 3️⃣ Salva conteúdo completo
+        await saveBookContent(
+          textoExtraido,
+          "pdf",
+          from,
+          pdfId,
+          nomeArquivo
+        );
+
+        // 4️⃣ Embeddings
+        const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
+        for (const trecho of trechos) {
+          const embeddingRes = await openai.embeddings.create({
+            model: "text-embedding-3-small",
+            input: trecho
+          });
+
+          const embedding = embeddingRes.data[0].embedding;
+          await saveEmbeddingToDB(from, trecho, embedding, pdfId);
+        }
+
+        await sendMessage(
+          from,
+          "✅ PDF processado com sucesso e embeddings salvos no banco."
+        );
+        res.sendStatus(200);
+      } catch (err) {
+        console.error("❌ Erro ao processar PDF:", err);
+        await sendMessage(from, "❌ Não consegui processar o PDF.");
+        res.sendStatus(200);
+      }
     }
-
-    // 3️⃣ Salva no banco (conteúdo completo do PDF e nome do arquivo)
-    await saveBookContent(textoExtraido, "pdf", from, pdfId, nomeArquivo);
-
-    // 4️⃣ Divide em trechos e gera embeddings
-    const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
-    for (const trecho of trechos) {
-      const embeddingRes = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: trecho
-      });
-      const embedding = embeddingRes.data[0].embedding;
-      await saveEmbeddingToDB(from, trecho, embedding, pdfId);
-    }
-
-    // ✅ Mensagem única de sucesso
-    await sendMessage(from, "✅ PDF processado com sucesso e embeddings salvos no banco.");
-    res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro ao processar PDF:", err);
-    await sendMessage(from, "❌ Não consegui processar o PDF.");
+    console.error("❌ Erro geral no webhook:", err);
     res.sendStatus(200);
   }
 }
