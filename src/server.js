@@ -406,14 +406,16 @@ global.apiExports = {
   enviarMensagemDonna,
   enviarDocumentoWhatsApp
 };
-app.post("/webhook", async (req, res) => {
-  try {
-    const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    const from = messageObj?.from || null;
 
-    if (!messageObj) {
-      res.sendStatus(200);
-      return;
+     /* ========================= WEBHOOK ========================= */
+  app.post("/webhook", async (req, res) => {
+    try {
+      const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+      const from = messageObj?.from || null;
+  
+      if (!messageObj) {
+        res.sendStatus(200);
+        return;
     }
 
     // ========================= Captura o texto da mensagem =========================
@@ -615,25 +617,6 @@ function cosineSimilarity(vecA, vecB) {
   const magB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
   return dot / (magA * magB);
 }
-
-
-// Captura o texto da mensagem
-let body = messageObj.text?.body || "";
-let textoLower = body.toLowerCase(); // Defina apenas uma vez, fora das verificações de tipo
-
-// ========================= TEXTO E ÁUDIO =========================
-if (messageObj.type === "text") {
-  body = messageObj.text?.body || "";
-  textoLower = body.toLowerCase(); // Não precisa reatribuir aqui, pois já foi feito antes
-}
-
-if (messageObj.type === "audio") {
-  const audioBuffer = await downloadMedia(messageObj.audio?.id);
-  if (audioBuffer) body = "audio: recebido";
-  // Não precisa reatribuir textoLower aqui, apenas altere o body
-  textoLower = body.toLowerCase(); // Aqui é redundante, pode ser removido
-}
-
 
 /* ========================= EMPRESAS: BUSCAR ========================= */
 if (textoLower.startsWith("empresa buscar")) {
