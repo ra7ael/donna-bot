@@ -428,6 +428,14 @@ if (!normalized) {
 
 const { body, bodyLower: textoLower, type } = normalized;
 
+    let respondeu = false;
+
+async function responder(texto) {
+  if (respondeu) return;
+  respondeu = true;
+  await sendMessage(from, texto);
+}
+
 console.log("📩 Mensagem recebida:", { body, type });
 
 
@@ -457,14 +465,14 @@ console.log("📩 Mensagem recebida:", { body, type });
 
       const jaProcessado = await checkPDFProcessed(pdfId);
       if (jaProcessado) {
-        await sendMessage(from, "⚠ Esse PDF já foi processado anteriormente.");
+        await responder(from, "⚠ Esse PDF já foi processado anteriormente.");
         res.sendStatus(200);
         return;
       }
 
       const mediaBuffer = await downloadMedia(pdfId);
       if (!mediaBuffer) {
-        await sendMessage(from, "⚠ Não consegui baixar o PDF.");
+        await responder(from, "⚠ Não consegui baixar o PDF.");
         res.sendStatus(200);
         return;
       }
@@ -476,7 +484,7 @@ console.log("📩 Mensagem recebida:", { body, type });
         textoExtraido = pdfData.text || "";
 
         if (!textoExtraido || textoExtraido.trim().length < 200) {
-          await sendMessage(
+          await responder(
             from,
             "🕵️ PDF parece imagem ou incompleto, ativando OCR..."
           );
@@ -531,14 +539,14 @@ console.log("📩 Mensagem recebida:", { body, type });
           await saveEmbeddingToDB(from, trecho, embedding, pdfId);
         }
 
-        await sendMessage(
+        await responder(
           from,
           "✅ PDF processado com sucesso e embeddings salvos no banco."
         );
         res.sendStatus(200);
       } catch (err) {
         console.error("❌ Erro ao processar PDF:", err);
-        await sendMessage(from, "❌ Não consegui processar o PDF.");
+        await responder(from, "❌ Não consegui processar o PDF.");
         res.sendStatus(200);
       }
     }
@@ -584,13 +592,13 @@ if (textoLower.startsWith("empresa buscar")) {
   const lista = buscarEmpresa(termo);
 
   if (!lista.length) {
-    await sendMessage(from, "Nenhuma empresa encontrada.");
+    await responder(from, "Nenhuma empresa encontrada.");
     res.sendStatus(200);
     return;
   }
 
   const resposta = lista.map(formatarEmpresa).join("\n\n");
-  await sendMessage(from, resposta);
+  await responder(from, resposta);
   res.sendStatus(200);
   return;
 }
@@ -612,7 +620,7 @@ if (textoLower.startsWith("empresa adicionar")) {
 
   adicionarEmpresa(nova);
 
-  await sendMessage(from, "Empresa adicionada com sucesso.");
+  await responder(from, "Empresa adicionada com sucesso.");
   res.sendStatus(200);
   return;
 }
@@ -628,12 +636,12 @@ if (textoLower.startsWith("empresa atualizar")) {
   const ok = atualizarCampo(nomeEmpresa, campo, valor);
 
   if (!ok) {
-    await sendMessage(from, "Empresa não encontrada ou campo inválido.");
+    await responder(from, "Empresa não encontrada ou campo inválido.");
     res.sendStatus(200);
     return;
   }
 
-  await sendMessage(from, `Atualizado: ${campo} = ${valor}`);
+  await responder(from, `Atualizado: ${campo} = ${valor}`);
   res.sendStatus(200);
   return;
 }
@@ -652,7 +660,7 @@ if (textoLower.startsWith("gerar senior")) {
       });
 
     if (!dados.nome || !dados.cpf || !dados.cargo) {
-      await sendMessage(from,
+      await responder(from,
         "Para gerar o arquivo Senior, envie assim:\n" +
         "gerar senior nome=joao cpf=123 cargo=auxiliaradm admissao=2025-01-01 salario=2000 setor=rh matricula=001"
       );
@@ -703,7 +711,7 @@ if (textoLower.startsWith("gerar senior")) {
 
   } catch (err) {
     console.error("Erro ao gerar Senior:", err);
-    await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
+    await responder(from, "❌ Não consegui gerar o arquivo Senior.");
     res.sendStatus(200);
     return;
   }
@@ -734,7 +742,7 @@ if (textoLower.startsWith("gerar senior")) {
     /* ========================= COMANDO DE CLIMA ========================= */
     if (textoLower.includes("clima") || textoLower.includes("tempo")) {
       const resposta = await getWeather("Curitiba", "hoje");
-      await sendMessage(from, resposta);
+      await responder(from, resposta);
       res.sendStatus(200);
       return;
     }
@@ -744,7 +752,7 @@ if (textoLower.startsWith("gerar senior")) {
       .some(g => textoLower.includes(g))) {
       const items = await buscarMemoria(from);
       if (!items || !items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
-      else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
+      else await responder(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
       res.sendStatus(200);
       return;
     }
@@ -753,7 +761,7 @@ if (textoLower.startsWith("gerar senior")) {
       const items = await buscarMemoria(from);
       const nomeItem = (items || []).find(m => m.content.toLowerCase().startsWith("nome:"));
       const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
-      await sendMessage(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
+      await responder(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
       res.sendStatus(200);
       return;
     }
@@ -771,7 +779,7 @@ if (textoLower.startsWith("gerar senior")) {
         const valor = body.replace(p.regex, "").trim();
         await salvarMemoria(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${JSON.stringify(valor)}`);
         enqueueSemanticMemory(p.label, valor, from, "user");
-        await sendMessage(
+        awPDF. responder(
           from,
           p.label.includes("ideia") ? "Salvei sua ideia 💡" : `Prontinho! Vou lembrar de você como ${JSON.stringify(valor)} ✨`
         );
@@ -848,7 +856,7 @@ if (!respostaFinal) {
 }
 
 // 3️⃣ Envia resposta
-await sendMessage(from, respostaFinal);
+await responder(from, respostaFinal);
 res.sendStatus(200);
 
 
