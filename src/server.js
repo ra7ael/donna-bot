@@ -40,6 +40,40 @@ dotenv.config();
 
 const app = express();
 
+// ================== MEMÓRIA (DONO ÚNICO) ==================
+
+async function persistirMemoriaSemantica({ userId, category, content }) {
+  const existing = await db.collection("semanticMemory").findOne({
+    userId,
+    category,
+    content
+  });
+
+  if (existing) return;
+
+  await db.collection("semanticMemory").insertOne({
+    userId,
+    category,
+    content,
+    createdAt: new Date()
+  });
+}
+
+async function processarMemoria({ from, texto }) {
+  const palavras = extrairPalavrasChave(texto);
+
+  for (const palavra of palavras) {
+    await persistirMemoriaSemantica({
+      userId: from,
+      category: "palavras-chave",
+      content: palavra
+    });
+  }
+
+  await salvarMemoriaEstruturada(from, texto);
+}
+
+
 // =========================
 // 🔁 MEMÓRIA ANTI-ECO (GLOBAL)
 // =========================
@@ -242,21 +276,6 @@ app.get("/memoria/:userId", async (req, res) => {
   }
 });
 
-async function saveSemanticMemoryIfNeeded(category, keyword, userId) {
-  try {
-    const existingMemory = await db.collection("semanticMemory").findOne({ userId, category, content: keyword, });
-    if (existingMemory) {
-      console.log("💾 Palavra-chave já salva. Não salvando novamente.");
-      return;
-    }
-    await db.collection("semanticMemory").insertOne({ userId, category, content: keyword, createdAt: new Date(), });
-    console.log(`💾 Palavra-chave salva na categoria "${category}": ${keyword}`);
-  } catch (err) {
-    console.error("❌ Erro ao salvar memória semântica:", err.message);
-  }
-}
-
-
 
 /* ========================= Funções auxiliares ========================= */
 
@@ -413,6 +432,7 @@ global.apiExports = {
   enviarMensagemDonna,
   enviarDocumentoWhatsApp
 };
+
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
@@ -464,6 +484,10 @@ app.post("/webhook", async (req, res) => {
 
     console.log("📩 Mensagem recebida:", { body, type });
 
+    // ✅ ÚNICO DONO DA MEMÓRIA (CORREÇÃO PRINCIPAL)
+    await processarMemoria({ from, texto: body });
+
+    /* ========================= PDF / LIVROS ========================= */
 
     async function checkPDFProcessed(pdfId) {
       try {
@@ -486,11 +510,9 @@ app.post("/webhook", async (req, res) => {
 
     if (messageObj.type === "document") {
       const pdfId = messageObj.document?.id;
-      const nomeArquivo =
-        messageObj.document?.filename || "livro_sem_nome";
+      const nomeArquivo = messageObj.document?.filename || "livro_sem_nome";
 
-      const jaProcessado = await checkPDFProcessed(pdfId);
-      if (jaProcessado) {
+      if (await checkPDFProcessed(pdfId)) {
         await sendMessage(from, "⚠ Esse PDF já foi processado anteriormente.");
         res.sendStatus(200);
         return;
@@ -510,10 +532,7 @@ app.post("/webhook", async (req, res) => {
         textoExtraido = pdfData.text || "";
 
         if (!textoExtraido || textoExtraido.trim().length < 200) {
-          await sendMessage(
-            from,
-            "🕵️ PDF parece imagem ou incompleto, ativando OCR..."
-          );
+          await sendMessage(from, "🕵️ PDF parece imagem, ativando OCR...");
 
           const pdfjsLib = require("pdfjs-dist");
           const { createWorker } = require("tesseract.js");
@@ -533,12 +552,7 @@ app.post("/webhook", async (req, res) => {
               viewport.height
             );
 
-            await page.render({
-              canvasContext: context,
-              viewport,
-              canvasFactory
-            }).promise;
-
+            await page.render({ canvasContext: context, viewport }).promise;
             const { data: text } = await worker.recognize(canvas);
             textoExtraido += text + "\n";
           }
@@ -546,348 +560,126 @@ app.post("/webhook", async (req, res) => {
           await worker.terminate();
         }
 
-        await saveBookContent(
-          textoExtraido,
-          "pdf",
-          from,
-          pdfId,
-          nomeArquivo
-        );
+        await saveBookContent(textoExtraido, "pdf", from, pdfId, nomeArquivo);
 
-        const trechos = dividirTextoEmTrechos(textoExtraido, 1000);
-        for (const trecho of trechos) {
+        for (const trecho of dividirTextoEmTrechos(textoExtraido)) {
           const embeddingRes = await openai.embeddings.create({
             model: "text-embedding-3-small",
             input: trecho
           });
 
-          const embedding = embeddingRes.data[0].embedding;
-          await saveEmbeddingToDB(from, trecho, embedding, pdfId);
+          await saveEmbeddingToDB(from, trecho, embeddingRes.data[0].embedding, pdfId);
         }
 
-        await sendMessage(
-          from,
-          "✅ PDF processado com sucesso e embeddings salvos no banco."
-        );
+        await sendMessage(from, "✅ PDF processado com sucesso.");
         res.sendStatus(200);
+        return;
+
       } catch (err) {
-        console.error("❌ Erro ao processar PDF:", err);
-        await sendMessage(from, "❌ Não consegui processar o PDF.");
+        console.error("❌ Erro PDF:", err);
+        await sendMessage(from, "❌ Erro ao processar o PDF.");
         res.sendStatus(200);
+        return;
       }
     }
 
-/* ========================= CONSULTA POR SIMILARIDADE ========================= */
-async function buscarTrechosSimilares(from, queryText, pdfId, topN = 5) {
-  // 1️⃣ Gera embedding do texto de consulta
-  const queryRes = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: queryText
-  });
-  const queryEmbedding = queryRes.data[0].embedding;
+    /* ========================= EMPRESAS ========================= */
 
-  // 2️⃣ Busca embeddings do PDF no DB
-  const embeddingsSalvos = await getEmbeddingsFromDB(from, pdfId);
-
-  // 3️⃣ Calcula similaridade
-  const similaridades = embeddingsSalvos.map(e => ({
-    trecho: e.trecho,
-    score: cosineSimilarity(queryEmbedding, e.embedding)
-  }));
-
-  // 4️⃣ Ordena e pega top N
-  const topTrechos = similaridades.sort((a, b) => b.score - a.score).slice(0, topN);
-
-  console.log("📊 Top similaridades:", topTrechos.map(t => t.score));
-  console.log("📊 TOP TRECHOS:", topTrechos.map(t => t.trecho));
-
-  return topTrechos;
-}
-
-// ========================= FUNÇÃO DE SIMILARIDADE COSENO =========================
-function cosineSimilarity(vecA, vecB) {
-  const dot = vecA.reduce((acc, val, i) => acc + val * vecB[i], 0);
-  const magA = Math.sqrt(vecA.reduce((acc, val) => acc + val * val, 0));
-  const magB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
-  return dot / (magA * magB);
-}
-
-/* ========================= EMPRESAS: BUSCAR ========================= */
-if (textoLower.startsWith("empresa buscar")) {
-  const termo = body.replace(/empresa buscar/i, "").trim();
-  const lista = buscarEmpresa(termo);
-
-  if (!lista.length) {
-    await sendMessage(from, "Nenhuma empresa encontrada.");
-    res.sendStatus(200);
-    return;
-  }
-
-  const resposta = lista.map(formatarEmpresa).join("\n\n");
-  await sendMessage(from, resposta);
-  res.sendStatus(200);
-  return;
-}
-
-
-    /* ========================= EMPRESAS: ADICIONAR ========================= */
-if (textoLower.startsWith("empresa adicionar")) {
-  const partes = body.replace(/empresa adicionar/i, "").trim().split(";");
-
-  const nova = {
-    codigo: partes[0] || "",
-    empresa: partes[1] || "",
-    beneficios: partes[2] || "",
-    vt: partes[3] || "",
-    vr: partes[4] || "",
-    va: partes[5] || "",
-    observacao: partes[6] || "",
-  };
-
-  adicionarEmpresa(nova);
-
-  await sendMessage(from, "Empresa adicionada com sucesso.");
-  res.sendStatus(200);
-  return;
-}
-
-
-    /* ========================= EMPRESAS: ATUALIZAR ========================= */
-if (textoLower.startsWith("empresa atualizar")) {
-  const partes = body.split(" ");
-  const nomeEmpresa = partes[2];
-  const campo = partes[3]?.toUpperCase();
-  const valor = partes.slice(4).join(" ");
-
-  const ok = atualizarCampo(nomeEmpresa, campo, valor);
-
-  if (!ok) {
-    await sendMessage(from, "Empresa não encontrada ou campo inválido.");
-    res.sendStatus(200);
-    return;
-  }
-
-  await sendMessage(from, `Atualizado: ${campo} = ${valor}`);
-  res.sendStatus(200);
-  return;
-}
-
-
-/* ========================= SENIOR ========================= */
-if (textoLower.startsWith("gerar senior")) {
-  try {
-    const dados = {};
-    body.replace(/gerar senior/i, "")
-      .trim()
-      .split(" ")
-      .forEach(par => {
-        const [chave, valor] = par.split("=");
-        if (chave && valor) dados[chave] = valor;
-      });
-
-    if (!dados.nome || !dados.cpf || !dados.cargo) {
-      await sendMessage(from,
-        "Para gerar o arquivo Senior, envie assim:\n" +
-        "gerar senior nome=joao cpf=123 cargo=auxiliaradm admissao=2025-01-01 salario=2000 setor=rh matricula=001"
-      );
+    if (textoLower.startsWith("empresa buscar")) {
+      const lista = buscarEmpresa(body.replace(/empresa buscar/i, "").trim());
+      await sendMessage(from, lista.length ? lista.map(formatarEmpresa).join("\n\n") : "Nenhuma empresa encontrada.");
       res.sendStatus(200);
       return;
     }
 
-    // valores padrão
-    dados.admissao = dados.admissao || "2025-01-01";
-    dados.tipoContrato = dados.tipoContrato || "CLT";
-    dados.jornada = dados.jornada || "44h";
-    dados.salario = dados.salario || "0";
-    dados.setor = dados.setor || "Geral";
-    dados.matricula = dados.matricula || "0000";
+    if (textoLower.startsWith("empresa adicionar")) {
+      const p = body.replace(/empresa adicionar/i, "").trim().split(";");
+      adicionarEmpresa({
+        codigo: p[0] || "",
+        empresa: p[1] || "",
+        beneficios: p[2] || "",
+        vt: p[3] || "",
+        vr: p[4] || "",
+        va: p[5] || "",
+        observacao: p[6] || "",
+      });
+      await sendMessage(from, "Empresa adicionada com sucesso.");
+      res.sendStatus(200);
+      return;
+    }
 
-    // gera pasta e arquivo Senior
-    const dirPath = path.join(process.cwd(), "generated");
-    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+    if (textoLower.startsWith("empresa atualizar")) {
+      const partes = body.split(" ");
+      const ok = atualizarCampo(partes[2], partes[3]?.toUpperCase(), partes.slice(4).join(" "));
+      await sendMessage(from, ok ? "Atualizado com sucesso." : "Erro ao atualizar.");
+      res.sendStatus(200);
+      return;
+    }
 
-    const nomeArquivo = `senior_${dados.cpf}.txt`;
-    const filePath = path.join(dirPath, nomeArquivo);
+    /* ========================= SENIOR ========================= */
 
-    const registro = [
-      dados.nome,
-      dados.cpf,
-      dados.admissao,
-      dados.cargo,
-      dados.tipoContrato,
-      dados.jornada,
-      dados.salario,
-      dados.setor,
-      dados.matricula
-    ].join("|");
+    if (textoLower.startsWith("gerar senior")) {
+      try {
+        const dados = {};
+        body.replace(/gerar senior/i, "").trim().split(" ").forEach(p => {
+          const [k, v] = p.split("=");
+          if (k && v) dados[k] = v;
+        });
 
-    fs.writeFileSync(filePath, registro, "utf-8");
-    console.log("📝 Arquivo Senior gerado em:", filePath);
+        if (!dados.nome || !dados.cpf || !dados.cargo) {
+          await sendMessage(from, "Formato inválido.");
+          res.sendStatus(200);
+          return;
+        }
 
-    // envia documento via WhatsApp
-    const { enviarDocumentoWhatsApp } = await import("./utils/enviarDocumentoDonna.js");
-    await enviarDocumentoWhatsApp(
-      from,
-      filePath,
-      "✅ Registro Senior criado com sucesso.\nAqui está o arquivo que você pediu."
-    );
+        const dirPath = path.join(process.cwd(), "generated");
+        if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 
-    res.sendStatus(200);
-    return;
+        const filePath = path.join(dirPath, `senior_${dados.cpf}.txt`);
+        fs.writeFileSync(filePath, Object.values(dados).join("|"), "utf-8");
 
-  } catch (err) {
-    console.error("Erro ao gerar Senior:", err);
-    await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
-    res.sendStatus(200);
-    return;
-  }
-}
-    
-    // ----------------- Comandos de Rotina & Casa -----------------
-    try {
-      const handled = await handleCommand(body, from);
-      if (handled) {
+        const { enviarDocumentoWhatsApp } = await import("./utils/enviarDocumentoDonna.js");
+        await enviarDocumentoWhatsApp(from, filePath, "Arquivo Senior gerado.");
+        res.sendStatus(200);
+        return;
+
+      } catch (err) {
+        console.error(err);
+        await sendMessage(from, "Erro ao gerar Senior.");
         res.sendStatus(200);
         return;
       }
-    } catch (err) {
-      console.error("❌ erro handleCommand:", err.message || err);
     }
 
-    // ----------------- Comandos de Lembretes -----------------
-    try {
-      const lembreteCriado = await handleReminder(body, from);
-      if (lembreteCriado) {
-        res.sendStatus(200);
-        return;
-      }
-    } catch (err) {
-      console.error("❌ erro handleReminder:", err.message || err);
+    /* ========================= COMANDOS / LEMBRETES ========================= */
+
+    if (await handleCommand(body, from) || await handleReminder(body, from)) {
+      res.sendStatus(200);
+      return;
     }
 
-    /* ========================= COMANDO DE CLIMA ========================= */
+    /* ========================= CLIMA ========================= */
+
     if (textoLower.includes("clima") || textoLower.includes("tempo")) {
-      const resposta = await getWeather("Curitiba", "hoje");
-      await sendMessage(from, resposta);
+      await sendMessage(from, await getWeather("Curitiba", "hoje"));
       res.sendStatus(200);
       return;
     }
 
-    /* ========================= MEMÓRIAS MANUAIS ========================= */
-    if (["memoria", "o que voce lembra", "me diga o que tem salvo", "busque sua memoria"]
-      .some(g => textoLower.includes(g))) {
-      const items = await buscarMemoria(from);
-      if (!items || !items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
-      else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
-      res.sendStatus(200);
-      return;
-    }
+    /* ========================= IA ========================= */
 
-    if (textoLower.includes("qual é meu nome")) {
-      const items = await buscarMemoria(from);
-      const nomeItem = (items || []).find(m => m.content.toLowerCase().startsWith("nome:"));
-      const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
-      await sendMessage(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
-      res.sendStatus(200);
-      return;
-    }
+    let respostaFinal;
+    const semanticResults = await querySemanticMemory(body, from, 3);
 
-    /* ========================= PADRÕES DE PERFIL ========================= */
-    const patterns = [
-      { regex: /(meu nome é|eu sou o|sou o)/i, label: "nome do usuário" },
-      { regex: /(me chama de|pode me chamar de)/i, label: "apelido do usuário" },
-      { regex: /(ideia:|anote isso|guarda essa)/i, label: "ideia do usuário" },
-      { regex: /(no meu trabalho|cartoes devem estar disponiveis)/i, label: "regra de trabalho" }
-    ];
+    respostaFinal = semanticResults?.length
+      ? await askGPT(`${body}\n\nContexto:\n${semanticResults.join("\n")}`)
+      : await askGPT(body);
 
-    for (const p of patterns) {
-      if (p.regex.test(body)) {
-        const valor = body.replace(p.regex, "").trim();
-        await salvarMemoria(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${JSON.stringify(valor)}`);
-        enqueueSemanticMemory(p.label, valor, from, "user");
-        awPDF. sendMessage(
-          from,
-          p.label.includes("ideia") ? "Salvei sua ideia 💡" : `Prontinho! Vou lembrar de você como ${JSON.stringify(valor)} ✨`
-        );
-        res.sendStatus(200);
-        return;
-      }
-    }
-
-    /* ========================= MEMÓRIA AUTOMÁTICA ========================= */
-    const extractedData = await extractAutoMemoryGPT(from, body);
-    for (const [categoria, dados] of Object.entries(extractedData)) {
-      if (!dados) continue;
-      enqueueSemanticMemory(`auto_${categoria}`, JSON.stringify(dados), from, "user");
-    }
-
-    // ✔ SALVA APENAS MENSAGEM DO USUÁRIO
-    await salvarMemoria(from, "user", JSON.stringify(body));
-    enqueueSemanticMemory("chat geral", body, from, "user");
-
-/* ========================= PROCESSAMENTO DE RESPOSTA DONNA ========================= */
-
-// 1️⃣ Tenta consultar o livro
-let respostaFinal = null;
-
-try {
-  const resultadosLivro = await buscarPergunta(body, 6);
-
-  if (resultadosLivro?.length) {
-    const topScore = resultadosLivro[0].score;
-
-    console.log("📈 Score mais alto do livro:", topScore.toFixed(3));
-
-    // 🔐 LIMIAR SEMÂNTICO
-    if (topScore >= 0.7) {
-      const contextoLivro = resultadosLivro
-        .slice(0, 3)
-        .map(r => r.trecho)
-        .join("\n\n");
-
-      const promptLivro = `
-Você é Amber, assistente do Rafael.
-Responda SOMENTE com base no conteúdo abaixo.
-Se a resposta não estiver claramente no texto, diga: "Isso não consta no manual."
-
-CONTEÚDO:
-${contextoLivro}
-
-PERGUNTA:
-${body}
-`;
-
-      const responseLivro = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: promptLivro }]
-      });
-
-      respostaFinal = responseLivro.choices[0].message.content;
-    } else {
-      console.log("📉 Score baixo demais, ignorando livro");
-    }
-  }
-} catch (err) {
-  console.error("⚠ Erro ao consultar livro:", err.message);
-}
-
-
-// 2️⃣ Se NÃO achou resposta no livro, usa o fluxo atual
-if (!respostaFinal) {
-  const semanticResults = await querySemanticMemory(body, from, 3);
-
-  respostaFinal = semanticResults && semanticResults.length
-    ? await askGPT(`${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`)
-    : await askGPT(body);
-}
-
-// 3️⃣ Envia resposta
-await sendMessage(from, respostaFinal);
-res.sendStatus(200);
-
+    await sendMessage(from, respostaFinal);
+    res.sendStatus(200);
 
   } catch (err) {
-    console.error("❌ Webhook erro:", JSON.stringify(err.message));
+    console.error("❌ Webhook erro:", err.message);
     res.sendStatus(500);
   }
 });
