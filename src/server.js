@@ -39,6 +39,12 @@ mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeo
 dotenv.config();
 
 const app = express();
+
+// =========================
+// 🔁 MEMÓRIA ANTI-ECO (GLOBAL)
+// =========================
+const mensagensProcessadas = new Set();
+
 app.use(bodyParser.json());
 
 const uploadMulter = multer({ dest: "uploads/" });
@@ -407,36 +413,56 @@ global.apiExports = {
   enviarMensagemDonna,
   enviarDocumentoWhatsApp
 };
-
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = messageObj?.from || null;
 
-    // 🚪 PORTEIRO: decide se a mensagem deve ser ignorada
-if (shouldIgnoreMessage(messageObj, from)) {
-  res.sendStatus(200);
-  return;
-}
+    if (!messageObj) {
+      res.sendStatus(200);
+      return;
+    }
 
-// 🧠 TRADUTOR: normaliza a mensagem
-const normalized = normalizeMessage(messageObj);
-if (!normalized) {
-  res.sendStatus(200);
-  return;
-}
+    // 🚪 PORTEIRO
+    if (shouldIgnoreMessage(messageObj, from)) {
+      res.sendStatus(200);
+      return;
+    }
 
-const { body, bodyLower: textoLower, type } = normalized;
+    // 🧠 TRADUTOR
+    const normalized = normalizeMessage(messageObj);
+    if (!normalized) {
+      res.sendStatus(200);
+      return;
+    }
 
-    let respondeu = false;
+    const { body, bodyLower: textoLower, type } = normalized;
 
-async function responder(texto) {
-  if (respondeu) return;
-  respondeu = true;
-  await sendMessage(from, texto);
-}
+    // 🚫 FILTRO DE TIPO
+    if (!["text", "document"].includes(type)) {
+      console.log("⛔ Tipo ignorado:", type);
+      res.sendStatus(200);
+      return;
+    }
 
-console.log("📩 Mensagem recebida:", { body, type });
+    if (type === "text" && /^\d+$/.test(body.trim())) {
+      console.log("⛔ Texto numérico ignorado:", body);
+      res.sendStatus(200);
+      return;
+    }
+
+    // 🔁 ANTI-ECO REAL
+    const messageId = messageObj.id;
+    if (mensagensProcessadas.has(messageId)) {
+      console.log("🔁 Mensagem duplicada ignorada:", messageId);
+      res.sendStatus(200);
+      return;
+    }
+
+    mensagensProcessadas.add(messageId);
+    setTimeout(() => mensagensProcessadas.delete(messageId), 5 * 60 * 1000);
+
+    console.log("📩 Mensagem recebida:", { body, type });
 
 
     async function checkPDFProcessed(pdfId) {
