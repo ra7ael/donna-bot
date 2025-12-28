@@ -316,17 +316,7 @@ app.post("/webhook", async (req, res) => {
 
     const { body, bodyLower: textoLower, type } = normalized;
 
-// 🧠 MEMÓRIA CONSCIENTE
-const fatos = await consultarFatos(from);
-
-let contextoMemoria = "";
-
-if (fatos.length) {
-  contextoMemoria =
-    "FATOS QUE VOCÊ SABE SOBRE O USUÁRIO:\n" +
-    fatos.map(f => `- ${f}`).join("\n") +
-    "\n\n";
-}
+// 🧠 MEMÓRIA CONSCIENTE 
     
     // 🚫 FILTRO DE TIPO
     if (!["text", "document"].includes(type)) {
@@ -538,9 +528,10 @@ if (fatos.length) {
 
     /* ========================= IA ========================= */
 
-    // 🧠 Memória consciente (fatos explícitos)
+// 🧠 Memória consciente (UMA ÚNICA VEZ)
 const fatos = await consultarFatos(from);
 
+// monta o contexto
 let contextoMemoria = "";
 if (fatos.length) {
   contextoMemoria =
@@ -549,15 +540,14 @@ if (fatos.length) {
     "\n\n";
 }
 
-// 🧠 Memória semântica (similaridade)
+// 🧠 Memória semântica
 const semanticResults = await querySemanticMemory(body, from, 3);
 
-// 🎯 Prompt final unificado
+// 🎯 Prompt final
 const promptFinal = semanticResults?.length
   ? `${contextoMemoria}Pergunta do usuário: ${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`
   : `${contextoMemoria}Pergunta do usuário: ${body}`;
 
 const respostaFinal = await askGPT(promptFinal);
-
 await sendMessage(from, respostaFinal);
 res.sendStatus(200);
