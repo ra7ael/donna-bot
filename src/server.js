@@ -214,17 +214,6 @@ app.post("/webhook", async (req, res) => {
 
     // ✅ ÚNICO DONO DA MEMÓRIA (apenas comando consciente)
     // restante do webhook (PDF, empresas, senior, comandos, clima, IA) continua igual
-    // substitua semantic memory por askGPT(body) direto
-
-    let respostaFinal = await askGPT(body);
-    await sendMessage(from, respostaFinal);
-    res.sendStatus(200);
-
-  } catch (err) {
-    console.error("❌ Webhook erro:", err.message);
-    res.sendStatus(500);
-  }
-});
 
 // ========================= FUNÇÕES AUXILIARES =========================
 
@@ -528,26 +517,43 @@ app.post("/webhook", async (req, res) => {
 
     /* ========================= IA ========================= */
 
-// 🧠 Memória consciente (UMA ÚNICA VEZ)
-const fatos = await consultarFatos(from);
+    // 🧠 Memória consciente (UMA ÚNICA VEZ)
+    const fatos = await consultarFatos(from);
 
-// monta o contexto
-let contextoMemoria = "";
-if (fatos.length) {
-  contextoMemoria =
-    "FATOS QUE VOCÊ SABE SOBRE O USUÁRIO:\n" +
-    fatos.map(f => `- ${f}`).join("\n") +
-    "\n\n";
-}
+    // monta o contexto
+    let contextoMemoria = "";
+    if (fatos && fatos.length) {
+      contextoMemoria =
+        "FATOS QUE VOCÊ SABE SOBRE O USUÁRIO:\n" +
+        fatos.map(f => `- ${f}`).join("\n") +
+        "\n\n";
+    }
 
-// 🧠 Memória semântica
-const semanticResults = await querySemanticMemory(body, from, 3);
+    // 🧠 Memória semântica (se existir)
+    let semanticResults = [];
+    try {
+      semanticResults = await querySemanticMemory(body, from, 3);
+    } catch (e) {
+      console.warn("⚠️ Memória semântica indisponível");
+    }
 
-// 🎯 Prompt final
-const promptFinal = semanticResults?.length
-  ? `${contextoMemoria}Pergunta do usuário: ${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`
-  : `${contextoMemoria}Pergunta do usuário: ${body}`;
+    // 🎯 Prompt final
+    const promptFinal = semanticResults?.length
+      ? `${contextoMemoria}Pergunta do usuário: ${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`
+      : `${contextoMemoria}Pergunta do usuário: ${body}`;
 
-const respostaFinal = await askGPT(promptFinal);
-await sendMessage(from, respostaFinal);
-res.sendStatus(200);
+    const respostaFinal = await askGPT(promptFinal);
+    await sendMessage(from, respostaFinal);
+    res.sendStatus(200);
+
+  } catch (err) {
+    console.error("❌ Erro no webhook:", err);
+    res.sendStatus(500);
+  }
+}); // 🔚 FECHAMENTO DO app.post("/webhook")
+
+/* ========================= START SERVER ========================= */
+
+app.listen(PORT, () => {
+  console.log(`✅ Donna rodando na porta ${PORT}`);
+});
