@@ -22,9 +22,7 @@ import { setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
-import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
-import { enqueueSemanticMemory } from './utils/semanticQueue.js';
 import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
 import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
 import { handleReminder } from './utils/routineFamily.js';
@@ -60,17 +58,14 @@ async function persistirMemoriaSemantica({ userId, category, content }) {
 }
 
 async function processarMemoria({ from, texto }) {
-  const palavras = extrairPalavrasChave(texto);
+  // 🧠 memória semântica por embedding (frase inteira)
+  await addSemanticMemory({
+    userId: from,
+    content: texto
+  });
 
-  for (const palavra of palavras) {
-    await persistirMemoriaSemantica({
-      userId: from,
-      category: "palavras-chave",
-      content: palavra
-    });
-  }
-
-  await salvarMemoriaEstruturada(from, texto);
+  // 🧱 memória estruturada (histórico / fatos)
+  await salvarMemoria(from, texto);
 }
 
 
