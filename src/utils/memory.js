@@ -125,3 +125,29 @@ export async function limparMemoria(userId) {
 export function getDB() {
   return dbInstance;
 }
+
+
+
+/**
+ * Retorna apenas os fatos conscientes do usuário (role = "fato")
+ */
+export async function consultarFatos(userId) {
+  if (!userId) return [];
+
+  await connectDB();
+
+  if (mongoose.connection.readyState !== 1) {
+    console.warn("⚠️ Mongoose offline, não foi possível consultar fatos.");
+    return [];
+  }
+
+  try {
+    const memoria = await Memoria.findOne({ userId }).lean();
+    if (!memoria?.memoria?.fato) return [];
+
+    return memoria.memoria.fato.map(f => f.text);
+  } catch (err) {
+    console.error("❌ Erro ao consultar fatos:", err?.message || err);
+    return [];
+  }
+}
