@@ -22,7 +22,7 @@ import { setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
-import { salvarMemoria, consultarFatos, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
+import {  salvarMemoria, consultarFatos,  buscarMemoria, limparMemoria, getDB} from "./utils/memory.js";
 import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
 import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
