@@ -16,10 +16,26 @@ import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from "./utils/downloadMedia.js";
 import { salvarMemoria, consultarFatos } from "./utils/memory.js";
-import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
-import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from "./utils/handleEmpresa.js";
+import {
+  addSemanticMemory,
+  querySemanticMemory
+} from "./models/semanticMemory.js";
+import {
+  initRoutineFamily,
+  handleCommand,
+  handleReminder
+} from "./utils/routineFamily.js";
+import {
+  buscarEmpresa,
+  adicionarEmpresa,
+  atualizarCampo,
+  formatarEmpresa
+} from "./utils/handleEmpresa.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
-import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
+import {
+  normalizeMessage,
+  shouldIgnoreMessage
+} from "./utils/messageHelper.js";
 
 /* ========================= CONFIG ========================= */
 
@@ -261,30 +277,6 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    /* ===== EMPRESAS ===== */
-
-    if (textoLower.startsWith("empresa buscar")) {
-      const lista = buscarEmpresa(body.replace(/empresa buscar/i, "").trim());
-      await sendMessage(
-        from,
-        lista.length ? lista.map(formatarEmpresa).join("\n\n") : "Nenhuma empresa encontrada."
-      );
-      res.sendStatus(200);
-      return;
-    }
-
-    if (textoLower.startsWith("empresa adicionar")) {
-      const p = body.replace(/empresa adicionar/i, "").split(";");
-      adicionarEmpresa({
-        codigo: p[0],
-        empresa: p[1],
-        beneficios: p[2]
-      });
-      await sendMessage(from, "Empresa adicionada.");
-      res.sendStatus(200);
-      return;
-    }
-
     /* ===== CLIMA ===== */
 
     if (textoLower.includes("clima") || textoLower.includes("tempo")) {
@@ -293,20 +285,32 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    /* ===== IA FINAL ===== */
+    /* ===== IA FINAL (COM MEMÓRIA SEMÂNTICA) ===== */
 
     const fatos = await consultarFatos(from);
+    const memoriaSemantica = await querySemanticMemory(body, from, 3);
+
     let contexto = "";
 
     if (fatos.length) {
-      contexto =
+      contexto +=
         "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" +
         fatos.map(f => `- ${f}`).join("\n") +
         "\n\n";
     }
 
+    if (memoriaSemantica?.length) {
+      contexto +=
+        "CONTEXTO DE CONVERSAS PASSADAS:\n" +
+        memoriaSemantica.map(m => `- ${m}`).join("\n") +
+        "\n\n";
+    }
+
     const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
     await sendMessage(from, resposta);
+
+    // 🧠 salva memória semântica da conversa
+    await addSemanticMemory(body, resposta, from, "assistant");
 
     res.sendStatus(200);
   } catch (err) {
