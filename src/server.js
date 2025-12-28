@@ -321,6 +321,18 @@ app.post("/webhook", async (req, res) => {
 
     const { body, bodyLower: textoLower, type } = normalized;
 
+// 🧠 MEMÓRIA CONSCIENTE
+const fatos = await consultarFatos(from);
+
+let contextoMemoria = "";
+
+if (fatos.length) {
+  contextoMemoria =
+    "FATOS QUE VOCÊ SABE SOBRE O USUÁRIO:\n" +
+    fatos.map(f => `- ${f}`).join("\n") +
+    "\n\n";
+}
+    
     // 🚫 FILTRO DE TIPO
     if (!["text", "document"].includes(type)) {
       console.log("⛔ Tipo ignorado:", type);
@@ -531,18 +543,26 @@ app.post("/webhook", async (req, res) => {
 
     /* ========================= IA ========================= */
 
-    let respostaFinal;
-    const semanticResults = await querySemanticMemory(body, from, 3);
+    // 🧠 Memória consciente (fatos explícitos)
+const fatos = await consultarFatos(from);
 
-    respostaFinal = semanticResults?.length
-      ? await askGPT(`${body}\n\nContexto:\n${semanticResults.join("\n")}`)
-      : await askGPT(body);
+let contextoMemoria = "";
+if (fatos.length) {
+  contextoMemoria =
+    "FATOS QUE VOCÊ SABE SOBRE O USUÁRIO:\n" +
+    fatos.map(f => `- ${f}`).join("\n") +
+    "\n\n";
+}
 
-    await sendMessage(from, respostaFinal);
-    res.sendStatus(200);
+// 🧠 Memória semântica (similaridade)
+const semanticResults = await querySemanticMemory(body, from, 3);
 
-  } catch (err) {
-    console.error("❌ Webhook erro:", err.message);
-    res.sendStatus(500);
-  }
-});
+// 🎯 Prompt final unificado
+const promptFinal = semanticResults?.length
+  ? `${contextoMemoria}Pergunta do usuário: ${body}\n\nContexto relevante:\n${semanticResults.join("\n")}`
+  : `${contextoMemoria}Pergunta do usuário: ${body}`;
+
+const respostaFinal = await askGPT(promptFinal);
+
+await sendMessage(from, respostaFinal);
+res.sendStatus(200);
