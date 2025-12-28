@@ -491,14 +491,14 @@ app.post("/webhook", async (req, res) => {
 
       const jaProcessado = await checkPDFProcessed(pdfId);
       if (jaProcessado) {
-        await responder(from, "⚠ Esse PDF já foi processado anteriormente.");
+        await sendMessage(from, "⚠ Esse PDF já foi processado anteriormente.");
         res.sendStatus(200);
         return;
       }
 
       const mediaBuffer = await downloadMedia(pdfId);
       if (!mediaBuffer) {
-        await responder(from, "⚠ Não consegui baixar o PDF.");
+        await sendMessage(from, "⚠ Não consegui baixar o PDF.");
         res.sendStatus(200);
         return;
       }
@@ -510,7 +510,7 @@ app.post("/webhook", async (req, res) => {
         textoExtraido = pdfData.text || "";
 
         if (!textoExtraido || textoExtraido.trim().length < 200) {
-          await responder(
+          await sendMessage(
             from,
             "🕵️ PDF parece imagem ou incompleto, ativando OCR..."
           );
@@ -565,14 +565,14 @@ app.post("/webhook", async (req, res) => {
           await saveEmbeddingToDB(from, trecho, embedding, pdfId);
         }
 
-        await responder(
+        await sendMessage(
           from,
           "✅ PDF processado com sucesso e embeddings salvos no banco."
         );
         res.sendStatus(200);
       } catch (err) {
         console.error("❌ Erro ao processar PDF:", err);
-        await responder(from, "❌ Não consegui processar o PDF.");
+        await sendMessage(from, "❌ Não consegui processar o PDF.");
         res.sendStatus(200);
       }
     }
@@ -618,13 +618,13 @@ if (textoLower.startsWith("empresa buscar")) {
   const lista = buscarEmpresa(termo);
 
   if (!lista.length) {
-    await responder(from, "Nenhuma empresa encontrada.");
+    await sendMessage(from, "Nenhuma empresa encontrada.");
     res.sendStatus(200);
     return;
   }
 
   const resposta = lista.map(formatarEmpresa).join("\n\n");
-  await responder(from, resposta);
+  await sendMessage(from, resposta);
   res.sendStatus(200);
   return;
 }
@@ -646,7 +646,7 @@ if (textoLower.startsWith("empresa adicionar")) {
 
   adicionarEmpresa(nova);
 
-  await responder(from, "Empresa adicionada com sucesso.");
+  await sendMessage(from, "Empresa adicionada com sucesso.");
   res.sendStatus(200);
   return;
 }
@@ -662,12 +662,12 @@ if (textoLower.startsWith("empresa atualizar")) {
   const ok = atualizarCampo(nomeEmpresa, campo, valor);
 
   if (!ok) {
-    await responder(from, "Empresa não encontrada ou campo inválido.");
+    await sendMessage(from, "Empresa não encontrada ou campo inválido.");
     res.sendStatus(200);
     return;
   }
 
-  await responder(from, `Atualizado: ${campo} = ${valor}`);
+  await sendMessage(from, `Atualizado: ${campo} = ${valor}`);
   res.sendStatus(200);
   return;
 }
@@ -686,7 +686,7 @@ if (textoLower.startsWith("gerar senior")) {
       });
 
     if (!dados.nome || !dados.cpf || !dados.cargo) {
-      await responder(from,
+      await sendMessage(from,
         "Para gerar o arquivo Senior, envie assim:\n" +
         "gerar senior nome=joao cpf=123 cargo=auxiliaradm admissao=2025-01-01 salario=2000 setor=rh matricula=001"
       );
@@ -737,7 +737,7 @@ if (textoLower.startsWith("gerar senior")) {
 
   } catch (err) {
     console.error("Erro ao gerar Senior:", err);
-    await responder(from, "❌ Não consegui gerar o arquivo Senior.");
+    await sendMessage(from, "❌ Não consegui gerar o arquivo Senior.");
     res.sendStatus(200);
     return;
   }
@@ -768,7 +768,7 @@ if (textoLower.startsWith("gerar senior")) {
     /* ========================= COMANDO DE CLIMA ========================= */
     if (textoLower.includes("clima") || textoLower.includes("tempo")) {
       const resposta = await getWeather("Curitiba", "hoje");
-      await responder(from, resposta);
+      await sendMessage(from, resposta);
       res.sendStatus(200);
       return;
     }
@@ -778,7 +778,7 @@ if (textoLower.startsWith("gerar senior")) {
       .some(g => textoLower.includes(g))) {
       const items = await buscarMemoria(from);
       if (!items || !items.length) await sendMessage(from, "Ainda não tenho nenhuma memória salva 🧠");
-      else await responder(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
+      else await sendMessage(from, `Memórias salvas:\n\n${items.map(i => `• ${i.content}`).join("\n")}`);
       res.sendStatus(200);
       return;
     }
@@ -787,7 +787,7 @@ if (textoLower.startsWith("gerar senior")) {
       const items = await buscarMemoria(from);
       const nomeItem = (items || []).find(m => m.content.toLowerCase().startsWith("nome:"));
       const nome = nomeItem?.content.replace(/.*nome:/i, "").trim();
-      await responder(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
+      await sendMessage(from, nome ? `Seu nome salvo é: ${JSON.stringify(nome)} 😊` : "Você ainda não tem nome salvo.");
       res.sendStatus(200);
       return;
     }
@@ -805,7 +805,7 @@ if (textoLower.startsWith("gerar senior")) {
         const valor = body.replace(p.regex, "").trim();
         await salvarMemoria(from, p.label.includes("ideia") ? "notes" : "profile", `${p.label}: ${JSON.stringify(valor)}`);
         enqueueSemanticMemory(p.label, valor, from, "user");
-        awPDF. responder(
+        awPDF. sendMessage(
           from,
           p.label.includes("ideia") ? "Salvei sua ideia 💡" : `Prontinho! Vou lembrar de você como ${JSON.stringify(valor)} ✨`
         );
@@ -882,7 +882,7 @@ if (!respostaFinal) {
 }
 
 // 3️⃣ Envia resposta
-await responder(from, respostaFinal);
+await sendMessage(from, respostaFinal);
 res.sendStatus(200);
 
 
