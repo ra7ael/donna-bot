@@ -394,14 +394,6 @@ async function askGPT(prompt, history = []) {
 
     sanitizedMessages.push({ role: "user", content: prompt || "" });
 
-    const palavrasChave = identificarPalavrasChave(prompt);
-    const palavrasChaveUnicas = [...new Set(palavrasChave)];
-
-    if (palavrasChaveUnicas.length > 0) {
-      for (let palavra of palavrasChaveUnicas) {
-        await enqueueSemanticMemory("palavras-chave", palavra, "user", "user");
-      }
-    }
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
