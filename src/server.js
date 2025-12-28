@@ -1,4 +1,4 @@
-/// src/server.js
+// src/server.js
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from "./utils/downloadMedia.js";
-import { salvarMemoria, consultarFatos, buscarMemoriaSemantica } from "./utils/memory.js";
+import { salvarMemoria, consultarFatos } from "./utils/memory.js";
 import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
 import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from "./utils/handleEmpresa.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
@@ -54,6 +54,7 @@ async function connectDB() {
   const client = await MongoClient.connect(MONGO_URI, {
     serverSelectionTimeoutMS: 60000
   });
+
   db = client.db("donna");
 
   await mongoose.connect(MONGO_URI, {
@@ -75,6 +76,7 @@ await initRoutineFamily(db, sendMessage);
 function dividirMensagem(texto, limite = 300) {
   const partes = [];
   let inicio = 0;
+
   while (inicio < texto.length) {
     let fim = inicio + limite;
     if (fim < texto.length) {
@@ -89,6 +91,7 @@ function dividirMensagem(texto, limite = 300) {
 
 async function sendMessage(to, text) {
   if (!to || !text) return;
+
   const partes = dividirMensagem(text);
 
   for (const parte of partes) {
@@ -143,7 +146,7 @@ async function askGPT(prompt) {
   return response.data.choices?.[0]?.message?.content || "Estou pensando nisso.";
 }
 
-/* ========================= FILTRO DE MEMÓRIA ========================= */
+/* ========================= FILTRO DE MEMÓRIA AUTOMÁTICA ========================= */
 
 function extrairFatoAutomatico(texto) {
   const t = texto.toLowerCase();
@@ -162,11 +165,9 @@ function extrairFatoAutomatico(texto) {
   if (
     t.includes("eu tenho") ||
     t.includes("eu sou") ||
-    t.includes("meu trabalho") ||
-    t.includes("trabalho com") ||
     t.includes("sou casado") ||
     t.includes("tenho filhos") ||
-    t.includes("tenho")
+    t.includes("trabalho com")
   ) {
     return texto.trim();
   }
@@ -199,6 +200,11 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+    if (type === "text" && /^\d+$/.test(body.trim())) {
+      res.sendStatus(200);
+      return;
+    }
+
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) {
       res.sendStatus(200);
@@ -208,7 +214,33 @@ app.post("/webhook", async (req, res) => {
     mensagensProcessadas.add(messageId);
     setTimeout(() => mensagensProcessadas.delete(messageId), 300000);
 
-    /* ===== MEMÓRIA CONSCIENTE AUTOMÁTICA ===== */
+    /* ===== MEMÓRIA MANUAL ===== */
+
+    if (textoLower.startsWith("lembre que")) {
+      const fato = body.replace(/lembre que/i, "").trim();
+      const fatos = await consultarFatos(from);
+
+      if (!fatos.includes(fato)) {
+        await salvarMemoria(from, {
+          tipo: "fato",
+          content: fato,
+          createdAt: new Date()
+        });
+      }
+
+      await sendMessage(from, "📌 Guardado.");
+      res.sendStatus(200);
+      return;
+    }
+
+    if (textoLower.includes("o que você lembra")) {
+      const fatos = await consultarFatos(from);
+      await sendMessage(from, fatos.length ? fatos.join("\n") : "Nada salvo ainda.");
+      res.sendStatus(200);
+      return;
+    }
+
+    /* ===== MEMÓRIA AUTOMÁTICA ===== */
 
     const fatoDetectado = extrairFatoAutomatico(body);
     if (fatoDetectado) {
@@ -229,6 +261,30 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+    /* ===== EMPRESAS ===== */
+
+    if (textoLower.startsWith("empresa buscar")) {
+      const lista = buscarEmpresa(body.replace(/empresa buscar/i, "").trim());
+      await sendMessage(
+        from,
+        lista.length ? lista.map(formatarEmpresa).join("\n\n") : "Nenhuma empresa encontrada."
+      );
+      res.sendStatus(200);
+      return;
+    }
+
+    if (textoLower.startsWith("empresa adicionar")) {
+      const p = body.replace(/empresa adicionar/i, "").split(";");
+      adicionarEmpresa({
+        codigo: p[0],
+        empresa: p[1],
+        beneficios: p[2]
+      });
+      await sendMessage(from, "Empresa adicionada.");
+      res.sendStatus(200);
+      return;
+    }
+
     /* ===== CLIMA ===== */
 
     if (textoLower.includes("clima") || textoLower.includes("tempo")) {
@@ -237,7 +293,7 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    /* ===== IA FINAL (COM MEMÓRIA) ===== */
+    /* ===== IA FINAL ===== */
 
     const fatos = await consultarFatos(from);
     let contexto = "";
