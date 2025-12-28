@@ -293,7 +293,6 @@ app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 global.apiExports = {
   askGPT,
   salvarMemoria,
-  enviarMensagemDonna,
   enviarDocumentoWhatsApp
 };
 
