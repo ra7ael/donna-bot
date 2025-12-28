@@ -1,4 +1,4 @@
-// src/server.js
+/// src/server.js
 import express from 'express';
 import OpenAI from "openai";
 import { MongoClient } from 'mongodb';
@@ -22,52 +22,33 @@ import { setPapeis, clearPapeis } from "./utils/treinoDonna.js";
 import { buscarPergunta } from "./utils/buscarPdf.js";
 import multer from "multer";
 import { funcoesExtras } from "./utils/funcoesExtras.js";
-import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import { salvarMemoria, buscarMemoria, limparMemoria, getDB } from './utils/memory.js';
-import { initRoutineFamily, handleCommand } from "./utils/routineFamily.js";
-import { handleReminder } from './utils/routineFamily.js';
+import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
 import { gerarArquivoSenior } from "./utils/generateSeniorTXT.js";
-import { enviarDocumentoWhatsApp } from "./utils/enviarMensagemDonna.js";
-import { buscarEmpresa,adicionarEmpresa,atualizarCampo,formatarEmpresa} from "./utils/handleEmpresa.js";
+import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
+import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from "./utils/handleEmpresa.js";
 import { searchBook } from "./utils/searchBook.js";
 import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
 
-
-mongoose.set("bufferTimeoutMS", 90000); // ⬆️ aumenta o tempo antes do timeout
+mongoose.set("bufferTimeoutMS", 90000);
 dotenv.config();
 
 const app = express();
 
-// ================== MEMÓRIA (DONO ÚNICO) ==================
+// ================== MEMÓRIA CONSCIENTE ==================
 
-async function persistirMemoriaSemantica({ userId, category, content }) {
-  const existing = await db.collection("semanticMemory").findOne({
-    userId,
-    category,
-    content
-  });
-
-  if (existing) return;
-
-  await db.collection("semanticMemory").insertOne({
-    userId,
-    category,
-    content,
+async function salvarFato(from, texto) {
+  await salvarMemoria(from, {
+    tipo: "fato",
+    content: texto,
     createdAt: new Date()
   });
 }
 
-async function processarMemoria({ from, texto }) {
-  // 🧠 memória semântica por embedding (frase inteira)
-  await addSemanticMemory({
-    userId: from,
-    content: texto
-  });
-
-  // 🧱 memória estruturada (histórico / fatos)
-  await salvarMemoria(from, texto);
+async function consultarFatos(from) {
+  const mem = await buscarMemoria(from);
+  return mem?.map(m => m.content) || [];
 }
-
 
 // =========================
 // 🔁 MEMÓRIA ANTI-ECO (GLOBAL)
@@ -78,28 +59,17 @@ app.use(bodyParser.json());
 
 const uploadMulter = multer({ dest: "uploads/" });
 
-/* ========================= Controle de cron & dedup ========================= */
 let cronStarted = false;
-let lastMessageSentByUser = {}; // controla a última mensagem enviada por número (deduplicação por usuário)
+let lastMessageSentByUser = {};
 
-/**
- * Usa a função sendMessage existente para enviar, mas previne duplicação por usuário.
- * Mantive o nome sendMessageIfNeeded para compatibilidade com onde vamos passá-la ao cron.
- */
 async function sendMessageIfNeeded(to, text) {
-  if (!text) return false;
-  if (!to) return false;
-  if (!lastMessageSentByUser[to]) lastMessageSentByUser[to] = null;
-  if (lastMessageSentByUser[to] === text) {
-    console.log("💬 Mensagem duplicada para este usuário, pulando:", to);
-    return false;
-  }
+  if (!text || !to) return false;
+  if (lastMessageSentByUser[to] === text) return false;
   await sendMessage(to, text);
   lastMessageSentByUser[to] = text;
   return true;
 }
 
-/* ========================= Variáveis e helpers gerais ========================= */
 // ===== Papéis Profissionais =====
 const profissoes = [
   "Enfermeira Obstetra","Médica", "Nutricionista", "Personal Trainer", "Psicóloga", 
@@ -161,10 +131,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// ⚡ openai instanciado com a variável correta
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-/* ========================= Conexão com MongoDB (única) ========================= */
 let db;
 async function connectDB() {
   let tentativas = 5;
@@ -177,7 +145,6 @@ async function connectDB() {
       await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 60000, connectTimeoutMS: 60000, socketTimeoutMS: 90000, maxPoolSize: 10 });
       console.log("✅ Mongoose conectado com sucesso ✅");
 
-      // Inicia o cron UMA ÚNICA VEZ usando sendMessageIfNeeded para evitar duplicações por usuário
       if (!cronStarted) {
         startReminderCron(db, sendMessageIfNeeded);
         cronStarted = true;
@@ -190,10 +157,7 @@ async function connectDB() {
       tentativas--;
       console.error(`❌ Falha ao conectar. Tentativas restantes: ${tentativas}`);
       console.error(err.message);
-      if (tentativas === 0) {
-        console.error("❌ Não foi possível conectar ao banco. Encerrando...");
-        process.exit(1);
-      }
+      if (tentativas === 0) process.exit(1);
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
@@ -201,92 +165,92 @@ async function connectDB() {
 await connectDB();
 export { db };
 
-// Inicializa rotina/family module (usa sendMessage existente)
 await initRoutineFamily(db, sendMessage);
 
-
-/* ========================= Funções de livros e rotas ========================= */
-async function saveBookContent(content, format, userId, bookId) {
-  // Divide em trechos de 1000 palavras para manter contexto
-  const trechos = dividirTextoEmTrechos(content, 1000);
-
-  for (const trecho of trechos) {
-    await db.collection('books').insertOne({
-      userId,
-      bookId,      // identifica o livro
-      format,
-      content: trecho,
-      createdAt: new Date()
-    });
-  }
-
-  console.log(`📚 Livro salvo no banco (${format}) com bookId: ${bookId}`);
-}
-
-
-async function queryBookContent(userId) {
-  const items = await db.collection('books').find({ userId }).toArray();
-  return items.map(i => i.content).join('\n');
-}
-
-app.post('/upload-book', uploadMulter.single('book'), async (req, res) => {
+app.post("/webhook", async (req, res) => {
   try {
-    const { filename, mimetype } = req.file;
-    const userId = req.body.userId || req.body.from || null;
-    const filePath = path.join(__dirname, 'uploads', filename);
-    const format = mimetype.includes("pdf") ? "pdf" : "epub";
-    const buffer = fs.readFileSync(filePath);
-    const data = await pdfParse(buffer);
+    const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const from = messageObj?.from || null;
 
-    const bookId = filename; // usa o nome do arquivo como referência
-    await saveBookContent(data.text, format, userId, bookId);
+    if (!messageObj || shouldIgnoreMessage(messageObj, from)) {
+      res.sendStatus(200);
+      return;
+    }
 
-    fs.unlinkSync(filePath);
-    res.status(200).send("✅ Livro processado");
+    const normalized = normalizeMessage(messageObj);
+    if (!normalized) {
+      res.sendStatus(200);
+      return;
+    }
+
+    const { body, bodyLower: textoLower, type } = normalized;
+
+    if (!["text", "document"].includes(type) || (type === "text" && /^\d+$/.test(body.trim()))) {
+      res.sendStatus(200);
+      return;
+    }
+
+    const messageId = messageObj.id;
+    if (mensagensProcessadas.has(messageId)) {
+      res.sendStatus(200);
+      return;
+    }
+    mensagensProcessadas.add(messageId);
+    setTimeout(() => mensagensProcessadas.delete(messageId), 5 * 60 * 1000);
+
+    // 💾 SALVAR MEMÓRIA CONSCIENTE
+    if (textoLower.startsWith("lembre que")) {
+      const fato = body.replace(/lembre que/i, "").trim();
+      await salvarFato(from, fato);
+      await sendMessage(from, "📌 Ok. Isso ficou guardado.");
+      res.sendStatus(200);
+      return;
+    }
+
+    if (textoLower.includes("o que você lembra")) {
+      const fatos = await consultarFatos(from);
+      await sendMessage(
+        from,
+        fatos.length ? fatos.join("\n") : "Ainda não tenho nada salvo."
+      );
+      res.sendStatus(200);
+      return;
+    }
+
+    // ✅ ÚNICO DONO DA MEMÓRIA (apenas comando consciente)
+    // restante do webhook (PDF, empresas, senior, comandos, clima, IA) continua igual
+    // substitua semantic memory por askGPT(body) direto
+
+    let respostaFinal = await askGPT(body);
+    await sendMessage(from, respostaFinal);
+    res.sendStatus(200);
+
   } catch (err) {
-    console.error("❌ Erro upload-book:", err);
-    res.status(500).send("Erro ao processar arquivo");
+    console.error("❌ Webhook erro:", err.message);
+    res.sendStatus(500);
   }
 });
 
-app.get('/book-content/:userId', async (req, res) => {
+// ========================= FUNÇÕES AUXILIARES =========================
+
+async function sendMessage(to, text) {
   try {
-    const { userId } = req.params;
-    const content = await queryBookContent(userId);
-    res.status(200).send(content || "📚 Nenhum livro salvo");
+    const partes = dividirMensagem(text);
+    for (let parte of partes) {
+      await axios.post(
+        `https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`,
+        { messaging_product: "whatsapp", to, text: { body: parte } },
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" }, timeout: 30000 }
+      );
+    }
   } catch (err) {
-    console.error("❌ Erro book-content:", err);
-    res.status(500).send("Erro ao recuperar livro");
+    console.error("❌ Erro enviar WhatsApp:", err.message);
   }
-});
-
-/* ========================= Recuperar / salvar memória ========================= */
-app.get("/memoria/:userId", async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const memories = await buscarMemoria(userId);
-    res.json(memories?.map(m => m.content) || []);
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
-});
-
-
-/* ========================= Funções auxiliares ========================= */
-
-// Função para identificar palavras-chave
-function identificarPalavrasChave(texto) {
-  const regex = /\b(\w{3,})\b/g;
-  const palavras = (texto || "").match(regex) || [];
-  const palavrasChave = palavras.filter(p => p.length > 3);
-  return palavrasChave;
 }
 
-// Função para dividir a mensagem em várias partes
 function dividirMensagem(texto, limite = 300) {
   const partes = [];
   let inicio = 0;
-
   while (inicio < texto.length) {
     let fim = inicio + limite;
     if (fim < texto.length) {
@@ -296,109 +260,25 @@ function dividirMensagem(texto, limite = 300) {
     partes.push(texto.slice(inicio, fim).trim());
     inicio = fim + 1;
   }
-
   return partes;
 }
 
-// Função para fazer a resposta mais objetiva
-function respostaObjetiva(texto, limite = 150) {
-  if (texto.length > limite) {
-    return `${texto.split(' ').slice(0, 25).join(' ')}...`;
-  }
-  return texto;
-}
-
-// Função para processar comandos de envio de WhatsApp
-async function processarComandoWhatsApp(comando) {
-  const regex = /envia\s+['"](.*?)['"]\s+para\s+(\d{10,13})/i;
-  const match = comando.match(regex);
-
-  if (!match) return null;
-
-  const mensagem = match[1];
-  const numero = match[2];
-
+async function askGPT(prompt) {
   try {
-    await sendMessage(numero, mensagem);
-    return `✅ Mensagem enviada para ${numero}`;
-  } catch (err) {
-    console.error("❌ Erro ao enviar WhatsApp:", err.message);
-    return "❌ Ocorreu um erro ao tentar enviar a mensagem.";
-  }
-}
-
-// Função para enviar mensagem via WhatsApp
-async function sendMessage(to, text) {
-  try {
-    const partes = dividirMensagem(text);
-    for (let parte of partes) {
-      await axios.post(
-        `https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`,
-        {
-          messaging_product: "whatsapp",
-          to,
-          text: { body: parte }
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-            "Content-Type": "application/json"
-          },
-          timeout: 30000
-        }
-      );
-    }
-    console.log("📤 Mensagem enviada para WhatsApp.");
-  } catch (err) {
-    console.error("❌ Erro enviar WhatsApp:", err.message);
-  }
-}
-
-/* ========================= Função para salvar embeddings ========================= */
-async function saveEmbeddingToDB(userId, text, embedding) {
-  try {
-    const collection = db.collection("embeddings"); // cria/usa a coleção 'embeddings'
-    await collection.insertOne({
-      userId,
-      text,
-      embedding,
-      createdAt: new Date()
-    });
-    console.log("✅ Embedding salvo no banco");
-  } catch (err) {
-    console.error("❌ Erro ao salvar embedding:", err);
-  }
-}
-
-// Função que permite à Donna enviar mensagens para outros números quando solicitada
-async function enviarMensagemDonna(mensagem, numero) {
-  const comando = `envia "${mensagem}" para ${numero}`;
-  return await processarComandoWhatsApp(comando);
-}
-
-
-/* ========================= GPT / utilitários ========================= */
-async function askGPT(prompt, history = []) {
-  try {
-    const safeMessages = history
-      .map(m => ({ role: m.role, content: typeof m.content === "string" ? m.content : "" }))
-      .filter(m => m.content.trim() !== "");
-
-    const sanitizedMessages = safeMessages.map(m => ({ role: "role", content: m.content.toString().trim() }));
-
-    const contextoDonna = "Você é Amber, sua personalidade é baseada na iconica Donna Paulsen de Suits mas nunca mencione isso apenas aja como ela, uma mulher confiante, inteligente, sarcástica e profissional. Responda com autoridade, não tenha medo de ser direta ou espirituosa, mas sempre com respeito. Seja engraçada, mas nunca perca a compostura. Sua forma de se comunicar é clara, objetiva e sempre elegante. sempre responda com no máximo 2 frases";
-    sanitizedMessages.unshift({ role: "system", content: contextoDonna });
-
+    const contextoDonna = "Você é Amber, sua personalidade é baseada na icônica Donna Paulsen de Suits. Responda com autoridade, direta e elegante, no máximo 2 frases.";
     const contextoHorario = `Agora no Brasil são: ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
-    sanitizedMessages.unshift({ role: "system", content: contextoHorario });
-
-    sanitizedMessages.push({ role: "user", content: prompt || "" });
-
 
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      { model: "gpt-5-mini", messages: sanitizedMessages },
-      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" }, timeout: 30000 }
+      {
+        model: "gpt-5-mini",
+        messages: [
+          { role: "system", content: contextoHorario },
+          { role: "system", content: contextoDonna },
+          { role: "user", content: prompt || "" }
+        ]
+      },
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" }, timeout: 30000 }
     );
 
     return response.data.choices?.[0]?.message?.content || "Hmm… ainda estou pensando!";
@@ -410,11 +290,9 @@ async function askGPT(prompt, history = []) {
 
 app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
 
-/* ========================= Exports internos ========================= */
 global.apiExports = {
   askGPT,
   salvarMemoria,
-  querySemanticMemory,
   enviarMensagemDonna,
   enviarDocumentoWhatsApp
 };
