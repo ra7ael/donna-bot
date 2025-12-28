@@ -45,11 +45,6 @@ async function salvarFato(from, texto) {
   });
 }
 
-async function consultarFatos(from) {
-  const mem = await buscarMemoria(from);
-  return mem?.map(m => m.content) || [];
-}
-
 // =========================
 // 🔁 MEMÓRIA ANTI-ECO (GLOBAL)
 // =========================
