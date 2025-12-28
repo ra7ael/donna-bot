@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from "./utils/downloadMedia.js";
-import { salvarMemoria, consultarFatos } from "./utils/memory.js";
+import { salvarMemoria, consultarFatos, buscarMemoriaSemantica } from "./utils/memory.js";
 import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
 import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from "./utils/handleEmpresa.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
@@ -143,6 +143,37 @@ async function askGPT(prompt) {
   return response.data.choices?.[0]?.message?.content || "Estou pensando nisso.";
 }
 
+/* ========================= FILTRO DE MEMÓRIA ========================= */
+
+function extrairFatoAutomatico(texto) {
+  const t = texto.toLowerCase();
+
+  if (
+    t.endsWith("?") ||
+    t.startsWith("oi") ||
+    t.startsWith("bom dia") ||
+    t.startsWith("boa tarde") ||
+    t.startsWith("boa noite") ||
+    t.startsWith("obrigado")
+  ) {
+    return null;
+  }
+
+  if (
+    t.includes("eu tenho") ||
+    t.includes("eu sou") ||
+    t.includes("meu trabalho") ||
+    t.includes("trabalho com") ||
+    t.includes("sou casado") ||
+    t.includes("tenho filhos") ||
+    t.includes("tenho")
+  ) {
+    return texto.trim();
+  }
+
+  return null;
+}
+
 /* ========================= WEBHOOK ========================= */
 
 app.post("/webhook", async (req, res) => {
@@ -168,11 +199,6 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    if (type === "text" && /^\d+$/.test(body.trim())) {
-      res.sendStatus(200);
-      return;
-    }
-
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) {
       res.sendStatus(200);
@@ -182,54 +208,23 @@ app.post("/webhook", async (req, res) => {
     mensagensProcessadas.add(messageId);
     setTimeout(() => mensagensProcessadas.delete(messageId), 300000);
 
-    /* ===== MEMÓRIA CONSCIENTE ===== */
+    /* ===== MEMÓRIA CONSCIENTE AUTOMÁTICA ===== */
 
-    if (textoLower.startsWith("lembre que")) {
-      const fato = body.replace(/lembre que/i, "").trim();
-      await salvarMemoria(from, {
-        tipo: "fato",
-        content: fato,
-        createdAt: new Date()
-      });
-      await sendMessage(from, "📌 Guardado.");
-      res.sendStatus(200);
-      return;
-    }
-
-    if (textoLower.includes("o que você lembra")) {
-      const fatos = await consultarFatos(from);
-      await sendMessage(from, fatos.length ? fatos.join("\n") : "Nada salvo ainda.");
-      res.sendStatus(200);
-      return;
+    const fatoDetectado = extrairFatoAutomatico(body);
+    if (fatoDetectado) {
+      const fatosExistentes = await consultarFatos(from);
+      if (!fatosExistentes.includes(fatoDetectado)) {
+        await salvarMemoria(from, {
+          tipo: "fato",
+          content: fatoDetectado,
+          createdAt: new Date()
+        });
+      }
     }
 
     /* ===== COMANDOS ===== */
 
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
-      res.sendStatus(200);
-      return;
-    }
-
-    /* ===== EMPRESAS ===== */
-
-    if (textoLower.startsWith("empresa buscar")) {
-      const lista = buscarEmpresa(body.replace(/empresa buscar/i, "").trim());
-      await sendMessage(
-        from,
-        lista.length ? lista.map(formatarEmpresa).join("\n\n") : "Nenhuma empresa encontrada."
-      );
-      res.sendStatus(200);
-      return;
-    }
-
-    if (textoLower.startsWith("empresa adicionar")) {
-      const p = body.replace(/empresa adicionar/i, "").split(";");
-      adicionarEmpresa({
-        codigo: p[0],
-        empresa: p[1],
-        beneficios: p[2]
-      });
-      await sendMessage(from, "Empresa adicionada.");
       res.sendStatus(200);
       return;
     }
@@ -242,7 +237,7 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    /* ===== IA FINAL ===== */
+    /* ===== IA FINAL (COM MEMÓRIA) ===== */
 
     const fatos = await consultarFatos(from);
     let contexto = "";
