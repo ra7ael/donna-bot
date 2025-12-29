@@ -180,6 +180,7 @@ function extrairFatoAutomatico(texto) {
 
   if (
     t.includes("eu tenho") ||
+    t.includes("meu nome é") ||
     t.includes("eu sou") ||
     t.includes("sou casado") ||
     t.includes("tenho filhos") ||
@@ -199,32 +200,21 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj?.from;
 
     if (!messageObj || shouldIgnoreMessage(messageObj, from)) {
-      res.sendStatus(200);
-      return;
+      return res.sendStatus(200);
     }
 
     const normalized = normalizeMessage(messageObj);
-    if (!normalized) {
-      res.sendStatus(200);
-      return;
-    }
+    if (!normalized) return res.sendStatus(200);
 
-    const { body, bodyLower: textoLower, type } = normalized;
+    const { body, bodyLower, type } = normalized;
 
     if (!["text", "document"].includes(type)) {
-      res.sendStatus(200);
-      return;
-    }
-
-    if (type === "text" && /^\d+$/.test(body.trim())) {
-      res.sendStatus(200);
-      return;
+      return res.sendStatus(200);
     }
 
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) {
-      res.sendStatus(200);
-      return;
+      return res.sendStatus(200);
     }
 
     mensagensProcessadas.add(messageId);
@@ -232,11 +222,11 @@ app.post("/webhook", async (req, res) => {
 
     /* ===== MEMÓRIA MANUAL ===== */
 
-    if (textoLower.startsWith("lembre que")) {
+    if (bodyLower.startsWith("lembre que")) {
       const fato = body.replace(/lembre que/i, "").trim();
-      const fatos = await consultarFatos(from);
+      const fatosExistentes = await consultarFatos(from);
 
-      if (!fatos.includes(fato)) {
+      if (!fatosExistentes.includes(fato)) {
         await salvarMemoria(from, {
           tipo: "fato",
           content: fato,
@@ -245,18 +235,16 @@ app.post("/webhook", async (req, res) => {
       }
 
       await sendMessage(from, "📌 Guardado.");
-      res.sendStatus(200);
-      return;
+      return res.sendStatus(200);
     }
 
-    if (textoLower.includes("o que você lembra")) {
+    if (bodyLower.includes("o que você lembra")) {
       const fatos = await consultarFatos(from);
       await sendMessage(from, fatos.length ? fatos.join("\n") : "Nada salvo ainda.");
-      res.sendStatus(200);
-      return;
+      return res.sendStatus(200);
     }
 
-    /* ===== MEMÓRIA AUTOMÁTICA ===== */
+    /* ===== MEMÓRIA AUTOMÁTICA FACTUAL ===== */
 
     const fatoDetectado = extrairFatoAutomatico(body);
     if (fatoDetectado) {
@@ -273,19 +261,17 @@ app.post("/webhook", async (req, res) => {
     /* ===== COMANDOS ===== */
 
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
-      res.sendStatus(200);
-      return;
+      return res.sendStatus(200);
     }
 
     /* ===== CLIMA ===== */
 
-    if (textoLower.includes("clima") || textoLower.includes("tempo")) {
+    if (bodyLower.includes("clima") || bodyLower.includes("tempo")) {
       await sendMessage(from, await getWeather("Curitiba", "hoje"));
-      res.sendStatus(200);
-      return;
+      return res.sendStatus(200);
     }
 
-    /* ===== IA FINAL (COM MEMÓRIA SEMÂNTICA) ===== */
+    /* ===== IA FINAL COM MEMÓRIA ===== */
 
     const fatos = await consultarFatos(from);
     const memoriaSemantica = await querySemanticMemory(body, from, 3);
@@ -306,16 +292,19 @@ app.post("/webhook", async (req, res) => {
         "\n\n";
     }
 
-    const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
+    const resposta = await askGPT(
+      `${contexto}Pergunta do usuário: ${body}`
+    );
+
     await sendMessage(from, resposta);
 
-    // 🧠 salva memória semântica da conversa
+    // 🧠 salva memória semântica APÓS responder
     await addSemanticMemory(body, resposta, from, "assistant");
 
-    res.sendStatus(200);
+    return res.sendStatus(200);
   } catch (err) {
     console.error("❌ Erro webhook:", err);
-    res.sendStatus(500);
+    return res.sendStatus(500);
   }
 });
 
