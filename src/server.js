@@ -122,26 +122,36 @@ function extrairFatoAutomatico(texto) {
 async function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
   const p = pergunta.toLowerCase();
 
-  // Busca nome do usuário
-  if (p.includes("meu nome")) {
-    // Primeiro nos fatos manuais
-    let nome = fatos.find(f => f.toLowerCase().includes("meu nome"));
-    // Depois na memória semântica
-    if (!nome && memoriaSemantica.length) {
-      nome = memoriaSemantica.find(f => f.toLowerCase().includes("meu nome"));
+  /* ===== NOME DO USUÁRIO (IDENTIDADE) ===== */
+  if (
+    p.includes("meu nome") ||
+    p.includes("qual é meu nome") ||
+    p.includes("qual é o meu nome")
+  ) {
+    const fatoNome = fatos.find(f =>
+      f.toLowerCase().startsWith("meu nome é")
+    );
+
+    if (fatoNome) {
+      const nome = fatoNome.replace(/meu nome é/i, "").trim();
+      return `Seu nome é ${nome}.`;
     }
-    if (nome) return nome.replace(/^meu nome é/i, "Seu nome é");
   }
 
-  // Quantos filhos/animais
-  if (p.includes("quantos filhos") || p.includes("quantos animais") || p.includes("quantos gatas")) {
-    const fato = fatos.find(f => f.toLowerCase().includes("filho") || f.toLowerCase().includes("gatas") || f.toLowerCase().includes("animais"))
-                || (memoriaSemantica.length ? memoriaSemantica.find(f => f.toLowerCase().includes("filho") || f.toLowerCase().includes("gatas") || f.toLowerCase().includes("animais")) : null);
+  /* ===== FILHOS / ANIMAIS ===== */
+  if (p.includes("quantos filhos") || p.includes("quantos animais")) {
+    const fato = fatos.find(f =>
+      f.toLowerCase().includes("filho") ||
+      f.toLowerCase().includes("animal") ||
+      f.toLowerCase().includes("gata")
+    );
+
     if (fato) return fato;
   }
 
   return null;
 }
+
 
 /* ========================= WEBHOOK ========================= */
 app.post("/webhook", async (req, res) => {
@@ -198,32 +208,44 @@ if (fatoDetectado) {
       return res.sendStatus(200);
     }
 
-    /* ===== IA FINAL COM MEMÓRIA ===== */
-    const fatos = await consultarFatos(from);
-    const memoriaSemantica = await querySemanticMemory(body, from, 3);
+/* ===== IA FINAL COM MEMÓRIA ===== */
+const fatosRaw = await consultarFatos(from);
+const fatos = fatosRaw.map(f =>
+  typeof f === "string" ? f : f.content
+);
 
-    const respostaDireta = await responderComMemoriaNatural(body, fatos, memoriaSemantica || []);
-    if (respostaDireta) {
-      await sendMessage(from, respostaDireta);
-      return res.sendStatus(200);
-    }
+const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-    let contexto = "";
-    if (fatos.length) contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n";
-    if (memoriaSemantica?.length) contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
+const respostaDireta = await responderComMemoriaNatural(
+  body,
+  fatos,
+  memoriaSemantica || []
+);
 
-    const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
-    await sendMessage(from, resposta);
+if (respostaDireta) {
+  await sendMessage(from, respostaDireta);
+  return res.sendStatus(200);
+}
 
-    // Salva memória semântica
-    await addSemanticMemory(body, resposta, from, "assistant");
+let contexto = "";
+if (fatos.length) {
+  contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" +
+    fatos.map(f => `- ${f}`).join("\n") + "\n\n";
+}
 
-    return res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Erro webhook:", err);
-    return res.sendStatus(500);
-  }
-});
+if (memoriaSemantica?.length) {
+  contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" +
+    memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
+}
+
+const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
+await sendMessage(from, resposta);
+
+// salva memória semântica da resposta
+await addSemanticMemory(body, resposta, from, "assistant");
+
+return res.sendStatus(200);
+
 
 /* ========================= START ========================= */
 app.listen(PORT, () => {
