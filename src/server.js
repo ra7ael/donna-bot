@@ -192,6 +192,45 @@ function extrairFatoAutomatico(texto) {
   return null;
 }
 
+function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
+  const p = pergunta.toLowerCase();
+
+  // filhos
+  if (p.includes("quantos filhos")) {
+    const fato = fatos.find(f =>
+      f.toLowerCase().includes("filho")
+    );
+
+    if (fato) {
+      return fato;
+    }
+  }
+
+  if (p.includes("nome dos meus filhos")) {
+    const nomes = memoriaSemantica.find(m =>
+      m.toLowerCase().includes("chamam")
+    );
+
+    if (nomes) {
+      return nomes;
+    }
+  }
+
+  // nome do usuário
+  if (p.includes("meu nome")) {
+    const nome = fatos.find(f =>
+      f.toLowerCase().includes("meu nome")
+    );
+
+    if (nome) {
+      return nome.replace(/^meu nome é/i, "Seu nome é");
+    }
+  }
+
+  // fallback
+  return null;
+}
+
 /* ========================= WEBHOOK ========================= */
 
 app.post("/webhook", async (req, res) => {
@@ -292,11 +331,25 @@ app.post("/webhook", async (req, res) => {
         "\n\n";
     }
 
-    const resposta = await askGPT(
-      `${contexto}Pergunta do usuário: ${body}`
-    );
+    // tenta responder direto da memória
+const respostaDireta = responderComMemoriaNatural(
+  body,
+  fatos,
+  memoriaSemantica || []
+);
 
-    await sendMessage(from, resposta);
+if (respostaDireta) {
+  await sendMessage(from, respostaDireta);
+  res.sendStatus(200);
+  return;
+}
+
+// se não conseguiu, usa IA
+const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
+await sendMessage(from, resposta);
+
+// salva memória semântica
+await addSemanticMemory(body, resposta, from, "assistant");
 
     // 🧠 salva memória semântica APÓS responder
     await addSemanticMemory(body, resposta, from, "assistant");
