@@ -246,6 +246,12 @@ await addSemanticMemory(body, resposta, from, "assistant");
 
 return res.sendStatus(200);
 
+  } catch (err) {
+    console.error("❌ Erro no webhook:", err);
+    return res.sendStatus(500);
+  }
+});
+
 
 /* ========================= START ========================= */
 app.listen(PORT, () => {
