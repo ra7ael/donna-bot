@@ -15,38 +15,27 @@ const semanticSchema = new mongoose.Schema({
 
 const SemanticMemory = mongoose.model("SemanticMemory", semanticSchema);
 
-/* ========================= SALVAR MEMÓRIA SEMÂNTICA ========================= */
-
+/* ========================= SALVAR OU ATUALIZAR MEMÓRIA SEMÂNTICA ========================= */
 export async function addSemanticMemory(prompt, answer, userId, role) {
   try {
     const texto = `${prompt} ${answer}`;
     const vector = await embedding(texto);
     const resposta = typeof answer === "string" ? answer : JSON.stringify(answer);
 
-    // evita duplicação semântica real (com base em similaridade, não texto exato)
-    const similares = await querySemanticMemory(prompt, userId, 1);
+    // Salva ou atualiza memória existente
+    await SemanticMemory.findOneAndUpdate(
+      { userId, prompt },                        // procura pelo prompt do usuário
+      { answer: resposta, role, vector, createdAt: new Date() }, // atualiza campos
+      { upsert: true, new: true }                // cria se não existir
+    );
 
-    if (similares && similares.length) {
-      console.log("🧠 Memória semântica semelhante já existe, ignorando inserção literal");
-      return;
-    }
-
-    await SemanticMemory.create({
-      userId,
-      prompt,
-      answer: resposta,
-      role,
-      vector
-    });
-
-    console.log("🧠 Memória semântica salva");
+    console.log("🧠 Memória semântica salva/atualizada com sucesso");
   } catch (err) {
     console.error("❌ Erro ao salvar memória semântica:", err.message);
   }
 }
 
 /* ========================= BUSCAR MEMÓRIA SEMÂNTICA ========================= */
-
 export async function querySemanticMemory(query, userId, limit = 1) {
   try {
     const queryVector = await embedding(query);
@@ -63,12 +52,7 @@ export async function querySemanticMemory(query, userId, limit = 1) {
               in: {
                 $add: [
                   "$$value",
-                  {
-                    $multiply: [
-                      { $arrayElemAt: ["$vector", "$$this"] },
-                      { $arrayElemAt: ["$queryVector", "$$this"] }
-                    ]
-                  }
+                  { $multiply: [{ $arrayElemAt: ["$vector", "$$this"] }, { $arrayElemAt: ["$queryVector", "$$this"] }] }
                 ]
               }
             }
@@ -104,8 +88,7 @@ export async function querySemanticMemory(query, userId, limit = 1) {
           }
         }
       },
-      // filtro opcional para evitar lixo semântico
-      { $match: { similarity: { $gt: 0.75 } } },
+      { $match: { similarity: { $gt: 0.75 } } }, // filtro de similaridade
       { $sort: { similarity: -1, createdAt: -1 } },
       { $limit: limit },
       { $project: { answer: 1, similarity: 1, _id: 0 } }
@@ -113,7 +96,6 @@ export async function querySemanticMemory(query, userId, limit = 1) {
 
     if (!results.length) return null;
     return results.map(r => r.answer);
-
   } catch (err) {
     console.error("❌ Erro ao buscar memória semântica:", err.message);
     return null;
