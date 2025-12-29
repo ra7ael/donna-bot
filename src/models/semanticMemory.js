@@ -10,6 +10,9 @@ const semanticSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+// ⚠️ Removido índice único para evitar erro de duplicação
+// semanticSchema.index({ userId: 1, prompt: 1 }, { unique: true });
+
 const SemanticMemory = mongoose.model("SemanticMemory", semanticSchema);
 
 /* ========================= SALVAR MEMÓRIA SEMÂNTICA ========================= */
@@ -20,11 +23,11 @@ export async function addSemanticMemory(prompt, answer, userId, role) {
     const vector = await embedding(texto);
     const resposta = typeof answer === "string" ? answer : JSON.stringify(answer);
 
-    // evita duplicação semântica real
+    // evita duplicação semântica real (com base em similaridade, não texto exato)
     const similares = await querySemanticMemory(prompt, userId, 1);
 
     if (similares && similares.length) {
-      console.log("🧠 Memória semântica semelhante já existe, ignorando");
+      console.log("🧠 Memória semântica semelhante já existe, ignorando inserção literal");
       return;
     }
 
@@ -50,13 +53,7 @@ export async function querySemanticMemory(query, userId, limit = 1) {
 
     const results = await SemanticMemory.aggregate([
       { $match: { userId } },
-
-      {
-        $addFields: {
-          queryVector: queryVector
-        }
-      },
-
+      { $addFields: { queryVector } },
       {
         $addFields: {
           dotProduct: {
@@ -76,7 +73,6 @@ export async function querySemanticMemory(query, userId, limit = 1) {
               }
             }
           },
-
           magnitudeQuery: {
             $sqrt: {
               $reduce: {
@@ -86,7 +82,6 @@ export async function querySemanticMemory(query, userId, limit = 1) {
               }
             }
           },
-
           magnitudeDoc: {
             $sqrt: {
               $reduce: {
@@ -98,43 +93,25 @@ export async function querySemanticMemory(query, userId, limit = 1) {
           }
         }
       },
-
       {
         $addFields: {
           similarity: {
             $cond: {
-              if: {
-                $eq: [{ $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }, 0]
-              },
+              if: { $eq: [{ $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }, 0] },
               then: 0,
-              else: {
-                $divide: [
-                  "$dotProduct",
-                  { $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }
-                ]
-              }
+              else: { $divide: ["$dotProduct", { $multiply: ["$magnitudeQuery", "$magnitudeDoc"] }] }
             }
           }
         }
       },
-
       // filtro opcional para evitar lixo semântico
       { $match: { similarity: { $gt: 0.75 } } },
-
       { $sort: { similarity: -1, createdAt: -1 } },
       { $limit: limit },
-
-      {
-        $project: {
-          answer: 1,
-          similarity: 1,
-          _id: 0
-        }
-      }
+      { $project: { answer: 1, similarity: 1, _id: 0 } }
     ]).option({ maxTimeMS: 60000 });
 
     if (!results.length) return null;
-
     return results.map(r => r.answer);
 
   } catch (err) {
