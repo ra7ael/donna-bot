@@ -7,15 +7,21 @@ import mongoose from "mongoose";
 import { MongoClient } from "mongodb";
 import { DateTime } from "luxon";
 import path from "path";
+import fs from "fs-extra";
 import { fileURLToPath } from "url";
 
+/* ========================= IMPORTS INTERNOS ========================= */
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
+import { downloadMedia } from "./utils/downloadMedia.js";
 import { salvarMemoria, consultarFatos } from "./utils/memory.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
+import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from "./utils/handleEmpresa.js";
+import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
 import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
 
+/* ========================= CONFIG ========================= */
 dotenv.config();
 mongoose.set("bufferTimeoutMS", 90000);
 
@@ -28,11 +34,15 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
+/* ========================= PATH ========================= */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use("/audio", express.static(path.join(__dirname, "public/audio")));
 
+/* ========================= ANTI-ECO ========================= */
 const mensagensProcessadas = new Set();
+
+/* ========================= DB ========================= */
 let db;
 let cronStarted = false;
 
@@ -51,6 +61,7 @@ async function connectDB() {
 await connectDB();
 await initRoutineFamily(db, sendMessage);
 
+/* ========================= HELPERS ========================= */
 function dividirMensagem(texto, limite = 300) {
   const partes = [];
   let inicio = 0;
@@ -99,49 +110,31 @@ async function askGPT(prompt) {
   return response.data.choices?.[0]?.message?.content || "Estou pensando nisso.";
 }
 
-// NLP simples para chave/valor
-function extrairFato(texto) {
-  const t = texto.toLowerCase().trim();
-  const fatos = [];
-
-  // Nome
-  if (t.startsWith("meu nome é")) {
-    fatos.push({ chave: "nome", valor: texto.replace(/^meu nome é/i, "").trim() });
-  }
-
-  // Filhos ou animais
-  const regexNum = /\d+/;
-  if (t.includes("filho")) {
-    const n = texto.match(regexNum)?.[0] || "?";
-    fatos.push({ chave: "filhos", valor: n });
-  }
-  if (t.includes("gata") || t.includes("gato")) {
-    const n = texto.match(regexNum)?.[0] || "?";
-    fatos.push({ chave: "gatas", valor: n });
-  }
-
-  // Frases gerais
-  if (!fatos.length) {
-    fatos.push({ chave: texto.slice(0, 30), valor: texto });
-  }
-
-  return fatos;
+/* ========================= NLP SIMPLES PARA EXTRAÇÃO DE FATOS ========================= */
+function extrairFatoAutomatico(texto) {
+  const t = texto.toLowerCase();
+  if (t.endsWith("?") || ["oi","bom dia","boa tarde","boa noite","obrigado"].some(p => t.startsWith(p))) return null;
+  if (["eu tenho","meu nome é","eu sou","sou casado","tenho filhos","trabalho com"].some(p => t.includes(p))) return texto.trim();
+  return null;
 }
 
-async function salvarFatos(from, texto) {
-  const fatosExtraidos = extrairFato(texto);
-  const fatosExistentes = await consultarFatos(from);
+/* ========================= INTERCEPTOR NATURAL ========================= */
+function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
+  const p = pergunta.toLowerCase();
 
-  for (const f of fatosExtraidos) {
-    const existe = fatosExistentes.find(fe => fe.chave === f.chave);
-    if (existe) {
-      // Atualiza valor
-      await salvarMemoria(from, { ...f, updatedAt: new Date() });
-    } else {
-      // Cria novo
-      await salvarMemoria(from, { ...f, createdAt: new Date() });
-    }
+  // filhos/animais
+  if (p.includes("quantos filhos") || p.includes("quantos animais") || p.includes("quantos gatas")) {
+    const fato = fatos.find(f => f.toLowerCase().includes("filho") || f.toLowerCase().includes("gatas") || f.toLowerCase().includes("animais"));
+    if (fato) return fato;
   }
+
+  // nome do usuário
+  if (p.includes("meu nome")) {
+    const nome = fatos.find(f => f.toLowerCase().includes("meu nome"));
+    if (nome) return nome.replace(/^meu nome é/i, "Seu nome é");
+  }
+
+  return null;
 }
 
 /* ========================= WEBHOOK ========================= */
@@ -149,63 +142,76 @@ app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = messageObj?.from;
+
     if (!messageObj || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
     const normalized = normalizeMessage(messageObj);
     if (!normalized) return res.sendStatus(200);
 
     const { body, bodyLower, type } = normalized;
-    if (!["text", "document"].includes(type)) return res.sendStatus(200);
+    if (!["text","document"].includes(type)) return res.sendStatus(200);
 
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
     mensagensProcessadas.add(messageId);
     setTimeout(() => mensagensProcessadas.delete(messageId), 300000);
 
-    // Memória manual
+    /* ===== MEMÓRIA MANUAL ===== */
     if (bodyLower.startsWith("lembre que")) {
       const fato = body.replace(/lembre que/i, "").trim();
-      await salvarFatos(from, fato);
+      const fatosExistentes = await consultarFatos(from);
+      if (!fatosExistentes.includes(fato)) {
+        await salvarMemoria(from, { tipo:"fato", content: fato, createdAt: new Date() });
+      }
       await sendMessage(from, "📌 Guardado.");
       return res.sendStatus(200);
     }
 
     if (bodyLower.includes("o que você lembra")) {
       const fatos = await consultarFatos(from);
-      if (fatos.length) {
-        const resposta = fatos.map(f => `${f.chave}: ${f.valor}`).join("\n");
-        await sendMessage(from, resposta);
-      } else {
-        await sendMessage(from, "Nada salvo ainda.");
+      await sendMessage(from, fatos.length ? fatos.join("\n") : "Nada salvo ainda.");
+      return res.sendStatus(200);
+    }
+
+    /* ===== MEMÓRIA AUTOMÁTICA FACTUAL ===== */
+    const fatoDetectado = extrairFatoAutomatico(body);
+    if (fatoDetectado) {
+      const fatosExistentes = await consultarFatos(from);
+      if (!fatosExistentes.includes(fatoDetectado)) {
+        await salvarMemoria(from, { tipo:"fato", content: fatoDetectado, createdAt: new Date() });
       }
-      return res.sendStatus(200);
     }
 
-    // Memória automática factual
-    await salvarFatos(from, body);
-
-    // Comandos e clima
+    /* ===== COMANDOS ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
+
+    /* ===== CLIMA ===== */
     if (bodyLower.includes("clima") || bodyLower.includes("tempo")) {
-      await sendMessage(from, await getWeather("Curitiba", "hoje"));
+      await sendMessage(from, await getWeather("Curitiba","hoje"));
       return res.sendStatus(200);
     }
 
-    // Memória semântica
-    const memoriaSemantica = await querySemanticMemory(body, from, 3);
-    let contexto = "";
+    /* ===== IA FINAL COM MEMÓRIA ===== */
     const fatos = await consultarFatos(from);
-    if (fatos.length) contexto += "FATOS DO USUÁRIO:\n" + fatos.map(f => `- ${f.valor}`).join("\n") + "\n\n";
-    if (memoriaSemantica?.length) contexto += "CONTEXTO SEMÂNTICO:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
+    const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-    const respostaDireta = responderComMemoriaNatural(body, fatos.map(f => f.valor), memoriaSemantica || []);
+    // Interceptor natural
+    const respostaDireta = responderComMemoriaNatural(body, fatos, memoriaSemantica || []);
     if (respostaDireta) {
       await sendMessage(from, respostaDireta);
-    } else {
-      const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
-      await sendMessage(from, resposta);
-      await addSemanticMemory(body, resposta, from, "assistant");
+      return res.sendStatus(200);
     }
+
+    // Monta contexto
+    let contexto = "";
+    if (fatos.length) contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n";
+    if (memoriaSemantica?.length) contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
+
+    const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
+    await sendMessage(from, resposta);
+
+    // Salva memória semântica
+    await addSemanticMemory(body, resposta, from, "assistant");
 
     return res.sendStatus(200);
   } catch (err) {
@@ -215,4 +221,6 @@ app.post("/webhook", async (req, res) => {
 });
 
 /* ========================= START ========================= */
-app.listen(PORT, () => console.log(`✅ Donna rodando na porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Donna rodando na porta ${PORT}`);
+});
