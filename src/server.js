@@ -192,38 +192,28 @@ function extrairFatoAutomatico(texto) {
   return null;
 }
 
+/* ========================= MEMÓRIA NATURAL ========================= */
+
 function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
   const p = pergunta.toLowerCase();
 
-  // filhos
-  if (p.includes("quantos filhos")) {
-    const fato = fatos.find(f =>
-      f.toLowerCase().includes("filho")
-    );
-
-    if (fato) {
-      return fato;
-    }
+  // 1️⃣ Prioriza memória semântica
+  if (memoriaSemantica?.length) {
+    return memoriaSemantica[0];
   }
 
-  if (p.includes("nome dos meus filhos")) {
-    const nomes = memoriaSemantica.find(m =>
-      m.toLowerCase().includes("chamam")
-    );
-
-    if (nomes) {
-      return nomes;
+  // 2️⃣ Fatos manuais
+  if (fatos?.length) {
+    // Pergunta sobre nome
+    if (p.includes("meu nome")) {
+      const nomeFato = fatos.find(f => /meu nome é/i.test(f) || /nome/i.test(f));
+      if (nomeFato) return `Seu nome é ${nomeFato.replace(/.*nome é/i, "").trim()}`;
     }
-  }
 
-  // nome do usuário
-  if (p.includes("meu nome")) {
-    const nome = fatos.find(f =>
-      f.toLowerCase().includes("meu nome")
-    );
-
-    if (nome) {
-      return nome.replace(/^meu nome é/i, "Seu nome é");
+    // Pergunta sobre quantidade de filhos ou gatas
+    if (p.includes("quantos") || p.includes("quantas")) {
+      const numeroFato = fatos.find(f => /\d+/.test(f));
+      if (numeroFato) return numeroFato;
     }
   }
 
