@@ -202,7 +202,7 @@ if (fatoDetectado) {
     const fatos = await consultarFatos(from);
     const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-    const respostaDireta = responderComMemoriaNatural(body, fatos, memoriaSemantica || []);
+    const respostaDireta = await responderComMemoriaNatural(body, fatos, memoriaSemantica || []);
     if (respostaDireta) {
       await sendMessage(from, respostaDireta);
       return res.sendStatus(200);
