@@ -114,7 +114,7 @@ async function askGPT(prompt) {
 function extrairFatoAutomatico(texto) {
   const t = texto.toLowerCase();
   if (t.endsWith("?") || ["oi","bom dia","boa tarde","boa noite","obrigado"].some(p => t.startsWith(p))) return null;
-  if (["eu tenho","meu nome é","eu sou","sou casado","tenho filhos","trabalho com"].some(p => t.includes(p))) return texto.trim();
+  if (["eu tenho","meu nome é","eu sou","sou casado","tenho filhos","trabalho com","trabalho na"].some(p => t.includes(p))) return texto.trim();
   return null;
 }
 
@@ -122,17 +122,12 @@ function extrairFatoAutomatico(texto) {
 function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
   const p = pergunta.toLowerCase();
 
-  // filhos/animais
-  if (p.includes("quantos filhos") || p.includes("quantos animais") || p.includes("quantos gatas")) {
-    const fato = fatos.find(f => f.toLowerCase().includes("filho") || f.toLowerCase().includes("gatas") || f.toLowerCase().includes("animais"));
-    if (fato) return fato;
-  }
+  // retorna qualquer fato que tenha palavra-chave presente na pergunta
+  const possiveis = fatos.filter(f => p.split(" ").some(word => f.toLowerCase().includes(word)));
+  if (possiveis.length) return possiveis.join("; ");
 
-  // nome do usuário
-  if (p.includes("meu nome")) {
-    const nome = fatos.find(f => f.toLowerCase().includes("meu nome"));
-    if (nome) return nome.replace(/^meu nome é/i, "Seu nome é");
-  }
+  // fallback para memória semântica
+  if (memoriaSemantica?.length) return memoriaSemantica.join("\n");
 
   return null;
 }
@@ -182,10 +177,8 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    /* ===== COMANDOS ===== */
+    /* ===== COMANDOS E CLIMA ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
-
-    /* ===== CLIMA ===== */
     if (bodyLower.includes("clima") || bodyLower.includes("tempo")) {
       await sendMessage(from, await getWeather("Curitiba","hoje"));
       return res.sendStatus(200);
@@ -195,14 +188,12 @@ app.post("/webhook", async (req, res) => {
     const fatos = await consultarFatos(from);
     const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-    // Interceptor natural
     const respostaDireta = responderComMemoriaNatural(body, fatos, memoriaSemantica || []);
     if (respostaDireta) {
       await sendMessage(from, respostaDireta);
       return res.sendStatus(200);
     }
 
-    // Monta contexto
     let contexto = "";
     if (fatos.length) contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n";
     if (memoriaSemantica?.length) contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
