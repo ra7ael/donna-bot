@@ -119,15 +119,26 @@ function extrairFatoAutomatico(texto) {
 }
 
 /* ========================= INTERCEPTOR NATURAL ========================= */
-function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
+async function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
   const p = pergunta.toLowerCase();
 
-  // retorna qualquer fato que tenha palavra-chave presente na pergunta
-  const possiveis = fatos.filter(f => p.split(" ").some(word => f.toLowerCase().includes(word)));
-  if (possiveis.length) return possiveis.join("; ");
+  // Busca nome do usuário
+  if (p.includes("meu nome")) {
+    // Primeiro nos fatos manuais
+    let nome = fatos.find(f => f.toLowerCase().includes("meu nome"));
+    // Depois na memória semântica
+    if (!nome && memoriaSemantica.length) {
+      nome = memoriaSemantica.find(f => f.toLowerCase().includes("meu nome"));
+    }
+    if (nome) return nome.replace(/^meu nome é/i, "Seu nome é");
+  }
 
-  // fallback para memória semântica
-  if (memoriaSemantica?.length) return memoriaSemantica.join("\n");
+  // Quantos filhos/animais
+  if (p.includes("quantos filhos") || p.includes("quantos animais") || p.includes("quantos gatas")) {
+    const fato = fatos.find(f => f.toLowerCase().includes("filho") || f.toLowerCase().includes("gatas") || f.toLowerCase().includes("animais"))
+                || (memoriaSemantica.length ? memoriaSemantica.find(f => f.toLowerCase().includes("filho") || f.toLowerCase().includes("gatas") || f.toLowerCase().includes("animais")) : null);
+    if (fato) return fato;
+  }
 
   return null;
 }
@@ -168,14 +179,17 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /* ===== MEMÓRIA AUTOMÁTICA FACTUAL ===== */
-    const fatoDetectado = extrairFatoAutomatico(body);
-    if (fatoDetectado) {
-      const fatosExistentes = await consultarFatos(from);
-      if (!fatosExistentes.includes(fatoDetectado)) {
-        await salvarMemoria(from, { tipo:"fato", content: fatoDetectado, createdAt: new Date() });
-      }
-    }
+/* ===== MEMÓRIA AUTOMÁTICA FACTUAL ===== */
+const fatoDetectado = extrairFatoAutomatico(body);
+if (fatoDetectado) {
+  const fatosExistentes = await consultarFatos(from);
+  if (!fatosExistentes.includes(fatoDetectado)) {
+    // Salva como fato manual
+    await salvarMemoria(from, { tipo:"fato", content: fatoDetectado, createdAt: new Date() });
+    // Salva como memória semântica
+    await addSemanticMemory(fatoDetectado, "salvo como fato do usuário", from, "user");
+  }
+}
 
     /* ===== COMANDOS E CLIMA ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
