@@ -279,7 +279,10 @@ app.post("/webhook", async (req, res) => {
 
     if (bodyLower.includes("o que você lembra")) {
       const fatos = await consultarFatos(from);
-      await sendMessage(from, fatos.length ? fatos.join("\n") : "Nada salvo ainda.");
+      await sendMessage(
+        from,
+        fatos.length ? fatos.join("\n") : "Nada salvo ainda."
+      );
       return res.sendStatus(200);
     }
 
@@ -315,6 +318,19 @@ app.post("/webhook", async (req, res) => {
     const fatos = await consultarFatos(from);
     const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
+    // 🔹 Interceptor natural (SEM IA)
+    const respostaDireta = responderComMemoriaNatural(
+      body,
+      fatos,
+      memoriaSemantica || []
+    );
+
+    if (respostaDireta) {
+      await sendMessage(from, respostaDireta);
+      return res.sendStatus(200);
+    }
+
+    // 🔹 Monta contexto apenas se precisar da IA
     let contexto = "";
 
     if (fatos.length) {
@@ -331,27 +347,13 @@ app.post("/webhook", async (req, res) => {
         "\n\n";
     }
 
-    // tenta responder direto da memória
-const respostaDireta = responderComMemoriaNatural(
-  body,
-  fatos,
-  memoriaSemantica || []
-);
+    const resposta = await askGPT(
+      `${contexto}Pergunta do usuário: ${body}`
+    );
 
-if (respostaDireta) {
-  await sendMessage(from, respostaDireta);
-  res.sendStatus(200);
-  return;
-}
+    await sendMessage(from, resposta);
 
-// se não conseguiu, usa IA
-const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
-await sendMessage(from, resposta);
-
-// salva memória semântica
-await addSemanticMemory(body, resposta, from, "assistant");
-
-    // 🧠 salva memória semântica APÓS responder
+    // 🧠 salva memória semântica UMA VEZ (correto)
     await addSemanticMemory(body, resposta, from, "assistant");
 
     return res.sendStatus(200);
