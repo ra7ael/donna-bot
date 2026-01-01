@@ -158,11 +158,24 @@ async function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica
 }
 
 
+/* ========================= NUMEROS PERMITIDOS ========================= */
+const NUMEROS_PERMITIDOS = [
+  "5541995194485" // ex: 5591999999999
+];
+
+function numeroPermitido(from) {
+  if (!from) return false;
+  return NUMEROS_PERMITIDOS.includes(from);
+}
+
 /* ========================= WEBHOOK ========================= */
 app.post("/webhook", async (req, res) => {
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = messageObj?.from;
+
+    // 🔒 BLOQUEIO TOTAL: só números permitidos
+    if (!numeroPermitido(from)) return res.sendStatus(200);
 
     if (!messageObj || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
@@ -194,89 +207,85 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-/* ===== MEMÓRIA AUTOMÁTICA FACTUAL ===== */
-const fatoDetectado = extrairFatoAutomatico(body);
-if (fatoDetectado) {
-  const fatosExistentes = await consultarFatos(from);
-  if (!fatosExistentes.includes(fatoDetectado)) {
-    // Salva como fato manual
-    await salvarMemoria(from, { tipo:"fato", content: fatoDetectado, createdAt: new Date() });
-    // Salva como memória semântica
-    await addSemanticMemory(fatoDetectado, "salvo como fato do usuário", from, "user");
-  }
-}
+    /* ===== MEMÓRIA AUTOMÁTICA FACTUAL ===== */
+    const fatoDetectado = extrairFatoAutomatico(body);
+    if (fatoDetectado) {
+      const fatosExistentes = await consultarFatos(from);
+      if (!fatosExistentes.includes(fatoDetectado)) {
+        await salvarMemoria(from, { tipo:"fato", content: fatoDetectado, createdAt: new Date() });
+        await addSemanticMemory(fatoDetectado, "salvo como fato do usuário", from, "user");
+      }
+    }
 
     /* ===== COMANDOS E CLIMA ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
-const pediuClima = [
-  "clima",
-  "como está o clima",
-  "previsão do tempo",
-  "como está o tempo hoje",
-  "vai chover",
-  "temperatura hoje"
-].some(p => bodyLower.includes(p));
 
-if (pediuClima) {
-  await sendMessage(from, await getWeather("Curitiba","hoje"));
-  return res.sendStatus(200);
-}
+    const pediuClima = [
+      "clima",
+      "como está o clima",
+      "previsão do tempo",
+      "como está o tempo hoje",
+      "vai chover",
+      "temperatura hoje"
+    ].some(p => bodyLower.includes(p));
 
+    if (pediuClima) {
+      await sendMessage(from, await getWeather("Curitiba","hoje"));
+      return res.sendStatus(200);
+    }
 
-/* ===== IA FINAL COM MEMÓRIA ===== */
-const fatosRaw = await consultarFatos(from);
-const fatos = fatosRaw.map(f =>
-  typeof f === "string" ? f : f.content
-);
+    /* ===== IA FINAL COM MEMÓRIA ===== */
+    const fatosRaw = await consultarFatos(from);
+    const fatos = fatosRaw.map(f =>
+      typeof f === "string" ? f : f.content
+    );
 
-const memoriaSemantica = await querySemanticMemory(body, from, 3);
+    const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-const respostaDireta = await responderComMemoriaNatural(
-  body,
-  fatos,
-  memoriaSemantica || []
-);
+    const respostaDireta = await responderComMemoriaNatural(
+      body,
+      fatos,
+      memoriaSemantica || []
+    );
 
-if (respostaDireta) {
-  await sendMessage(from, respostaDireta);
-  return res.sendStatus(200);
-}
+    if (respostaDireta) {
+      await sendMessage(from, respostaDireta);
+      return res.sendStatus(200);
+    }
 
-let contexto = "";
-if (fatos.length) {
-  contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" +
-    fatos.map(f => `- ${f}`).join("\n") + "\n\n";
-}
+    let contexto = "";
+    if (fatos.length) {
+      contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" +
+        fatos.map(f => `- ${f}`).join("\n") + "\n\n";
+    }
 
-if (memoriaSemantica?.length) {
-  contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" +
-    memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
-}
+    if (memoriaSemantica?.length) {
+      contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" +
+        memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
+    }
 
-const respostaIA = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
+    const respostaIA = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
 
-/* ===== AMBER MIND ===== */
-const decisaoAmber = await amberMind({
-  from,
-  mensagem: body,
-  respostaIA
-});
+    /* ===== AMBER MIND ===== */
+    const decisaoAmber = await amberMind({
+      from,
+      mensagem: body,
+      respostaIA
+    });
 
-if (decisaoAmber.override) {
-  await sendMessage(from, decisaoAmber.resposta);
-  return res.sendStatus(200);
-}
+    if (decisaoAmber.override) {
+      await sendMessage(from, decisaoAmber.resposta);
+      return res.sendStatus(200);
+    }
 
-await sendMessage(from, respostaIA);
-return res.sendStatus(200);
-
+    await sendMessage(from, respostaIA);
+    return res.sendStatus(200);
 
   } catch (err) {
     console.error("❌ Erro no webhook:", err);
     return res.sendStatus(500);
   }
 });
-
 
 /* ========================= START ========================= */
 app.listen(PORT, () => {
