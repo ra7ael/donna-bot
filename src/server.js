@@ -130,9 +130,12 @@ async function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica
     p.includes("qual é meu nome") ||
     p.includes("qual é o meu nome")
   ) {
-    const fatoNome = fatos.find(f =>
-      f.toLowerCase().startsWith("meu nome é")
-    );
+    
+    const perfil = await consultarPerfil(from);
+    if (perfil?.nome) {
+      return `Seu nome é ${perfil.nome}.`;
+    }
+
 
     if (fatoNome) {
       const nome = fatoNome.replace(/meu nome é/i, "").trim();
