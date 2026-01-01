@@ -205,10 +205,20 @@ if (fatoDetectado) {
 
     /* ===== COMANDOS E CLIMA ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
-    if (bodyLower.includes("clima") || bodyLower.includes("tempo")) {
-      await sendMessage(from, await getWeather("Curitiba","hoje"));
-      return res.sendStatus(200);
-    }
+const pediuClima = [
+  "clima",
+  "como está o clima",
+  "previsão do tempo",
+  "como está o tempo hoje",
+  "vai chover",
+  "temperatura hoje"
+].some(p => bodyLower.includes(p));
+
+if (pediuClima) {
+  await sendMessage(from, await getWeather("Curitiba","hoje"));
+  return res.sendStatus(200);
+}
+
 
 /* ===== IA FINAL COM MEMÓRIA ===== */
 const fatosRaw = await consultarFatos(from);
