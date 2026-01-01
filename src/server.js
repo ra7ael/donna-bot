@@ -20,6 +20,8 @@ import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routin
 import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from "./utils/handleEmpresa.js";
 import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
 import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
+import { amberMind } from "./core/amberMind.js";
+
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -238,13 +240,23 @@ if (memoriaSemantica?.length) {
     memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
 }
 
-const resposta = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
-await sendMessage(from, resposta);
+const respostaIA = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
 
-// salva memória semântica da resposta
-await addSemanticMemory(body, resposta, from, "assistant");
+/* ===== AMBER MIND ===== */
+const decisaoAmber = await amberMind({
+  from,
+  mensagem: body,
+  respostaIA
+});
 
+if (decisaoAmber.override) {
+  await sendMessage(from, decisaoAmber.resposta);
+  return res.sendStatus(200);
+}
+
+await sendMessage(from, respostaIA);
 return res.sendStatus(200);
+
 
   } catch (err) {
     console.error("❌ Erro no webhook:", err);
