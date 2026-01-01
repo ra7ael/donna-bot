@@ -160,7 +160,7 @@ async function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica
 
 /* ========================= NUMEROS PERMITIDOS ========================= */
 const NUMEROS_PERMITIDOS = [
-  "5541995194485" // ex: 5591999999999
+  "554195194485" // ex: 5591999999999
 ];
 
 function numeroPermitido(from) {
