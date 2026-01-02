@@ -197,6 +197,24 @@ app.post("/webhook", async (req, res) => {
       responderEmAudio = true;
     }
 
+    // ===== DETECTA SE O USUÁRIO INFORMOU SEU NOME =====
+if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) {
+  const nome = body.replace(/meu nome é/i, "").replace(/me chame de/i, "").trim();
+  const fatosExistentes = await consultarFatos(from);
+  if (!fatosExistentes.some(f => f.toLowerCase().includes("meu nome"))) {
+    await salvarMemoria(from, "fato", `Meu nome é ${nome}`);
+  }
+
+  const respostaNome = `Perfeito, vou te chamar de ${nome}.`;
+  if (responderEmAudio) {
+    const audioPath = await falar(respostaNome);
+    await sendAudio(from, audioPath);
+  } else {
+    await sendMessage(from, respostaNome);
+  }
+  return res.sendStatus(200);
+}
+
     // MEMÓRIA AUTOMÁTICA
     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
 
