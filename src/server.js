@@ -26,6 +26,7 @@ import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { ObjectId } from "mongodb";
 import { consultarDataJud } from "./utils/datajudAPI.js";
+import { amberEnglishUltimate } from "./utils/amberEnglishUltimate.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -335,23 +336,23 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ===== DETECTA SE O USUÁRIO INFORMOU SEU NOME =====
-if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) {
-  const nome = body.replace(/meu nome é/i, "").replace(/me chame de/i, "").trim();
-  const fatosExistentes = await consultarFatos(from);
-  if (!fatosExistentes.some(f => f.toLowerCase().includes("meu nome"))) {
-    await salvarMemoria(from, "fato", `Meu nome é ${nome}`);
-  }
+    if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) {
+      const nome = body.replace(/meu nome é/i, "").replace(/me chame de/i, "").trim();
+      const fatosExistentes = await consultarFatos(from);
+      if (!fatosExistentes.some(f => f.toLowerCase().includes("meu nome"))) {
+        await salvarMemoria(from, "fato", `Meu nome é ${nome}`);
+      }
 
-  const respostaNome = `Perfeito, vou te chamar de ${nome}.`;
-  if (responderEmAudio) {
-    const audioPath = await falar(respostaNome);
-    await sendAudio(from, audioPath);
-  } else {
-    await sendMessage(from, respostaNome);
-  }
-  return res.sendStatus(200);
-}
-
+      const respostaNome = `Perfeito, vou te chamar de ${nome}.`;
+      if (responderEmAudio) {
+        const audioPath = await falar(respostaNome);
+        await sendAudio(from, audioPath);
+      } else {
+        await sendMessage(from, respostaNome);
+      }
+      return res.sendStatus(200);
+    }
+    
       // Detecta se é pergunta de direito
   const usuarioQuerDireito = bodyLower.includes("lei") || bodyLower.includes("artigo") || bodyLower.includes("direito") || bodyLower.includes("jurisprudência");
   
@@ -375,9 +376,43 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
     }
     return res.sendStatus(200);
   }
+  const reply = await amberEnglishUltimate({
+        userId: from,
+        pergunta: mensagemTexto,
+        level: "intermediate" // ou "beginner", dependendo do usuário
+      });
 
+      if (responderEmAudio) {
+        const audioPath = await falar(reply);
+        await sendAudio(from, audioPath);
+      } else {
+        await sendMessage(from, reply);
+      }
 
-    
+      return res.sendStatus(200);
+    }
+
+    // ===== DEFAULT: chamar Amber para conversa em inglês =====
+    const replyAmber = await amberEnglishUltimate({
+      userId: from,
+      pergunta: mensagemTexto,
+      level: "beginner" // você pode controlar nível por usuário
+    });
+
+    if (responderEmAudio) {
+      const audioPath = await falar(replyAmber);
+      await sendAudio(from, audioPath);
+    } else {
+      await sendMessage(from, replyAmber);
+    }
+
+    return res.sendStatus(200);
+
+  } catch (err) {
+    console.error("Erro no webhook:", err);
+    return res.sendStatus(500);
+  }
+
     // MEMÓRIA AUTOMÁTICA
     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
 
