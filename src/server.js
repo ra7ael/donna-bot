@@ -199,6 +199,13 @@ app.post("/webhook", async (req, res) => {
         responderEmAudio = true;
       }
 
+          // ===== MEMÓRIA AUTOMÁTICA AVANÇADA =====
+      import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
+      
+      // Extrai memória automática da mensagem
+      await extractAutoMemoryGPT(from, body);
+
+
     if (!["text", "document", "audio"].includes(type)) return res.sendStatus(200);
 
     const messageId = messageObj.id;
