@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { MongoClient } from "mongodb";
 import Memoria from "../models/memory.js";
 import dotenv from "dotenv";
+import { querySemanticMemory } from "../models/semanticMemory.js";
 
 dotenv.config();
 
