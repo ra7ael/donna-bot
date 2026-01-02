@@ -168,6 +168,8 @@ function numeroPermitido(from) {
   return NUMEROS_PERMITIDOS.includes(from);
 }
 
+export { db };
+
 /* ========================= WEBHOOK ========================= */
 app.post("/webhook", async (req, res) => {
   try {
