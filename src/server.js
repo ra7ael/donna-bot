@@ -25,7 +25,7 @@ import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { ObjectId } from "mongodb";
-import { consultarDataJud } from "./utils/datajudAPI.js";
+
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -102,15 +102,6 @@ async function sendMessageIfNeeded(to, text) {
   await sendMessage(to, text);
 }
 
-async function buscarInformacaoDireito(pergunta) {
-  const resultados = await consultarDataJud(pergunta);
-  if (!resultados.length) return "Não encontrei resultados oficiais sobre isso.";
-
-  // Monta uma resposta resumida com referência
-  const resumo = resultados.map((r, i) => `${i+1}. ${r.titulo} - ${r.link}`).join("\n");
-  return `Resultados oficiais encontrados:\n${resumo}`;
-}
-
 async function askGPT(prompt) {
   const contextoHorario = `Agora no Brasil são ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
   const response = await axios.post(
@@ -138,7 +129,7 @@ async function askGPT(prompt) {
           Nunca invente informações sobre o usuário. 
           Mantenha foco na utilidade, precisão e clareza.
           `
-        },
+          },
         { role: "user", content: prompt }
       ]
     },
@@ -147,7 +138,10 @@ async function askGPT(prompt) {
   return response.data.choices?.[0]?.message?.content || "Estou pensando nisso.";
 }
 
+
+
 /* ========================= FUNÇÕES DE LEMBRETE ========================= */
+// agendar lembrete (único ou recorrente)
 async function agendarLembrete(lembrete) {
   try {
     const agora = DateTime.now().setZone("America/Sao_Paulo");
@@ -155,6 +149,7 @@ async function agendarLembrete(lembrete) {
     let delay = devido.diff(agora).as("milliseconds");
 
     if (delay <= 0) {
+      // se já passou, envia imediatamente
       if (!lembrete.enviado) await enviarLembrete(lembrete);
       return;
     }
@@ -164,6 +159,7 @@ async function agendarLembrete(lembrete) {
     setTimeout(async () => {
       await enviarLembrete(lembrete);
 
+      // se for recorrente, re-agenda
       if (lembrete.recorrencia) {
         let proximo;
         switch(lembrete.recorrencia) {
@@ -197,6 +193,7 @@ async function agendarLembrete(lembrete) {
   }
 }
 
+// envia lembrete
 async function enviarLembrete(lembrete) {
   try {
     if (lembrete.enviado) return;
@@ -215,6 +212,7 @@ async function enviarLembrete(lembrete) {
   }
 }
 
+// inicializa lembretes pendentes
 async function inicializarLembretes() {
   try {
     const pendentes = await db.collection("lembretes")
@@ -228,50 +226,19 @@ async function inicializarLembretes() {
   }
 }
 
-/* ========================= RECEBER MENSAGEM DE LEMBRETE ========================= */
-if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
-  const partes = body.split("às");
-  const texto = partes[0].replace(/lembre que/i, "").trim();
-  const horaStr = partes[1].trim(); // formato HH:mm
+// listar lembretes do usuário
+async function listarLembretes(from) {
+  const lembretes = await db.collection("lembretes")
+    .find({ idUsuario: from, enviado: false })
+    .sort({ devidoEm: 1 })
+    .toArray();
 
-  const agoraSP = DateTime.now().setZone("America/Sao_Paulo");
-  let [hora, minuto] = horaStr.split(":").map(Number);
-  let devido = agoraSP.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+  if (!lembretes.length) return "Você não tem lembretes pendentes.";
 
-  if (devido < agoraSP) devido = devido.plus({ days: 1 });
-
-  const novoLembrete = {
-    _id: new ObjectId(),
-    idUsuario: from,
-    texto,
-    devidoEm: devido.toJSDate(),
-    criadoEm: new Date(),
-    enviado: false
-  };
-
-  await db.collection("lembretes").insertOne(novoLembrete);
-  agendarLembrete(novoLembrete);
-
-  if (responderEmAudio) {
-    const audioPath = await falar(`Lembrete registrado: ${texto} às ${horaStr}`);
-    await sendAudio(from, audioPath);
-  } else {
-    await sendMessage(from, `📌 Lembrete registrado: "${texto}" às ${horaStr}"`);
-  }
-
-  return res.sendStatus(200);
-}
-
-if (bodyLower.startsWith("lembre que") && !bodyLower.includes("às")) {
-  const fato = body.replace(/lembre que/i, "").trim();
-  const fatosExistentes = await consultarFatos(from);
-  if (!fatosExistentes.includes(fato)) await salvarMemoria(from, { tipo:"fato", content: fato, createdAt: new Date() });
-
-  if (responderEmAudio) {
-    const audioPath = await falar("Guardado.");
-    await sendAudio(from, audioPath);
-  } else await sendMessage(from, "📌 Guardado.");
-  return res.sendStatus(200);
+  return lembretes.map(l => {
+    const dt = DateTime.fromJSDate(l.devidoEm).setZone("America/Sao_Paulo");
+    return `- ${l.texto} às ${dt.toFormat("dd/MM/yyyy HH:mm")} ${l.recorrencia ? `(${l.recorrencia})` : ""}`;
+  }).join("\n");
 }
 
 /* ========================= NLP SIMPLES PARA EXTRAÇÃO DE FATOS ========================= */
@@ -591,30 +558,6 @@ await inicializarLembretes();
     if (sessionMemory[from].length > 20) sessionMemory[from] = sessionMemory[from].slice(-20);
 
     const contextoSession = sessionMemory[from].join("\n");
-
-    // Detecta se é pergunta de direito
-const usuarioQuerDireito = bodyLower.includes("lei") || bodyLower.includes("artigo") || bodyLower.includes("direito") || bodyLower.includes("jurisprudência");
-
-if (usuarioQuerDireito) {
-  const infoDataJud = await buscarInformacaoDireito(mensagemTexto); // consulta API
-  const prompt = `
-    Você é uma advogada experiente.
-    Responda com base nas leis brasileiras e decisões oficiais.
-    Nunca invente casos ou leis.
-    Use estas referências oficiais que encontrei:
-    ${infoDataJud}
-
-    Pergunta do usuário: ${mensagemTexto}
-  `;
-  const resposta = await askGPT(prompt);
-  if (responderEmAudio) {
-    const audioPath = await falar(resposta);
-    await sendAudio(from, audioPath);
-  } else {
-    await sendMessage(from, resposta);
-  }
-  return res.sendStatus(200);
-}
 
     // CHAMA O GPT COM FATOS + MEMÓRIA SEMÂNTICA + MEMÓRIA DE SESSÃO
     const promptCompleto = `${fatos.length ? "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n" : ""}${memoriaSemantica.length ? "MEMÓRIA SEMÂNTICA:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n" : ""}${contextoSession}\nPergunta do usuário: ${mensagemTexto}`;
