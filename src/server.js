@@ -22,6 +22,7 @@ import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
 import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
 import { amberMind } from "./core/amberMind.js";
 import { falar, sendAudio } from "./utils/sendAudio.js";
+import { transcreverAudio } from "./utils/transcreverAudio.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
