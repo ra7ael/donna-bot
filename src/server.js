@@ -189,11 +189,15 @@ app.post("/webhook", async (req, res) => {
     let responderEmAudio = false;
 
     // 🎧 SE FOR ÁUDIO → TRANSCRIÇÃO
-    if (type === "audio") {
-      body = await transcreverAudio(audioId);
-      bodyLower = body.toLowerCase();
-      responderEmAudio = true;
-    }
+      if (type === "audio") {
+        if (!audioId) {
+          console.log("⚠️ Mensagem de áudio sem audioId");
+          return res.sendStatus(200);
+        }
+        body = await transcreverAudio(audioId);
+        bodyLower = body.toLowerCase();
+        responderEmAudio = true;
+      }
 
     if (!["text", "document", "audio"].includes(type)) return res.sendStatus(200);
 
