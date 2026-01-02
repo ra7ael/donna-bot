@@ -14,7 +14,7 @@ import { fileURLToPath } from "url";
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { downloadMedia } from "./utils/downloadMedia.js";
-import { salvarMemoria, consultarFatos } from "./utils/memory.js";
+import { salvarMemoria, consultarFatos, consultarPerfil } from "./utils/memory.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
 import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from "./utils/handleEmpresa.js";
@@ -282,6 +282,31 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    /* ===== MEMÓRIA DE LEMBRETE ===== */
+if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
+  // Ex: "Lembre que tenho reunião às 15:30"
+  const partes = body.split("às");
+  const fato = partes[0].replace(/lembre que/i, "").trim();
+  const hora = partes[1].trim();
+
+  // Salva o lembrete
+  await salvarMemoria(from, {
+    tipo: "lembrete",
+    content: fato,
+    horario: hora, // horário em string "HH:mm"
+    criadoEm: new Date()
+  });
+
+  if (responderEmAudio) {
+    const audioPath = await falar(`Lembrete registrado: ${fato} às ${hora}`);
+    await sendAudio(from, audioPath);
+  } else {
+    await sendMessage(from, `📌 Lembrete registrado: "${fato}" às ${hora}`);
+  }
+
+  return res.sendStatus(200);
+}
+    
     /* ===== IA FINAL COM MEMÓRIA ===== */
     const fatosRaw = await consultarFatos(from);
     const fatos = fatosRaw.map(f =>
