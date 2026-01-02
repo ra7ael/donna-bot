@@ -416,7 +416,7 @@ Pergunta do usuário: ${mensagemTexto}
     // MEMÓRIA AUTOMÁTICA
     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
 
-    if (!["text","document","audio"].includes(type)) return res.sendStatus(200);
+    if (!["text","document","audio"].includes(type))  res.sendStatus(200);
 
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
