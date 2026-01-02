@@ -411,6 +411,7 @@ Pergunta do usuário: ${mensagemTexto}
     console.error("Erro no webhook:", err);
     return res.sendStatus(500);
   }
+}
 
     // MEMÓRIA AUTOMÁTICA
     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
