@@ -13,15 +13,43 @@ let dbInstance = null;
 let mongoClient = null;
 
 
+// Perfil completo com fatos + memória semântica
 export async function consultarPerfil(from) {
-  const fatos = await consultarFatos(from);
-  const perfil = {};
+  if (!from) return {};
 
-  const nomeFato = fatos.find(f => f.toLowerCase().includes("meu nome é"));
-  if (nomeFato) perfil.nome = nomeFato.replace(/meu nome é/i, "").trim();
+  // 1️⃣ Fatos explícitos
+  const fatos = await consultarFatos(from);
+
+  // 2️⃣ Memória semântica mais relevante
+  const memoriaSemantica = await querySemanticMemory("resumir perfil do usuário", from, 5);
+
+  // 3️⃣ Monta o perfil dinâmico
+  const perfil = {
+    nome: null,
+    filhos: null,
+    trabalho: null,
+    outros: [],
+  };
+
+  // Extrair informações dos fatos
+  fatos.forEach(f => {
+    const texto = f.toLowerCase();
+    if (texto.includes("meu nome é")) perfil.nome = f.replace(/meu nome é/i, "").trim();
+    else if (texto.includes("tenho") && texto.includes("filho")) perfil.filhos = f;
+    else if (texto.includes("trabalho") || texto.includes("empresa")) perfil.trabalho = f;
+    else perfil.outros.push(f);
+  });
+
+  // Adiciona insights da memória semântica
+  if (memoriaSemantica?.length) {
+    memoriaSemantica.forEach(m => {
+      if (!perfil.outros.includes(m)) perfil.outros.push(m);
+    });
+  }
 
   return perfil;
 }
+
 
 
 /**
