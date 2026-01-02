@@ -16,7 +16,7 @@ import { getWeather } from "./utils/weather.js";
 import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
 import { salvarMemoria, consultarFatos, consultarPerfil } from "./utils/memory.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
-import { handleCommand, handleReminder, initRoutineFamily } from "./utils/routineFamily.js";
+import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
 import { amberMind } from "./core/amberMind.js";
 import { amberEnglishUltimate } from "./utils/amberEnglishUltimate.js";
 import { falar, sendAudio } from "./utils/sendAudio.js";
@@ -93,15 +93,21 @@ async function sendMessage(to, text) {
 }
 
 async function askGPT(prompt) {
+  const contextoHorario = `Agora no Brasil são ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}`;
+
   const response = await axios.post(
     "https://api.openai.com/v1/chat/completions",
     {
       model: "gpt-5-mini",
-      messages: [{ role: "user", content: prompt }]
+      messages: [
+        { role: "system", content: contextoHorario },
+        { role: "user", content: prompt }
+      ]
     },
     { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } }
   );
-  return response.data.choices?.[0]?.message?.content || "Não consegui responder agora.";
+
+  return response.data.choices?.[0]?.message?.content || "Estou pensando nisso.";
 }
 
 async function buscarInformacaoDireito(pergunta) {
@@ -141,12 +147,44 @@ app.post("/webhook", async (req, res) => {
       responderEmAudio = true;
     }
 
+    /* ===== MEMÓRIA AUTOMÁTICA ===== */
     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
 
+    /* ===== COMANDOS ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
       return res.sendStatus(200);
     }
 
+    /* ===== INGLÊS ===== */
+    if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
+      const respostaEnglish = await amberEnglishUltimate({
+        userId: from,
+        pergunta: mensagemTexto,
+        level: "beginner"
+      });
+
+      await sendMessage(from, respostaEnglish);
+      return res.sendStatus(200);
+    }
+
+    /* ===== DIREITO ===== */
+    if (["lei", "artigo", "direito", "jurisprudência"].some(p => bodyLower.includes(p))) {
+      const refs = await buscarInformacaoDireito(mensagemTexto);
+      const resposta = await askGPT(
+        `Responda com base em leis brasileiras oficiais.\nReferências:\n${refs}\n\nPergunta: ${mensagemTexto}`
+      );
+      await sendMessage(from, resposta);
+      return res.sendStatus(200);
+    }
+
+    /* ===== CLIMA ===== */
+    if (["clima", "tempo", "previsão"].some(p => bodyLower.includes(p))) {
+      const clima = await getWeather("Curitiba", "hoje");
+      await sendMessage(from, clima);
+      return res.sendStatus(200);
+    }
+
+    /* ===== CONTEXTO + IA ===== */
     const fatos = (await consultarFatos(from)).map(f => typeof f === "string" ? f : f.content);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
