@@ -12,6 +12,18 @@ const MONGO_URI = process.env.MONGO_URI;
 let dbInstance = null;
 let mongoClient = null;
 
+
+export async function consultarPerfil(from) {
+  const fatos = await consultarFatos(from);
+  const perfil = {};
+
+  const nomeFato = fatos.find(f => f.toLowerCase().includes("meu nome é"));
+  if (nomeFato) perfil.nome = nomeFato.replace(/meu nome é/i, "").trim();
+
+  return perfil;
+}
+
+
 /**
  * Conecta ao MongoDB (driver nativo) + tenta conectar mongoose sem travar o app
  */
