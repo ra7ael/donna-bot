@@ -23,6 +23,7 @@ import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js"
 import { amberMind } from "./core/amberMind.js";
 import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
+import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -198,9 +199,6 @@ app.post("/webhook", async (req, res) => {
         bodyLower = body.toLowerCase();
         responderEmAudio = true;
       }
-
-          // ===== MEMÓRIA AUTOMÁTICA AVANÇADA =====
-      import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
       
       // Extrai memória automática da mensagem
       await extractAutoMemoryGPT(from, body);
