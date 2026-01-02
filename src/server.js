@@ -328,6 +328,7 @@ app.post("/webhook", async (req, res) => {
     let responderEmAudio = false;
     let mensagemTexto = body;
 
+    /* ===== ÁUDIO ===== */
     if (type === "audio") {
       if (!audioId) return res.sendStatus(200);
       mensagemTexto = await transcreverAudio(audioId);
@@ -335,9 +336,13 @@ app.post("/webhook", async (req, res) => {
       responderEmAudio = true;
     }
 
-    // ===== DETECTA SE O USUÁRIO INFORMOU SEU NOME =====
+    /* ===== NOME DO USUÁRIO ===== */
     if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) {
-      const nome = body.replace(/meu nome é/i, "").replace(/me chame de/i, "").trim();
+      const nome = body
+        .replace(/meu nome é/i, "")
+        .replace(/me chame de/i, "")
+        .trim();
+
       const fatosExistentes = await consultarFatos(from);
       if (!fatosExistentes.some(f => f.toLowerCase().includes("meu nome"))) {
         await salvarMemoria(from, "fato", `Meu nome é ${nome}`);
@@ -352,58 +357,52 @@ app.post("/webhook", async (req, res) => {
       }
       return res.sendStatus(200);
     }
-    
-      // Detecta se é pergunta de direito
-  const usuarioQuerDireito = bodyLower.includes("lei") || bodyLower.includes("artigo") || bodyLower.includes("direito") || bodyLower.includes("jurisprudência");
-  
-  if (usuarioQuerDireito) {
-    const infoDataJud = await buscarInformacaoDireito(mensagemTexto); // consulta API
-    const prompt = `
-      Você é uma advogada experiente.
-      Responda com base nas leis brasileiras e decisões oficiais.
-      Nunca invente casos ou leis.
-      Use estas referências oficiais que encontrei:
-      ${infoDataJud}
-  
-      Pergunta do usuário: ${mensagemTexto}
-    `;
-    const resposta = await askGPT(prompt);
-    if (responderEmAudio) {
-      const audioPath = await falar(resposta);
-      await sendAudio(from, audioPath);
-    } else {
-      await sendMessage(from, resposta);
-    }
-    return res.sendStatus(200);
-  }
-  const reply = await amberEnglishUltimate({
-        userId: from,
-        pergunta: mensagemTexto,
-        level: "intermediate" // ou "beginner", dependendo do usuário
-      });
+
+    /* ===== DIREITO ===== */
+    const usuarioQuerDireito =
+      bodyLower.includes("lei") ||
+      bodyLower.includes("artigo") ||
+      bodyLower.includes("direito") ||
+      bodyLower.includes("jurisprudência");
+
+    if (usuarioQuerDireito) {
+      const infoDataJud = await buscarInformacaoDireito(mensagemTexto);
+
+      const prompt = `
+Você é uma advogada experiente.
+Responda com base nas leis brasileiras e decisões oficiais.
+Nunca invente casos ou leis.
+
+Referências oficiais:
+${infoDataJud}
+
+Pergunta do usuário: ${mensagemTexto}
+      `;
+
+      const resposta = await askGPT(prompt);
 
       if (responderEmAudio) {
-        const audioPath = await falar(reply);
+        const audioPath = await falar(resposta);
         await sendAudio(from, audioPath);
       } else {
-        await sendMessage(from, reply);
+        await sendMessage(from, resposta);
       }
 
       return res.sendStatus(200);
     }
 
-    // ===== DEFAULT: chamar Amber para conversa em inglês =====
-    const replyAmber = await amberEnglishUltimate({
+    /* ===== AMBER – INGLÊS (DEFAULT) ===== */
+    const reply = await amberEnglishUltimate({
       userId: from,
       pergunta: mensagemTexto,
-      level: "beginner" // você pode controlar nível por usuário
+      level: "beginner" // ou "intermediate"
     });
 
     if (responderEmAudio) {
-      const audioPath = await falar(replyAmber);
+      const audioPath = await falar(reply);
       await sendAudio(from, audioPath);
     } else {
-      await sendMessage(from, replyAmber);
+      await sendMessage(from, reply);
     }
 
     return res.sendStatus(200);
@@ -412,7 +411,7 @@ app.post("/webhook", async (req, res) => {
     console.error("Erro no webhook:", err);
     return res.sendStatus(500);
   }
-
+});
     // MEMÓRIA AUTOMÁTICA
     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
 
