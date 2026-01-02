@@ -47,6 +47,9 @@ app.use("/audio", express.static(path.join(__dirname, "public/audio")));
 /* ========================= ANTI-ECO ========================= */
 const mensagensProcessadas = new Set();
 
+/* ========================= MEMÓRIA DE SESSÃO ========================= */
+const sessionMemory = {}; // guarda últimas mensagens por usuário em RAM
+
 /* ========================= DB ========================= */
 let db;
 let cronStarted = false;
@@ -106,7 +109,7 @@ async function askGPT(prompt) {
       model: "gpt-5-mini",
       messages: [
         { role: "system", content: contextoHorario },
-        { role: "system", content: "Você é Amber, inspirada em Donna Paulsen de Suits. Responda com firmeza e clareza, no máximo 2 frases." },
+        { role: "system", content: "Você é Amber. Responda com firmeza e clareza, no máximo 2 frases." },
         { role: "user", content: prompt }
       ]
     },
@@ -286,27 +289,31 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
       return res.sendStatus(200);
     }
 
-    /* ===== IA FINAL COM MEMÓRIA ===== */
+    /* ===== MEMÓRIA SEMÂNTICA + SESSION PARA CONTEXTO ===== */
     const fatosRaw = await consultarFatos(from);
     const fatos = fatosRaw.map(f => typeof f === "string" ? f : f.content);
-    const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-    const respostaDireta = await responderComMemoriaNatural(from,  mensagemTexto, fatos, memoriaSemantica || []);
-    if (respostaDireta) {
-      if (responderEmAudio) {
-        const audioPath = await falar(respostaDireta);
-        await sendAudio(from, audioPath);
-      } else await sendMessage(from, respostaDireta);
-      return res.sendStatus(200);
-    }
+    // CONSULTA MEMÓRIA SEMÂNTICA
+    const memoriaSemantica = await querySemanticMemory("histórico de conversa", from, 10) || [];
 
-    let contexto = "";
-    if (fatos.length) contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n";
-    if (memoriaSemantica?.length) contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
+    // INCLUI MEMÓRIA DE SESSÃO
+    if (!sessionMemory[from]) sessionMemory[from] = [];
+    sessionMemory[from].push(`Usuário: ${mensagemTexto}`);
+    // mantém só últimas 10 interações na sessão
+    if (sessionMemory[from].length > 20) sessionMemory[from] = sessionMemory[from].slice(-20);
 
-    const respostaIA = await askGPT(`${contexto}Pergunta do usuário: ${mensagemTexto}`);
+    const contextoSession = sessionMemory[from].join("\n");
+
+    // CHAMA O GPT COM FATOS + MEMÓRIA SEMÂNTICA + MEMÓRIA DE SESSÃO
+    const promptCompleto = `${fatos.length ? "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n" : ""}${memoriaSemantica.length ? "MEMÓRIA SEMÂNTICA:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n" : ""}${contextoSession}\nPergunta do usuário: ${mensagemTexto}`;
+    let respostaIA = await askGPT(promptCompleto);
+
+    // DECISÃO DA AMBER
     const decisaoAmber = await amberMind({ from, mensagem: body, respostaIA });
     const respostaFinal = decisaoAmber.override ? decisaoAmber.resposta : respostaIA;
+
+    // SALVA AUTOMATICAMENTE NA MEMÓRIA SEMÂNTICA
+    await addSemanticMemory(`Pergunta: ${mensagemTexto} | Resposta: ${respostaFinal}`, "histórico de conversa", from, "user");
 
     if (responderEmAudio) {
       const audioPath = await falar(respostaFinal);
