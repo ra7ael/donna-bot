@@ -25,8 +25,6 @@ import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 
-// Quando receber mensagem:
-await extractAutoMemoryGPT(from, body, askGPT);
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
