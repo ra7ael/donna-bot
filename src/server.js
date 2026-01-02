@@ -24,6 +24,7 @@ import { amberMind } from "./core/amberMind.js";
 import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
+import { ObjectId } from "mongodb";
 
 
 /* ========================= CONFIG ========================= */
@@ -409,7 +410,9 @@ if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
   // converte para Date no fuso SP
   const agoraSP = DateTime.now().setZone("America/Sao_Paulo");
   let [hora, minuto] = horaStr.split(":").map(Number);
-  let devido = agoraSP.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+  //let devido = agoraSP.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });//
+  let devido = agoraSP.plus({ seconds: 10 });
+ // if (devido <= agoraSP) devido = devido.plus({ days: 1 });//
 
   if (devido < agoraSP) devido = devido.plus({ days: 1 });
 
