@@ -155,6 +155,26 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // ===== MODO INGLÊS =====
+if (bodyLower.startsWith("ingles")) {
+  const perguntaIngles = body.replace(/^ingles/i, "").trim();
+
+  const respostaIngles = await amberEnglishUltimate({
+    userId: from,
+    pergunta: perguntaIngles || "Let's start learning English!",
+    level: "beginner"
+  });
+
+  if (responderEmAudio) {
+    const audioPath = await falar(respostaIngles);
+    await sendAudio(from, audioPath);
+  } else {
+    await sendMessage(from, respostaIngles);
+  }
+
+  return res.sendStatus(200);
+}
+
     /* ===== INGLÊS ===== */
     if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
       const respostaEnglish = await amberEnglishUltimate({
