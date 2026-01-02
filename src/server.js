@@ -186,25 +186,29 @@ app.post("/webhook", async (req, res) => {
 
     if (!messageObj || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
-    const normalized = normalizeMessage(messageObj);
+       const normalized = normalizeMessage(messageObj);
     if (!normalized) return res.sendStatus(200);
-
+    
     let { body, bodyLower, type, audioId } = normalized;
     let responderEmAudio = false;
-
-    // 🎧 SE FOR ÁUDIO → TRANSCRIÇÃO
-      if (type === "audio") {
-        if (!audioId) {
-          console.log("⚠️ Mensagem de áudio sem audioId");
-          return res.sendStatus(200);
-        }
-        body = await transcreverAudio(audioId);
-        bodyLower = body.toLowerCase();
-        responderEmAudio = true;
+    let mensagemTexto = body; // a mensagem que vamos processar
+    
+    // 🎧 Se for áudio → transcreve
+    if (type === "audio") {
+      if (!audioId) {
+        console.log("⚠️ Mensagem de áudio sem audioId");
+        return res.sendStatus(200);
       }
-      
-      // Extrai memória automática da mensagem
-      await extractAutoMemoryGPT(from, body);
+      mensagemTexto = await transcreverAudio(audioId);
+      bodyLower = mensagemTexto.toLowerCase();
+      responderEmAudio = true;
+    } else {
+      // Para texto normal, usamos body
+      mensagemTexto = body;
+    }
+    
+    // 🧠 Extrai memória automática da mensagem
+    await extractAutoMemoryGPT(from, mensagemTexto);
 
 
     if (!["text", "document", "audio"].includes(type)) return res.sendStatus(200);
