@@ -400,7 +400,7 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
     }
 
 /* ===== MEMÓRIA DE LEMBRETE ===== */
-ifif (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
+  if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
   try {
     const partes = body.split("às");
     const texto = partes[0].replace(/lembre que/i, "").trim();
