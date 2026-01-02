@@ -452,19 +452,32 @@ if (bodyLower.startsWith("lembre que") && !bodyLower.includes("às")) {
   return res.sendStatus(200);
 }
 
-/* ========================= FUNÇÃO DE AGENDAMENTO ========================= */
+/* ========================= FUNÇÃO DE ENVIO ========================= */
+async function enviarLembrete(lembrete) {
+  if (lembrete.enviado) return;
+
+  const texto = `⏰ Lembrete: ${lembrete.texto}`;
+  await sendMessage(lembrete.idUsuario, texto);
+
+  // marca como enviado no DB
+  await db.collection("lembretes").updateOne(
+    { _id: lembrete._id },
+    { $set: { enviado: true, entregueEm: new Date() } }
+  );
+
+  console.log("✅ Lembrete enviado:", lembrete.texto);
+}
+
+/* ========================= AGENDAMENTO COM RETENTATIVA ========================= */
 function agendarLembrete(lembrete) {
-  const agora = new Date();
-  const devido = new Date(lembrete.devidoEm);
-  const delay = devido - agora;
+  const agora = DateTime.now().setZone("America/Sao_Paulo");
+  const devido = DateTime.fromJSDate(lembrete.devidoEm).setZone("America/Sao_Paulo");
+  let delay = devido.diff(agora).as("milliseconds");
 
-  if (delay <= 0) {
-    // horário já passou, dispara imediatamente se não foi enviado
-    enviarLembrete(lembrete);
-    return;
-  }
+  if (delay <= 0) delay = 1000; // dispara em 1s se já passou
 
-  console.log(`⏳ Agendando lembrete "${lembrete.texto}" para ${devido}`);
+  console.log(`⏳ Lembrete "${lembrete.texto}" agendado para ${devido.toFormat("dd/MM/yyyy HH:mm")}`);
+
   setTimeout(async () => {
     await enviarLembrete(lembrete);
   }, delay);
@@ -472,17 +485,19 @@ function agendarLembrete(lembrete) {
 
 /* ========================= INICIALIZAÇÃO AO INICIAR SERVIDOR ========================= */
 async function inicializarLembretes() {
-  const agora = new Date();
-  const lembretesPendentes = await db.collection("lembretes")
-    .find({ enviado: false, devidoEm: { $gte: agora } })
-    .toArray();
+  try {
+    const agora = new Date();
+    const pendentes = await db.collection("lembretes")
+      .find({ enviado: false, devidoEm: { $gte: agora } })
+      .toArray();
 
-  for (const lembrete of lembretesPendentes) {
-    agendarLembrete(lembrete);
+    pendentes.forEach(l => agendarLembrete(l));
+    console.log(`🔹 ${pendentes.length} lembretes pendentes agendados`);
+  } catch (err) {
+    console.error("❌ Erro ao inicializar lembretes:", err);
   }
-
-  console.log(`🔹 ${lembretesPendentes.length} lembretes pendentes agendados`);
 }
+
 
 /* ========================= RECEBER MENSAGEM DE LEMBRETE ========================= */
 if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
@@ -564,6 +579,8 @@ await inicializarLembretes();
     return res.sendStatus(500);
   }
 });
+
+await inicializarLembretes();
 
 /* ========================= START ========================= */
 app.listen(PORT, () => {
