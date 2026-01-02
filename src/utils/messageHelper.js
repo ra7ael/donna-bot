@@ -7,26 +7,39 @@
 export function normalizeMessage(messageObj) {
   if (!messageObj) return null;
 
-  let body = "";
-  let type = messageObj.type || "unknown";
+  const type = messageObj.type || "unknown";
 
+  // TEXTO
   if (type === "text") {
-    body = messageObj.text?.body || "";
+    const body = messageObj.text?.body || "";
+    return {
+      type: "text",
+      body,
+      bodyLower: body.toLowerCase()
+    };
   }
 
+  // ÁUDIO
   if (type === "audio") {
-    body = "[ÁUDIO]";
+    return {
+      type: "audio",
+      audioId: messageObj.audio?.id, // ID necessário para transcrição
+      body: "",                       // corpo vazio, será preenchido pela transcrição
+      bodyLower: ""
+    };
   }
 
+  // DOCUMENTO
   if (type === "document") {
-    body = messageObj.document?.filename || "[DOCUMENTO]";
+    const body = messageObj.document?.filename || "[DOCUMENTO]";
+    return {
+      type: "document",
+      body,
+      bodyLower: body.toLowerCase()
+    };
   }
 
-  return {
-    body,
-    bodyLower: body.toLowerCase(),
-    type
-  };
+  return null;
 }
 
 /**
