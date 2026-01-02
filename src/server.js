@@ -138,7 +138,7 @@ async function askGPT(prompt) {
           Nunca invente informações sobre o usuário. 
           Mantenha foco na utilidade, precisão e clareza.
           `
-          },
+        },
         { role: "user", content: prompt }
       ]
     },
@@ -148,7 +148,6 @@ async function askGPT(prompt) {
 }
 
 /* ========================= FUNÇÕES DE LEMBRETE ========================= */
-// agendar lembrete (único ou recorrente)
 async function agendarLembrete(lembrete) {
   try {
     const agora = DateTime.now().setZone("America/Sao_Paulo");
@@ -198,7 +197,6 @@ async function agendarLembrete(lembrete) {
   }
 }
 
-// envia lembrete
 async function enviarLembrete(lembrete) {
   try {
     if (lembrete.enviado) return;
@@ -217,7 +215,6 @@ async function enviarLembrete(lembrete) {
   }
 }
 
-// inicializa lembretes pendentes
 async function inicializarLembretes() {
   try {
     const pendentes = await db.collection("lembretes")
