@@ -400,62 +400,131 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
     }
 
 /* ===== MEMÓRIA DE LEMBRETE ===== */
-  if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
-  try {
-    const partes = body.split("às");
-    const texto = partes[0].replace(/lembre que/i, "").trim();
-    const horaStr = partes[1].trim();
+if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
+  // Extrai texto e hora
+  const partes = body.split("às");
+  const texto = partes[0].replace(/lembre que/i, "").trim();
+  const horaStr = partes[1].trim();
 
-    // extrai hora/minuto
-    let [hora, minuto] = horaStr.split(":").map(Number);
-    let devidoEm = DateTime.now().setZone("America/Sao_Paulo")
-      .set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
-    if (devidoEm < DateTime.now().setZone("America/Sao_Paulo")) devidoEm = devidoEm.plus({ days: 1 });
+  // converte para Date no fuso SP
+  const agoraSP = DateTime.now().setZone("America/Sao_Paulo");
+  let [hora, minuto] = horaStr.split(":").map(Number);
+  let devido = agoraSP.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
 
-    // checa se há recorrência na mensagem: ex: diário, semanal, mensal
-    let recorrencia = null;
-    if (bodyLower.includes("diário")) recorrencia = "diario";
-    else if (bodyLower.includes("semanal")) recorrencia = "semanal";
-    else if (bodyLower.includes("mensal")) recorrencia = "mensal";
+  if (devido < agoraSP) devido = devido.plus({ days: 1 });
 
-    const lembrete = {
-      idUsuario: from,
-      texto,
-      devidoEm: devidoEm.toJSDate(),
-      criadoEm: new Date(),
-      enviado: false,
-      recorrencia
-    };
+  const novoLembrete = {
+    _id: new ObjectId(),
+    idUsuario: from,
+    texto,
+    devidoEm: devido.toJSDate(),
+    criadoEm: new Date(),
+    enviado: false
+  };
 
-    await db.collection("lembretes").insertOne(lembrete);
-    agendarLembrete(lembrete);
+  // salva no DB
+  await db.collection("lembretes").insertOne(novoLembrete);
 
-    const resposta = `📌 Lembrete registrado: "${texto}" às ${horaStr}${recorrencia ? ` (${recorrencia})` : ""}`;
-    if (responderEmAudio) {
-      const audioPath = await falar(resposta);
-      await sendAudio(from, audioPath);
-    } else await sendMessage(from, resposta);
+  // agenda envio
+  agendarLembrete(novoLembrete);
 
-    return res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Erro ao processar lembrete:", err);
-    return res.sendStatus(500);
-  }
-}
-
-// listar lembretes
-if (bodyLower.startsWith("/meus lembretes")) {
-  const lista = await listarLembretes(from);
+  // responde ao usuário
   if (responderEmAudio) {
-    const audioPath = await falar(lista);
+    const audioPath = await falar(`Lembrete registrado: ${texto} às ${horaStr}`);
     await sendAudio(from, audioPath);
-  } else await sendMessage(from, lista);
+  } else {
+    await sendMessage(from, `📌 Lembrete registrado: "${texto}" às ${horaStr}"`);
+  }
+
   return res.sendStatus(200);
 }
 
-// chama ao iniciar servidor
-await inicializarLembretes();
+// salvar fatos simples (sem hora)
+if (bodyLower.startsWith("lembre que") && !bodyLower.includes("às")) {
+  const fato = body.replace(/lembre que/i, "").trim();
+  const fatosExistentes = await consultarFatos(from);
+  if (!fatosExistentes.includes(fato)) await salvarMemoria(from, { tipo:"fato", content: fato, createdAt: new Date() });
 
+  if (responderEmAudio) {
+    const audioPath = await falar("Guardado.");
+    await sendAudio(from, audioPath);
+  } else await sendMessage(from, "📌 Guardado.");
+  return res.sendStatus(200);
+}
+
+/* ========================= FUNÇÃO DE AGENDAMENTO ========================= */
+function agendarLembrete(lembrete) {
+  const agora = new Date();
+  const devido = new Date(lembrete.devidoEm);
+  const delay = devido - agora;
+
+  if (delay <= 0) {
+    // horário já passou, dispara imediatamente se não foi enviado
+    enviarLembrete(lembrete);
+    return;
+  }
+
+  console.log(`⏳ Agendando lembrete "${lembrete.texto}" para ${devido}`);
+  setTimeout(async () => {
+    await enviarLembrete(lembrete);
+  }, delay);
+}
+
+/* ========================= INICIALIZAÇÃO AO INICIAR SERVIDOR ========================= */
+async function inicializarLembretes() {
+  const agora = new Date();
+  const lembretesPendentes = await db.collection("lembretes")
+    .find({ enviado: false, devidoEm: { $gte: agora } })
+    .toArray();
+
+  for (const lembrete of lembretesPendentes) {
+    agendarLembrete(lembrete);
+  }
+
+  console.log(`🔹 ${lembretesPendentes.length} lembretes pendentes agendados`);
+}
+
+/* ========================= RECEBER MENSAGEM DE LEMBRETE ========================= */
+if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
+  const partes = body.split("às");
+  const texto = partes[0].replace(/lembre que/i, "").trim();
+  const horaStr = partes[1].trim(); // formato HH:mm
+
+  // converte para Date no fuso de São Paulo
+  const agoraSP = DateTime.now().setZone("America/Sao_Paulo");
+  let [hora, minuto] = horaStr.split(":").map(Number);
+  let devido = agoraSP.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+
+  if (devido < agoraSP) devido = devido.plus({ days: 1 }); // se hora já passou, agenda para amanhã
+
+  const novoLembrete = {
+    _id: new ObjectId(),
+    idUsuario: from,
+    texto,
+    devidoEm: devido.toJSDate(),
+    criadoEm: new Date(),
+    enviado: false
+  };
+
+  // salva no DB
+  await db.collection("lembretes").insertOne(novoLembrete);
+
+  // agenda envio
+  agendarLembrete(novoLembrete);
+
+  // responde ao usuário
+  if (responderEmAudio) {
+    const audioPath = await falar(`Lembrete registrado: ${texto} às ${horaStr}`);
+    await sendAudio(from, audioPath);
+  } else {
+    await sendMessage(from, `📌 Lembrete registrado: "${texto}" às ${horaStr}"`);
+  }
+
+  return res.sendStatus(200);
+}
+
+/* ========================= CHAMAR AO INICIAR SERVIDOR ========================= */
+await inicializarLembretes();
 
     /* ===== MEMÓRIA SEMÂNTICA + SESSION PARA CONTEXTO ===== */
     const fatosRaw = await consultarFatos(from);
