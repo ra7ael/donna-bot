@@ -204,7 +204,8 @@ app.post("/webhook", async (req, res) => {
       }
       
       // Extrai memória automática da mensagem usando o AutoMemory
-      await extractAutoMemoryGPT(from, mensagemTexto);
+     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
+
 
 
 
