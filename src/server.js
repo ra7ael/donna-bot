@@ -137,6 +137,54 @@ async function askGPT(prompt) {
   return response.data.choices?.[0]?.message?.content || "Estou pensando nisso.";
 }
 
+
+
+/* ========================= FUNÇÕES DE LEMBRETE ========================= */
+async function agendarLembrete(lembrete) {
+  const agora = new Date();
+  const horaLembrete = new Date(lembrete.devidoEm);
+  const delay = horaLembrete - agora;
+
+  if (delay <= 0) {
+    // hora já passou, envia imediatamente se não foi enviado
+    if (!lembrete.enviado) await enviarLembrete(lembrete);
+    return;
+  }
+
+  // agenda envio exato
+  setTimeout(async () => {
+    await enviarLembrete(lembrete);
+  }, delay);
+}
+
+async function enviarLembrete(lembrete) {
+  if (lembrete.enviado) return;
+
+  const texto = `⏰ Lembrete: ${lembrete.texto}`;
+  await sendMessage(lembrete.idUsuario, texto);
+
+  // marca como enviado no DB
+  await db.collection("lembretes").updateOne(
+    { _id: lembrete._id },
+    { $set: { enviado: true, entregueEm: new Date() } }
+  );
+}
+
+/* ========================= INICIALIZAÇÃO DE LEMBRETES AO INICIAR ========================= */
+async function inicializarLembretes() {
+  const lembretesPendentes = await db.collection("lembretes")
+    .find({ enviado: false, devidoEm: { $gte: new Date() } })
+    .toArray();
+
+  for (const lembrete of lembretesPendentes) {
+    agendarLembrete(lembrete);
+  }
+}
+
+// chama ao iniciar servidor
+await inicializarLembretes();
+
+
 /* ========================= NLP SIMPLES PARA EXTRAÇÃO DE FATOS ========================= */
 function extrairFatoAutomatico(texto) {
   const t = texto.toLowerCase();
@@ -295,18 +343,41 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
       return res.sendStatus(200);
     }
 
-    /* ===== MEMÓRIA DE LEMBRETE ===== */
-    if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
-      const partes = body.split("às");
-      const fato = partes[0].replace(/lembre que/i, "").trim();
-      const hora = partes[1].trim();
-      await salvarMemoria(from, { tipo: "lembrete", content: fato, horario: hora, criadoEm: new Date() });
-      if (responderEmAudio) {
-        const audioPath = await falar(`Lembrete registrado: ${fato} às ${hora}`);
-        await sendAudio(from, audioPath);
-      } else await sendMessage(from, `📌 Lembrete registrado: "${fato}" às ${hora}"`);
-      return res.sendStatus(200);
-    }
+/* ===== MEMÓRIA DE LEMBRETE ===== */
+if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
+  const partes = body.split("às");
+  const fato = partes[0].replace(/lembre que/i, "").trim();
+  const horaStr = partes[1].trim();
+
+  // converte para Date
+  const agora = DateTime.now().setZone("America/Sao_Paulo");
+  let [hora, minuto] = horaStr.split(":").map(Number);
+  let devidoEm = agora.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+  if (devidoEm < agora) devidoEm = devidoEm.plus({ days: 1 }); // se hora já passou, agenda para amanhã
+
+  // salva no DB
+  const novoLembrete = {
+    idUsuario: from,
+    texto: fato,
+    devidoEm: devidoEm.toJSDate(),
+    criadoEm: new Date(),
+    enviado: false
+  };
+  await db.collection("lembretes").insertOne(novoLembrete);
+
+  // 🟢 agendar envio exato
+  agendarLembrete(novoLembrete);
+
+  // resposta ao usuário
+  if (responderEmAudio) {
+    const audioPath = await falar(`Lembrete registrado: ${fato} às ${horaStr}`);
+    await sendAudio(from, audioPath);
+  } else {
+    await sendMessage(from, `📌 Lembrete registrado: "${fato}" às ${horaStr}`);
+  }
+  return res.sendStatus(200);
+}
+
 
     /* ===== MEMÓRIA SEMÂNTICA + SESSION PARA CONTEXTO ===== */
     const fatosRaw = await consultarFatos(from);
