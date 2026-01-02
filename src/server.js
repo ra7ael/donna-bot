@@ -140,33 +140,59 @@ async function askGPT(prompt) {
 
 
 /* ========================= FUNÇÕES DE LEMBRETE ========================= */
-import { DateTime } from "luxon";
-
-// agenda envio de um lembrete
+// agendar lembrete (único ou recorrente)
 async function agendarLembrete(lembrete) {
   try {
     const agora = DateTime.now().setZone("America/Sao_Paulo");
     const devido = DateTime.fromJSDate(lembrete.devidoEm).setZone("America/Sao_Paulo");
-    const delay = devido.diff(agora).as("milliseconds");
+    let delay = devido.diff(agora).as("milliseconds");
 
     if (delay <= 0) {
-      // hora já passou, envia imediatamente se não foi enviado
+      // se já passou, envia imediatamente
       if (!lembrete.enviado) await enviarLembrete(lembrete);
       return;
     }
 
-    console.log(`Lembrete agendado para: ${devido.toISO()} - texto: ${lembrete.texto}`);
+    console.log(`🕒 Lembrete agendado para ${devido.toISO()} - "${lembrete.texto}"`);
 
-    // agendamento exato
     setTimeout(async () => {
       await enviarLembrete(lembrete);
+
+      // se for recorrente, re-agenda
+      if (lembrete.recorrencia) {
+        let proximo;
+        switch(lembrete.recorrencia) {
+          case "diario":
+            proximo = devido.plus({ days: 1 });
+            break;
+          case "semanal":
+            proximo = devido.plus({ weeks: 1 });
+            break;
+          case "mensal":
+            proximo = devido.plus({ months: 1 });
+            break;
+          default:
+            proximo = null;
+        }
+
+        if (proximo) {
+          lembrete.devidoEm = proximo.toJSDate();
+          lembrete.enviado = false;
+          await db.collection("lembretes").updateOne(
+            { _id: lembrete._id },
+            { $set: { devidoEm: lembrete.devidoEm, enviado: false } }
+          );
+          agendarLembrete(lembrete);
+        }
+      }
     }, delay);
+
   } catch (err) {
     console.error("❌ Erro ao agendar lembrete:", err, lembrete);
   }
 }
 
-// envia o lembrete
+// envia lembrete
 async function enviarLembrete(lembrete) {
   try {
     if (lembrete.enviado) return;
@@ -174,36 +200,45 @@ async function enviarLembrete(lembrete) {
     const texto = `⏰ Lembrete: ${lembrete.texto}`;
     await sendMessage(lembrete.idUsuario, texto);
 
-    // marca como enviado no DB
     await db.collection("lembretes").updateOne(
       { _id: lembrete._id },
       { $set: { enviado: true, entregueEm: new Date() } }
     );
 
-    console.log(`✅ Lembrete enviado: ${lembrete.texto}`);
+    console.log(`✅ Lembrete enviado: "${lembrete.texto}"`);
   } catch (err) {
     console.error("❌ Erro ao enviar lembrete:", err, lembrete);
   }
 }
 
-// inicializa todos os lembretes pendentes no startup
+// inicializa lembretes pendentes
 async function inicializarLembretes() {
   try {
-    const lembretesPendentes = await db.collection("lembretes")
+    const pendentes = await db.collection("lembretes")
       .find({ enviado: false, devidoEm: { $gte: new Date() } })
       .toArray();
 
-    for (const lembrete of lembretesPendentes) {
-      agendarLembrete(lembrete);
-    }
-    console.log(`🟢 ${lembretesPendentes.length} lembretes pendentes agendados.`);
+    for (const l of pendentes) agendarLembrete(l);
+    console.log(`🟢 ${pendentes.length} lembretes pendentes agendados.`);
   } catch (err) {
     console.error("❌ Erro ao inicializar lembretes:", err);
   }
 }
 
-// chama ao iniciar servidor
-await inicializarLembretes();
+// listar lembretes do usuário
+async function listarLembretes(from) {
+  const lembretes = await db.collection("lembretes")
+    .find({ idUsuario: from, enviado: false })
+    .sort({ devidoEm: 1 })
+    .toArray();
+
+  if (!lembretes.length) return "Você não tem lembretes pendentes.";
+
+  return lembretes.map(l => {
+    const dt = DateTime.fromJSDate(l.devidoEm).setZone("America/Sao_Paulo");
+    return `- ${l.texto} às ${dt.toFormat("dd/MM/yyyy HH:mm")} ${l.recorrencia ? `(${l.recorrencia})` : ""}`;
+  }).join("\n");
+}
 
 /* ========================= NLP SIMPLES PARA EXTRAÇÃO DE FATOS ========================= */
 function extrairFatoAutomatico(texto) {
@@ -365,47 +400,61 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
     }
 
 /* ===== MEMÓRIA DE LEMBRETE ===== */
-if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
+ifif (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
   try {
     const partes = body.split("às");
-    const fato = partes[0].replace(/lembre que/i, "").trim();
+    const texto = partes[0].replace(/lembre que/i, "").trim();
     const horaStr = partes[1].trim();
 
-    // converte para Date usando Luxon
-    const agora = DateTime.now().setZone("America/Sao_Paulo");
+    // extrai hora/minuto
     let [hora, minuto] = horaStr.split(":").map(Number);
-    let devidoEm = agora.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+    let devidoEm = DateTime.now().setZone("America/Sao_Paulo")
+      .set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+    if (devidoEm < DateTime.now().setZone("America/Sao_Paulo")) devidoEm = devidoEm.plus({ days: 1 });
 
-    // se hora já passou, agenda para amanhã
-    if (devidoEm < agora) devidoEm = devidoEm.plus({ days: 1 });
+    // checa se há recorrência na mensagem: ex: diário, semanal, mensal
+    let recorrencia = null;
+    if (bodyLower.includes("diário")) recorrencia = "diario";
+    else if (bodyLower.includes("semanal")) recorrencia = "semanal";
+    else if (bodyLower.includes("mensal")) recorrencia = "mensal";
 
-    // salva no DB
-    const novoLembrete = {
+    const lembrete = {
       idUsuario: from,
-      texto: fato,
+      texto,
       devidoEm: devidoEm.toJSDate(),
       criadoEm: new Date(),
-      enviado: false
+      enviado: false,
+      recorrencia
     };
-    await db.collection("lembretes").insertOne(novoLembrete);
 
-    // agenda envio exato
-    agendarLembrete(novoLembrete);
+    await db.collection("lembretes").insertOne(lembrete);
+    agendarLembrete(lembrete);
 
-    // resposta ao usuário
-    const resposta = `📌 Lembrete registrado: "${fato}" às ${horaStr}`;
+    const resposta = `📌 Lembrete registrado: "${texto}" às ${horaStr}${recorrencia ? ` (${recorrencia})` : ""}`;
     if (responderEmAudio) {
       const audioPath = await falar(resposta);
       await sendAudio(from, audioPath);
-    } else {
-      await sendMessage(from, resposta);
-    }
+    } else await sendMessage(from, resposta);
+
     return res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro ao processar lembrete:", err, body);
+    console.error("❌ Erro ao processar lembrete:", err);
     return res.sendStatus(500);
   }
 }
+
+// listar lembretes
+if (bodyLower.startsWith("/meus lembretes")) {
+  const lista = await listarLembretes(from);
+  if (responderEmAudio) {
+    const audioPath = await falar(lista);
+    await sendAudio(from, audioPath);
+  } else await sendMessage(from, lista);
+  return res.sendStatus(200);
+}
+
+// chama ao iniciar servidor
+await inicializarLembretes();
 
 
     /* ===== MEMÓRIA SEMÂNTICA + SESSION PARA CONTEXTO ===== */
