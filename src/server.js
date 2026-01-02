@@ -25,7 +25,7 @@ import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { ObjectId } from "mongodb";
-
+import { consultarDataJud } from "./utils/datajudAPI.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -100,6 +100,16 @@ async function sendMessage(to, text) {
 
 async function sendMessageIfNeeded(to, text) {
   await sendMessage(to, text);
+}
+
+
+async function buscarInformacaoDireito(pergunta) {
+  const resultados = await consultarDataJud(pergunta);
+  if (!resultados.length) return "Não encontrei resultados oficiais sobre isso.";
+
+  // Monta uma resposta resumida com referência
+  const resumo = resultados.map((r, i) => `${i+1}. ${r.titulo} - ${r.link}`).join("\n");
+  return `Resultados oficiais encontrados:\n${resumo}`;
 }
 
 async function askGPT(prompt) {
@@ -342,6 +352,32 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
   return res.sendStatus(200);
 }
 
+      // Detecta se é pergunta de direito
+  const usuarioQuerDireito = bodyLower.includes("lei") || bodyLower.includes("artigo") || bodyLower.includes("direito") || bodyLower.includes("jurisprudência");
+  
+  if (usuarioQuerDireito) {
+    const infoDataJud = await buscarInformacaoDireito(mensagemTexto); // consulta API
+    const prompt = `
+      Você é uma advogada experiente.
+      Responda com base nas leis brasileiras e decisões oficiais.
+      Nunca invente casos ou leis.
+      Use estas referências oficiais que encontrei:
+      ${infoDataJud}
+  
+      Pergunta do usuário: ${mensagemTexto}
+    `;
+    const resposta = await askGPT(prompt);
+    if (responderEmAudio) {
+      const audioPath = await falar(resposta);
+      await sendAudio(from, audioPath);
+    } else {
+      await sendMessage(from, resposta);
+    }
+    return res.sendStatus(200);
+  }
+
+
+    
     // MEMÓRIA AUTOMÁTICA
     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
 
