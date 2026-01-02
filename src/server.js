@@ -291,7 +291,7 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
     const fatos = fatosRaw.map(f => typeof f === "string" ? f : f.content);
     const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-    const respostaDireta = await responderComMemoriaNatural(from, body, fatos, memoriaSemantica || []);
+    const respostaDireta = await responderComMemoriaNatural(from,  mensagemTexto, fatos, memoriaSemantica || []);
     if (respostaDireta) {
       if (responderEmAudio) {
         const audioPath = await falar(respostaDireta);
@@ -304,7 +304,7 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
     if (fatos.length) contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n";
     if (memoriaSemantica?.length) contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
 
-    const respostaIA = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
+    const respostaIA = await askGPT(`${contexto}Pergunta do usuário: ${mensagemTexto}`);
     const decisaoAmber = await amberMind({ from, mensagem: body, respostaIA });
     const respostaFinal = decisaoAmber.override ? decisaoAmber.resposta : respostaIA;
 
