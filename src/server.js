@@ -123,43 +123,44 @@ function extrairFatoAutomatico(texto) {
   return null;
 }
 
-/* ========================= INTERCEPTOR NATURAL ========================= */
-async function responderComMemoriaNatural(pergunta, fatos = [], memoriaSemantica = []) {
+/* ========================= RESPONDER COM MEMÓRIA NATURAL ========================= */
+async function responderComMemoriaNatural(from, pergunta, fatos = [], memoriaSemantica = []) {
   const p = pergunta.toLowerCase();
 
-  /* ===== NOME DO USUÁRIO (IDENTIDADE) ===== */
-  if (
-    p.includes("meu nome") ||
-    p.includes("qual é meu nome") ||
-    p.includes("qual é o meu nome")
-  ) {
-    
-    const perfil = await consultarPerfil(from);
-    if (perfil?.nome) {
-      return `Seu nome é ${perfil.nome}.`;
-    }
+  // PERFIL
+  const perfil = await consultarPerfil(from);
 
-
-    if (fatoNome) {
-      const nome = fatoNome.replace(/meu nome é/i, "").trim();
-      return `Seu nome é ${nome}.`;
-    }
+  if (p.includes("meu nome") || p.includes("qual é meu nome") || p.includes("qual é o meu nome")) {
+    if (perfil?.nome) return `Seu nome é ${perfil.nome}.`;
+    return "Ainda não sei seu nome, mas posso aprender se você me disser.";
   }
 
-  /* ===== FILHOS / ANIMAIS ===== */
-  if (p.includes("quantos filhos") || p.includes("quantos animais")) {
-    const fato = fatos.find(f =>
-      f.toLowerCase().includes("filho") ||
-      f.toLowerCase().includes("animal") ||
-      f.toLowerCase().includes("gata")
-    );
-
-    if (fato) return fato;
+  // QUANTOS FILHOS / ANIMAIS
+  if (p.includes("quantos filhos") || p.includes("quantos animais") || p.includes("tem filhos")) {
+    const fatoFilhos = fatos.find(f => f.toLowerCase().includes("filho") || f.toLowerCase().includes("animal"));
+    if (fatoFilhos) return fatoFilhos;
+    return "Não tenho informações sobre isso ainda.";
   }
 
-  return null;
+  // CONTEXTO COMPLETO
+  let contexto = "";
+  if (fatos.length) {
+    contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n";
+  }
+  if (memoriaSemantica?.length) {
+    contexto += "INFORMAÇÕES RELEVANTES DE CONVERSAS PASSADAS:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
+  }
+
+  const prompt = `${contexto}Pergunta do usuário: ${pergunta}`;
+
+  try {
+    const resposta = await askGPT(prompt);
+    return resposta;
+  } catch (err) {
+    console.error("❌ Erro ao gerar resposta GPT:", err);
+    return "Estou tentando processar sua pergunta, mas algo deu errado.";
+  }
 }
-
 
 /* ========================= NUMEROS PERMITIDOS ========================= */
 const NUMEROS_PERMITIDOS = [
@@ -179,37 +180,27 @@ app.post("/webhook", async (req, res) => {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = messageObj?.from;
 
-    // 🔒 BLOQUEIO TOTAL: só números permitidos
     if (!numeroPermitido(from)) return res.sendStatus(200);
-
     if (!messageObj || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
-    
-      // Normaliza a mensagem
-      const normalized = normalizeMessage(messageObj);
-      if (!normalized) return res.sendStatus(200);
-      
-      let { body, bodyLower, type, audioId } = normalized;
-      let responderEmAudio = false;
-      let mensagemTexto = body; // mensagem que será processada
-      
-      // Se for áudio → transcrever
-      if (type === "audio") {
-        if (!audioId) {
-          console.log("⚠️ Mensagem de áudio sem audioId");
-          return res.sendStatus(200);
-        }
-        mensagemTexto = await transcreverAudio(audioId);
-        bodyLower = mensagemTexto.toLowerCase();
-        responderEmAudio = true;
-      }
-      
-      // Extrai memória automática da mensagem usando o AutoMemory
-     await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
 
+    const normalized = normalizeMessage(messageObj);
+    if (!normalized) return res.sendStatus(200);
 
+    let { body, bodyLower, type, audioId } = normalized;
+    let responderEmAudio = false;
+    let mensagemTexto = body;
 
+    if (type === "audio") {
+      if (!audioId) return res.sendStatus(200);
+      mensagemTexto = await transcreverAudio(audioId);
+      bodyLower = mensagemTexto.toLowerCase();
+      responderEmAudio = true;
+    }
 
-    if (!["text", "document", "audio"].includes(type)) return res.sendStatus(200);
+    // MEMÓRIA AUTOMÁTICA
+    await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
+
+    if (!["text","document","audio"].includes(type)) return res.sendStatus(200);
 
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
@@ -220,33 +211,26 @@ app.post("/webhook", async (req, res) => {
     if (bodyLower.startsWith("lembre que")) {
       const fato = body.replace(/lembre que/i, "").trim();
       const fatosExistentes = await consultarFatos(from);
-      if (!fatosExistentes.includes(fato)) {
-        await salvarMemoria(from, { tipo:"fato", content: fato, createdAt: new Date() });
-      }
+      if (!fatosExistentes.includes(fato)) await salvarMemoria(from, { tipo:"fato", content: fato, createdAt: new Date() });
 
       if (responderEmAudio) {
         const audioPath = await falar("Guardado.");
         await sendAudio(from, audioPath);
-      } else {
-        await sendMessage(from, "📌 Guardado.");
-      }
+      } else await sendMessage(from, "📌 Guardado.");
       return res.sendStatus(200);
     }
 
     if (bodyLower.includes("o que você lembra")) {
       const fatos = await consultarFatos(from);
       const resposta = fatos.length ? fatos.join("\n") : "Nada salvo ainda.";
-
       if (responderEmAudio) {
         const audioPath = await falar(resposta);
         await sendAudio(from, audioPath);
-      } else {
-        await sendMessage(from, resposta);
-      }
+      } else await sendMessage(from, resposta);
       return res.sendStatus(200);
     }
 
-    /* ===== MEMÓRIA AUTOMÁTICA FACTUAL ===== */
+    // FATOS DETECTADOS AUTOMATICAMENTE
     const fatoDetectado = extrairFatoAutomatico(body);
     if (fatoDetectado) {
       const fatosExistentes = await consultarFatos(from);
@@ -257,110 +241,59 @@ app.post("/webhook", async (req, res) => {
     }
 
     /* ===== COMANDOS E CLIMA ===== */
-    if (await handleCommand(body, from) || await handleReminder(body, from)) {
-      return res.sendStatus(200);
-    }
+    if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
 
-    const pediuClima = [
-      "clima",
-      "como está o clima",
-      "previsão do tempo",
-      "como está o tempo hoje",
-      "vai chover",
-      "temperatura hoje"
-    ].some(p => bodyLower.includes(p));
+    const pediuClima = ["clima","como está o clima","previsão do tempo","como está o tempo hoje","vai chover","temperatura hoje"]
+      .some(p => bodyLower.includes(p));
 
     if (pediuClima) {
       const clima = await getWeather("Curitiba","hoje");
-
       if (responderEmAudio) {
         const audioPath = await falar(clima);
         await sendAudio(from, audioPath);
-      } else {
-        await sendMessage(from, clima);
-      }
+      } else await sendMessage(from, clima);
       return res.sendStatus(200);
     }
 
     /* ===== MEMÓRIA DE LEMBRETE ===== */
-if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
-  // Ex: "Lembre que tenho reunião às 15:30"
-  const partes = body.split("às");
-  const fato = partes[0].replace(/lembre que/i, "").trim();
-  const hora = partes[1].trim();
+    if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
+      const partes = body.split("às");
+      const fato = partes[0].replace(/lembre que/i, "").trim();
+      const hora = partes[1].trim();
+      await salvarMemoria(from, { tipo: "lembrete", content: fato, horario: hora, criadoEm: new Date() });
+      if (responderEmAudio) {
+        const audioPath = await falar(`Lembrete registrado: ${fato} às ${hora}`);
+        await sendAudio(from, audioPath);
+      } else await sendMessage(from, `📌 Lembrete registrado: "${fato}" às ${hora}"`);
+      return res.sendStatus(200);
+    }
 
-  // Salva o lembrete
-  await salvarMemoria(from, {
-    tipo: "lembrete",
-    content: fato,
-    horario: hora, // horário em string "HH:mm"
-    criadoEm: new Date()
-  });
-
-  if (responderEmAudio) {
-    const audioPath = await falar(`Lembrete registrado: ${fato} às ${hora}`);
-    await sendAudio(from, audioPath);
-  } else {
-    await sendMessage(from, `📌 Lembrete registrado: "${fato}" às ${hora}`);
-  }
-
-  return res.sendStatus(200);
-}
-    
     /* ===== IA FINAL COM MEMÓRIA ===== */
     const fatosRaw = await consultarFatos(from);
-    const fatos = fatosRaw.map(f =>
-      typeof f === "string" ? f : f.content
-    );
-
+    const fatos = fatosRaw.map(f => typeof f === "string" ? f : f.content);
     const memoriaSemantica = await querySemanticMemory(body, from, 3);
 
-    const respostaDireta = await responderComMemoriaNatural(
-      body,
-      fatos,
-      memoriaSemantica || []
-    );
-
+    const respostaDireta = await responderComMemoriaNatural(from, body, fatos, memoriaSemantica || []);
     if (respostaDireta) {
       if (responderEmAudio) {
         const audioPath = await falar(respostaDireta);
         await sendAudio(from, audioPath);
-      } else {
-        await sendMessage(from, respostaDireta);
-      }
+      } else await sendMessage(from, respostaDireta);
       return res.sendStatus(200);
     }
 
     let contexto = "";
-    if (fatos.length) {
-      contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" +
-        fatos.map(f => `- ${f}`).join("\n") + "\n\n";
-    }
-
-    if (memoriaSemantica?.length) {
-      contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" +
-        memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
-    }
+    if (fatos.length) contexto += "FATOS CONHECIDOS SOBRE O USUÁRIO:\n" + fatos.map(f => `- ${f}`).join("\n") + "\n\n";
+    if (memoriaSemantica?.length) contexto += "CONTEXTO DE CONVERSAS PASSADAS:\n" + memoriaSemantica.map(m => `- ${m}`).join("\n") + "\n\n";
 
     const respostaIA = await askGPT(`${contexto}Pergunta do usuário: ${body}`);
-
-    /* ===== AMBER MIND ===== */
-    const decisaoAmber = await amberMind({
-      from,
-      mensagem: body,
-      respostaIA
-    });
-
-    const respostaFinal = decisaoAmber.override
-      ? decisaoAmber.resposta
-      : respostaIA;
+    const decisaoAmber = await amberMind({ from, mensagem: body, respostaIA });
+    const respostaFinal = decisaoAmber.override ? decisaoAmber.resposta : respostaIA;
 
     if (responderEmAudio) {
       const audioPath = await falar(respostaFinal);
       await sendAudio(from, audioPath);
-    } else {
-      await sendMessage(from, respostaFinal);
-    }
+    } else await sendMessage(from, respostaFinal);
 
     return res.sendStatus(200);
 
@@ -374,4 +307,3 @@ if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
 app.listen(PORT, () => {
   console.log(`✅ Donna rodando na porta ${PORT}`);
 });
-    
