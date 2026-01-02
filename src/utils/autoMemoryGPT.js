@@ -2,28 +2,19 @@
 import { enqueueSemanticMemory } from "./semanticQueue.js";
 
 /**
- * Pega askGPT dinamicamente do contexto global
+ * Extract and save useful user memories from a message
+ * @param {string} numero - número do usuário
+ * @param {string} mensagem - mensagem enviada pelo usuário
+ * @param {Function} askGPT - função de chat GPT para análise
+ * @returns {Promise<Object>} dados extraídos
  */
-function getAskGPT() {
-  if (!global.apiExports?.askGPT) {
-    throw new Error("askGPT não está disponível em global.apiExports");
-  }
-  return global.apiExports.askGPT;
-}
-
-/**
- * === EXTRAÇÃO AUTOMÁTICA DE MEMÓRIA VALIOSA ===
- * Analisa a mensagem e salva memórias úteis do usuário de forma estruturada.
- * Categorias priorizadas: informações pessoais, filhos, trabalho, metas, lembretes, empresas clientes.
- */
-export async function extractAutoMemoryGPT(numero, mensagem) {
+export async function extractAutoMemoryGPT(numero, mensagem, askGPT) {
   try {
-    const askGPT = getAskGPT();
+    if (!askGPT) throw new Error("askGPT não fornecido como parâmetro");
 
     const prompt = `
-Analise a mensagem do usuário e extraia apenas informações que valem a pena serem lembradas.
-Use as categorias a seguir, apenas se houver dados relevantes:
-
+Analise a mensagem abaixo e identifique informações que devem ser armazenadas como memória do usuário.
+Classifique dentro das seguintes categorias:
 1. informacoes_pessoais
 2. filhos
 3. formacao
@@ -33,8 +24,10 @@ Use as categorias a seguir, apenas se houver dados relevantes:
 7. processos_rh
 8. lembretes
 9. empresas_clientes
+10. outros_dados_relevantes
 
-Forneça a resposta em JSON no seguinte formato:
+Formato de resposta SEMPRE em JSON:
+
 {
  "informacoes_pessoais": {},
  "filhos": [],
@@ -44,76 +37,83 @@ Forneça a resposta em JSON no seguinte formato:
  "preferencias": {},
  "processos_rh": {},
  "lembretes": [],
- "empresas_clientes": []
+ "empresas_clientes": [],
+ "outros_dados_relevantes": {}
 }
 
 Mensagem do usuário: "${mensagem}"
 `;
 
-    // Chama GPT para extrair memória
     const resposta = await askGPT(prompt);
 
     let dados = {};
     try {
       dados = JSON.parse(resposta);
     } catch (e) {
-      console.warn("❌ Falha ao interpretar JSON do GPT:", e);
+      console.log("❌ Erro ao interpretar JSON:", e);
       return {};
     }
 
-    // ==== Evita duplicação de memórias
+    // ---- AGRUPANDO PALAVRAS-CHAVE PARA EVITAR DUPLICAÇÃO ----
     const palavrasChave = new Set();
 
-    const categorias = [
-      "informacoes_pessoais",
-      "filhos",
-      "formacao",
-      "trabalho",
-      "metas",
-      "preferencias",
-      "processos_rh",
-      "lembretes",
-      "empresas_clientes"
-    ];
+    if (dados.informacoes_pessoais) palavrasChave.add(JSON.stringify(dados.informacoes_pessoais));
+    if (dados.filhos?.length) dados.filhos.forEach(f => palavrasChave.add(JSON.stringify(f)));
+    if (dados.formacao) palavrasChave.add(JSON.stringify(dados.formacao));
+    if (dados.trabalho) palavrasChave.add(JSON.stringify(dados.trabalho));
+    if (dados.metas) palavrasChave.add(JSON.stringify(dados.metas));
+    if (dados.preferencias) palavrasChave.add(JSON.stringify(dados.preferencias));
+    if (dados.processos_rh) palavrasChave.add(JSON.stringify(dados.processos_rh));
+    if (dados.lembretes?.length) dados.lembretes.forEach(l => palavrasChave.add(JSON.stringify(l)));
+    if (dados.empresas_clientes?.length) dados.empresas_clientes.forEach(e => palavrasChave.add(JSON.stringify(e)));
+    if (dados.outros_dados_relevantes) palavrasChave.add(JSON.stringify(dados.outros_dados_relevantes));
 
-    categorias.forEach(cat => {
-      const valor = dados[cat];
-      if (Array.isArray(valor)) {
-        valor.forEach(item => palavrasChave.add(JSON.stringify(item)));
-      } else if (valor && Object.keys(valor).length > 0) {
-        palavrasChave.add(JSON.stringify(valor));
-      }
-    });
-
-    // ==== Salva palavras-chave na fila de memória semântica
+    // ---- SALVANDO PALAVRAS-CHAVE ----
     for (const palavra of palavrasChave) {
       await enqueueSemanticMemory("palavras-chave", palavra, numero, "user");
     }
 
-    // ==== Salva cada categoria de forma estruturada
-    for (const cat of categorias) {
-      const valor = dados[cat];
-      if (!valor) continue;
+    // ---- SALVANDO DADOS ESPECÍFICOS ----
+    if (Object.keys(dados.informacoes_pessoais || {}).length > 0) {
+      await enqueueSemanticMemory("informacoes_pessoais", dados.informacoes_pessoais, numero, "user");
+    }
 
-      if (Array.isArray(valor)) {
-        for (const item of valor) {
-          await enqueueSemanticMemory(cat, item, numero, "user");
-        }
-      } else if (Object.keys(valor).length > 0) {
-        await enqueueSemanticMemory(cat, valor, numero, "user");
+    if (dados.filhos?.length > 0) {
+      for (const filho of dados.filhos) {
+        await enqueueSemanticMemory("filhos", filho, numero, "user");
       }
     }
 
+    if (dados.lembretes?.length > 0) {
+      for (const lembrete of dados.lembretes) {
+        await enqueueSemanticMemory("lembretes", lembrete, numero, "user");
+      }
+    }
+
+    if (dados.empresas_clientes?.length > 0) {
+      for (const empresa of dados.empresas_clientes) {
+        await enqueueSemanticMemory("empresas_clientes", empresa, numero, "user");
+      }
+    }
+
+    if (Object.keys(dados.outros_dados_relevantes || {}).length > 0) {
+      await enqueueSemanticMemory("outros_dados_relevantes", dados.outros_dados_relevantes, numero, "user");
+    }
+
     return dados;
+
   } catch (err) {
-    console.error("❌ Erro em extractAutoMemoryGPT:", err);
+    console.error("❌ Erro extractAutoMemoryGPT:", err);
     return {};
   }
 }
 
 /**
- * === BUSCA INTELIGENTE DE EMPRESAS ===
- * Permite encontrar empresas mencionadas na mensagem para respostas rápidas
+ * Função de busca rápida de empresa no banco
+ * @param {string} numero - número do usuário
+ * @param {string} texto - texto contendo referência à empresa
+ * @param {Object} db - instância do MongoDB
+ * @returns {Promise<Object|null>} empresa encontrada
  */
 export async function buscarEmpresa(numero, texto, db) {
   const nomeMatch = texto.toLowerCase().match(/(beneficios|taxa|ponto|pagamento|email).*?da\s(.+)/);
