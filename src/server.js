@@ -21,7 +21,7 @@ import { buscarEmpresa, adicionarEmpresa, atualizarCampo, formatarEmpresa } from
 import { enviarDocumentoWhatsApp } from "./utils/enviarDocumentoDonna.js";
 import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
 import { amberMind } from "./core/amberMind.js";
-
+import { falar, sendAudio } from "./utils/sendAudio.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -184,8 +184,17 @@ app.post("/webhook", async (req, res) => {
     const normalized = normalizeMessage(messageObj);
     if (!normalized) return res.sendStatus(200);
 
-    const { body, bodyLower, type } = normalized;
-    if (!["text","document"].includes(type)) return res.sendStatus(200);
+    let { body, bodyLower, type, audioId } = normalized;
+    let responderEmAudio = false;
+
+    // 🎧 SE FOR ÁUDIO → TRANSCRIÇÃO
+    if (type === "audio") {
+      body = await transcreverAudio(audioId);
+      bodyLower = body.toLowerCase();
+      responderEmAudio = true;
+    }
+
+    if (!["text", "document", "audio"].includes(type)) return res.sendStatus(200);
 
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
@@ -199,13 +208,26 @@ app.post("/webhook", async (req, res) => {
       if (!fatosExistentes.includes(fato)) {
         await salvarMemoria(from, { tipo:"fato", content: fato, createdAt: new Date() });
       }
-      await sendMessage(from, "📌 Guardado.");
+
+      if (responderEmAudio) {
+        const audioPath = await falar("Guardado.");
+        await sendAudio(from, audioPath);
+      } else {
+        await sendMessage(from, "📌 Guardado.");
+      }
       return res.sendStatus(200);
     }
 
     if (bodyLower.includes("o que você lembra")) {
       const fatos = await consultarFatos(from);
-      await sendMessage(from, fatos.length ? fatos.join("\n") : "Nada salvo ainda.");
+      const resposta = fatos.length ? fatos.join("\n") : "Nada salvo ainda.";
+
+      if (responderEmAudio) {
+        const audioPath = await falar(resposta);
+        await sendAudio(from, audioPath);
+      } else {
+        await sendMessage(from, resposta);
+      }
       return res.sendStatus(200);
     }
 
@@ -220,7 +242,9 @@ app.post("/webhook", async (req, res) => {
     }
 
     /* ===== COMANDOS E CLIMA ===== */
-    if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
+    if (await handleCommand(body, from) || await handleReminder(body, from)) {
+      return res.sendStatus(200);
+    }
 
     const pediuClima = [
       "clima",
@@ -232,7 +256,14 @@ app.post("/webhook", async (req, res) => {
     ].some(p => bodyLower.includes(p));
 
     if (pediuClima) {
-      await sendMessage(from, await getWeather("Curitiba","hoje"));
+      const clima = await getWeather("Curitiba","hoje");
+
+      if (responderEmAudio) {
+        const audioPath = await falar(clima);
+        await sendAudio(from, audioPath);
+      } else {
+        await sendMessage(from, clima);
+      }
       return res.sendStatus(200);
     }
 
@@ -251,7 +282,12 @@ app.post("/webhook", async (req, res) => {
     );
 
     if (respostaDireta) {
-      await sendMessage(from, respostaDireta);
+      if (responderEmAudio) {
+        const audioPath = await falar(respostaDireta);
+        await sendAudio(from, audioPath);
+      } else {
+        await sendMessage(from, respostaDireta);
+      }
       return res.sendStatus(200);
     }
 
@@ -275,12 +311,17 @@ app.post("/webhook", async (req, res) => {
       respostaIA
     });
 
-    if (decisaoAmber.override) {
-      await sendMessage(from, decisaoAmber.resposta);
-      return res.sendStatus(200);
+    const respostaFinal = decisaoAmber.override
+      ? decisaoAmber.resposta
+      : respostaIA;
+
+    if (responderEmAudio) {
+      const audioPath = await falar(respostaFinal);
+      await sendAudio(from, audioPath);
+    } else {
+      await sendMessage(from, respostaFinal);
     }
 
-    await sendMessage(from, respostaIA);
     return res.sendStatus(200);
 
   } catch (err) {
@@ -293,3 +334,4 @@ app.post("/webhook", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Donna rodando na porta ${PORT}`);
 });
+    
