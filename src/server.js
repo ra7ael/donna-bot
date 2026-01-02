@@ -24,7 +24,6 @@ import { amberMind } from "./core/amberMind.js";
 import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { askGPT } from "./utils/askGPT.js";
 
 // Quando receber mensagem:
 await extractAutoMemoryGPT(from, body, askGPT);
