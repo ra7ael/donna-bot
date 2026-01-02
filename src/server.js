@@ -140,50 +140,70 @@ async function askGPT(prompt) {
 
 
 /* ========================= FUNÇÕES DE LEMBRETE ========================= */
+import { DateTime } from "luxon";
+
+// agenda envio de um lembrete
 async function agendarLembrete(lembrete) {
-  const agora = new Date();
-  const horaLembrete = new Date(lembrete.devidoEm);
-  const delay = horaLembrete - agora;
+  try {
+    const agora = DateTime.now().setZone("America/Sao_Paulo");
+    const devido = DateTime.fromJSDate(lembrete.devidoEm).setZone("America/Sao_Paulo");
+    const delay = devido.diff(agora).as("milliseconds");
 
-  if (delay <= 0) {
-    // hora já passou, envia imediatamente se não foi enviado
-    if (!lembrete.enviado) await enviarLembrete(lembrete);
-    return;
+    if (delay <= 0) {
+      // hora já passou, envia imediatamente se não foi enviado
+      if (!lembrete.enviado) await enviarLembrete(lembrete);
+      return;
+    }
+
+    console.log(`Lembrete agendado para: ${devido.toISO()} - texto: ${lembrete.texto}`);
+
+    // agendamento exato
+    setTimeout(async () => {
+      await enviarLembrete(lembrete);
+    }, delay);
+  } catch (err) {
+    console.error("❌ Erro ao agendar lembrete:", err, lembrete);
   }
-
-  // agenda envio exato
-  setTimeout(async () => {
-    await enviarLembrete(lembrete);
-  }, delay);
 }
 
+// envia o lembrete
 async function enviarLembrete(lembrete) {
-  if (lembrete.enviado) return;
+  try {
+    if (lembrete.enviado) return;
 
-  const texto = `⏰ Lembrete: ${lembrete.texto}`;
-  await sendMessage(lembrete.idUsuario, texto);
+    const texto = `⏰ Lembrete: ${lembrete.texto}`;
+    await sendMessage(lembrete.idUsuario, texto);
 
-  // marca como enviado no DB
-  await db.collection("lembretes").updateOne(
-    { _id: lembrete._id },
-    { $set: { enviado: true, entregueEm: new Date() } }
-  );
+    // marca como enviado no DB
+    await db.collection("lembretes").updateOne(
+      { _id: lembrete._id },
+      { $set: { enviado: true, entregueEm: new Date() } }
+    );
+
+    console.log(`✅ Lembrete enviado: ${lembrete.texto}`);
+  } catch (err) {
+    console.error("❌ Erro ao enviar lembrete:", err, lembrete);
+  }
 }
 
-/* ========================= INICIALIZAÇÃO DE LEMBRETES AO INICIAR ========================= */
+// inicializa todos os lembretes pendentes no startup
 async function inicializarLembretes() {
-  const lembretesPendentes = await db.collection("lembretes")
-    .find({ enviado: false, devidoEm: { $gte: new Date() } })
-    .toArray();
+  try {
+    const lembretesPendentes = await db.collection("lembretes")
+      .find({ enviado: false, devidoEm: { $gte: new Date() } })
+      .toArray();
 
-  for (const lembrete of lembretesPendentes) {
-    agendarLembrete(lembrete);
+    for (const lembrete of lembretesPendentes) {
+      agendarLembrete(lembrete);
+    }
+    console.log(`🟢 ${lembretesPendentes.length} lembretes pendentes agendados.`);
+  } catch (err) {
+    console.error("❌ Erro ao inicializar lembretes:", err);
   }
 }
 
 // chama ao iniciar servidor
 await inicializarLembretes();
-
 
 /* ========================= NLP SIMPLES PARA EXTRAÇÃO DE FATOS ========================= */
 function extrairFatoAutomatico(texto) {
@@ -192,6 +212,7 @@ function extrairFatoAutomatico(texto) {
   if (["eu tenho","meu nome é","eu sou","sou casado","tenho filhos","trabalho com","trabalho na"].some(p => t.includes(p))) return texto.trim();
   return null;
 }
+
 
 /* ========================= RESPONDER COM MEMÓRIA NATURAL ========================= */
 async function responderComMemoriaNatural(from, pergunta, fatos = [], memoriaSemantica = []) {
@@ -345,37 +366,45 @@ if (bodyLower.startsWith("meu nome é") || bodyLower.startsWith("me chame de")) 
 
 /* ===== MEMÓRIA DE LEMBRETE ===== */
 if (bodyLower.startsWith("lembre que") && bodyLower.includes("às")) {
-  const partes = body.split("às");
-  const fato = partes[0].replace(/lembre que/i, "").trim();
-  const horaStr = partes[1].trim();
+  try {
+    const partes = body.split("às");
+    const fato = partes[0].replace(/lembre que/i, "").trim();
+    const horaStr = partes[1].trim();
 
-  // converte para Date
-  const agora = DateTime.now().setZone("America/Sao_Paulo");
-  let [hora, minuto] = horaStr.split(":").map(Number);
-  let devidoEm = agora.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
-  if (devidoEm < agora) devidoEm = devidoEm.plus({ days: 1 }); // se hora já passou, agenda para amanhã
+    // converte para Date usando Luxon
+    const agora = DateTime.now().setZone("America/Sao_Paulo");
+    let [hora, minuto] = horaStr.split(":").map(Number);
+    let devidoEm = agora.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
 
-  // salva no DB
-  const novoLembrete = {
-    idUsuario: from,
-    texto: fato,
-    devidoEm: devidoEm.toJSDate(),
-    criadoEm: new Date(),
-    enviado: false
-  };
-  await db.collection("lembretes").insertOne(novoLembrete);
+    // se hora já passou, agenda para amanhã
+    if (devidoEm < agora) devidoEm = devidoEm.plus({ days: 1 });
 
-  // 🟢 agendar envio exato
-  agendarLembrete(novoLembrete);
+    // salva no DB
+    const novoLembrete = {
+      idUsuario: from,
+      texto: fato,
+      devidoEm: devidoEm.toJSDate(),
+      criadoEm: new Date(),
+      enviado: false
+    };
+    await db.collection("lembretes").insertOne(novoLembrete);
 
-  // resposta ao usuário
-  if (responderEmAudio) {
-    const audioPath = await falar(`Lembrete registrado: ${fato} às ${horaStr}`);
-    await sendAudio(from, audioPath);
-  } else {
-    await sendMessage(from, `📌 Lembrete registrado: "${fato}" às ${horaStr}`);
+    // agenda envio exato
+    agendarLembrete(novoLembrete);
+
+    // resposta ao usuário
+    const resposta = `📌 Lembrete registrado: "${fato}" às ${horaStr}`;
+    if (responderEmAudio) {
+      const audioPath = await falar(resposta);
+      await sendAudio(from, audioPath);
+    } else {
+      await sendMessage(from, resposta);
+    }
+    return res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Erro ao processar lembrete:", err, body);
+    return res.sendStatus(500);
   }
-  return res.sendStatus(200);
 }
 
 
