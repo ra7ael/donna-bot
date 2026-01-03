@@ -146,6 +146,22 @@ app.get("/webhook", (req, res) => {
   }
 });
 
+app.get("/webhook-instagram", (req, res) => {
+  const VERIFY_TOKEN = "amber_verify";
+
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook Instagram verificado");
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+
 
 /* ========================= WEBHOOK ========================= */
 app.post("/webhook", async (req, res) => {
