@@ -164,6 +164,46 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    /* ===== COMANDO POST AUTOMÁTICO ===== */
+if (bodyLower.startsWith("postar imagem")) {
+  // Formato esperado:
+  // postar imagem; contexto: RH, motivação ou outro assunto
+  const partes = body.split(";").map(p => p.trim());
+  let contexto = partes.find(p => p.toLowerCase().startsWith("contexto:"))?.slice(9).trim();
+
+  if (!contexto) contexto = "RH e gestão de pessoas";
+
+  // Verifica se mensagem tem imagem (WhatsApp envia 'image' type)
+  const mensagemImagem = messageObj?.image; 
+  let filename;
+
+  if (mensagemImagem) {
+    filename = `${Date.now()}.jpg`;
+    const imageBuffer = Buffer.from(mensagemImagem?.id, "base64"); // ajuste se usar download via API do WhatsApp
+    fs.ensureDirSync("imagens");
+    fs.writeFileSync(path.join("imagens", filename), imageBuffer);
+  } else {
+    return res.send("❌ Envie uma imagem junto com o comando!");
+  }
+
+  // GPT cria caption
+  const prompt = `
+Crie uma legenda bonita, organizada e envolvente para Instagram
+com base neste contexto: ${contexto}.
+O texto deve ser curto, inspirador e pronto para postagem.
+`;
+
+  const caption = await askGPT(prompt);
+
+  const resultado = await postarInstagram({ filename, caption });
+  if (resultado?.id) {
+    await sendMessage(from, `✅ Post publicado automaticamente no Instagram!\nID: ${resultado.id}\nLegenda:\n${caption}`);
+  } else {
+    await sendMessage(from, "❌ Ocorreu um erro ao postar a imagem.");
+  }
+  return res.sendStatus(200);
+}
+
     // ===== MODO INGLÊS =====
 if (bodyLower.startsWith("ingles")) {
   const perguntaIngles = body.replace(/^ingles/i, "").trim();
