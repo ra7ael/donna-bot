@@ -24,6 +24,14 @@ import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import "./scheduler.js";
+import { postarInstagram } from "./instagram.js";
+
+const resultado = await postarInstagram({
+  imageUrl: "https://meu-site.com/imagem.jpg",
+  caption: "Bom dia! A Amber trouxe um insight de RH ☕"
+});
+
+console.log("Post publicado! ID:", resultado.id);
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
