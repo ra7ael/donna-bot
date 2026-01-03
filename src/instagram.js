@@ -29,3 +29,10 @@ export async function publicarContainer(containerId) {
 
   return response.data;
 }
+
+// 3️⃣ Função para postar manualmente (chamada pelo WhatsApp ou terminal)
+export async function postarInstagram({ imageUrl, caption }) {
+  const containerId = await criarContainer({ imageUrl, caption });
+  const resultado = await publicarContainer(containerId);
+  return resultado;
+}
