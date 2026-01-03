@@ -23,6 +23,7 @@ import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
+import "./scheduler.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
