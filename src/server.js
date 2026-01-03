@@ -129,6 +129,24 @@ async function buscarInformacaoDireito(pergunta) {
 const NUMEROS_PERMITIDOS = ["554195194485"];
 const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
 
+
+app.get("/webhook", (req, res) => {
+  const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
+
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook verificado com sucesso");
+    return res.status(200).send(challenge);
+  } else {
+    console.log("❌ Falha na verificação do webhook");
+    return res.sendStatus(403);
+  }
+});
+
+
 /* ========================= WEBHOOK ========================= */
 app.post("/webhook", async (req, res) => {
   try {
