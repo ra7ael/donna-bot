@@ -2,6 +2,7 @@
 
 import { salvarMemoria, consultarFatos } from "../utils/memory.js";
 import { addSemanticMemory } from "../models/semanticMemory.js";
+import { detectarFamilia } from "./detectors/familyDetector.js";
 
 /* ========================= CONFIG ========================= */
 
