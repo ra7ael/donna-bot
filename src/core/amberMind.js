@@ -121,6 +121,30 @@ export async function amberMind({
     }
   }
 
+
+  /* ===== MEMÓRIA DE FAMÍLIA ===== */
+const pessoa = detectarFamilia(mensagem);
+
+if (pessoa) {
+  const resumo = extrairResumo(mensagem);
+
+  if (!fatos.find(f => (f.content || f) === resumo)) {
+    await salvarMemoria(from, {
+      tipo: "familia",
+      pessoa: pessoa.nome,
+      content: resumo,
+      createdAt: new Date()
+    });
+
+    await addSemanticMemory(
+      resumo,
+      `Informação sobre ${pessoa.nome} (família do usuário)`,
+      from,
+      "user"
+    );
+  }
+}
+
   /* ===== 3. NUNCA SALVA O QUE A AMBER FALA COMO FATO ===== */
   // respostaIA NÃO é memória
   // conversa de curto prazo já existe no sessionMemory
