@@ -122,12 +122,11 @@ export async function amberMind({
     }
   }
 
-
-  /* ===== MEMÓRIA DE FAMÍLIA ===== */
+/* ===== MEMÓRIA DE FAMÍLIA ===== */
 const pessoa = detectarFamilia(mensagem);
 
 if (pessoa) {
-  const resumo = extrairResumo(mensagem);
+  const resumo = resumir(mensagem);
 
   if (!fatos.find(f => (f.content || f) === resumo)) {
     await salvarMemoria(from, {
@@ -145,6 +144,7 @@ if (pessoa) {
     );
   }
 }
+
 
   /* ===== 3. NUNCA SALVA O QUE A AMBER FALA COMO FATO ===== */
   // respostaIA NÃO é memória
