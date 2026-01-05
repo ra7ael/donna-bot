@@ -23,7 +23,7 @@ import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
-import { selectMemoriesForPrompt } from "./memory/memorySelector.js";
+import { selectMemoriesForPrompt } from "./memorySelector.js";
 //import "./cron/instagramSchedule.js";//
 //import { postarInstagram } from "./instagram.js";//
 
