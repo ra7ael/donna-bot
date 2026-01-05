@@ -23,6 +23,7 @@ import { falar, sendAudio } from "./utils/sendAudio.js";
 import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
+import { selectMemoriesForPrompt } from "./memory/memorySelector.js";
 //import "./cron/instagramSchedule.js";//
 //import { postarInstagram } from "./instagram.js";//
 
@@ -291,6 +292,7 @@ app.post("/webhook", async (req, res) => {
 
     /* ===== CONTEXTO + IA ===== */
     const fatos = (await consultarFatos(from)).map(f => typeof f === "string" ? f : f.content);
+    const fatosFiltrados = selectMemoriesForPrompt(fatos);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
     sessionMemory[from] = sessionMemory[from] || [];
@@ -298,8 +300,8 @@ app.post("/webhook", async (req, res) => {
     sessionMemory[from] = sessionMemory[from].slice(-20);
 
     const prompt = `
-FATOS:
-${fatos.join("\n")}
+FATOS IMPORTANTES:
+${fatosFiltrados.map(f => f.content || f).join("\n")}
 
 MEMÓRIA:
 ${memoriaSemantica.join("\n")}
