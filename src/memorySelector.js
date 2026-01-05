@@ -1,4 +1,4 @@
-// src/memory/memorySelector.js
+// src/memorySelector.js
 import { MEMORY_LEVELS } from "./memoryLevels.js";
 
 export function selectMemoriesForPrompt(memorias) {
