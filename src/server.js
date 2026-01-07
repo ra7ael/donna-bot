@@ -103,15 +103,17 @@ async function sendMessage(to, text) {
 }
 
 async function sendWhatsAppMessage(to, message) {
-  const url = `https:                                                          
-  const headers = {
-    Authorization: `//graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`;
+  if (!to || !message) return;
+
+  const url = `https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`;
+
   const headers = {
     Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   };
+
   const data = {
-    messaging_product: 'whatsapp',
+    messaging_product: "whatsapp",
     to,
     text: { body: message },
   };
@@ -120,10 +122,11 @@ async function sendWhatsAppMessage(to, message) {
     const response = await axios.post(url, data, { headers });
     return response.data;
   } catch (error) {
-    console.error('Erro ao enviar mensagem:', error);
+    console.error("Erro ao enviar mensagem:", error.response?.data || error.message);
     throw error;
   }
 }
+
 
 async function askGPT(prompt) {
   const systemPrompt = `
