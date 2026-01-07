@@ -100,7 +100,7 @@ async function sendMessage(to, text) {
       { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
     );
   }
-
+}
 
 async function sendWhatsAppMessage(to, message) {
   const url = `https:                                                          
