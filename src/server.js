@@ -100,6 +100,29 @@ async function sendMessage(to, text) {
       { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
     );
   }
+
+
+async function sendWhatsAppMessage(to, message) {
+  const url = `https:                                                          
+  const headers = {
+    Authorization: `//graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`;
+  const headers = {
+    Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+    'Content-Type': 'application/json',
+  };
+  const data = {
+    messaging_product: 'whatsapp',
+    to,
+    text: { body: message },
+  };
+
+  try {
+    const response = await axios.post(url, data, { headers });
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao enviar mensagem:', error);
+    throw error;
+  }
 }
 
 async function askGPT(prompt) {
@@ -264,7 +287,19 @@ app.post("/webhook", async (req, res) => {
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
       return res.sendStatus(200);
     }
-
+   
+if (bodyLower.startsWith('amber envia mensagem')) {
+  const regex = /amber envia mensagem para (\d+) (.*)/;
+  const match = bodyLower.match(regex);
+  if (match) {
+    const numero = match[1];
+    const mensagem = match[2];
+    await sendWhatsAppMessage(numero, mensagem);
+    await sendMessage(from, 'Mensagem enviada com sucesso!');
+  } else {
+    await sendMessage(from, 'Formato inválido. Use: amber envia mensagem para <número> <mensagem>');
+  }
+                         }
 
 
     /* ===== INGLÊS ===== */
