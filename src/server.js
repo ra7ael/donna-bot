@@ -291,18 +291,40 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
    
-if (bodyLower.startsWith('amber envia mensagem')) {
-  const regex = /amber envia mensagem para (\d+) (.*)/;
+if (bodyLower.startsWith("amber envia mensagem")) {
+  // Exemplo esperado:
+  // amber envia mensagem para 5541999999999,5541888888888 Olá pessoal
+  const regex = /amber envia mensagem para ([\d, ]+)\s+(.*)/;
   const match = bodyLower.match(regex);
-  if (match) {
-    const numero = match[1];
-    const mensagem = match[2];
-    await sendWhatsAppMessage(numero, mensagem);
-    await sendMessage(from, 'Mensagem enviada com sucesso!');
-  } else {
-    await sendMessage(from, 'Formato inválido. Use: amber envia mensagem para <número> <mensagem>');
+
+  if (!match) {
+    await sendMessage(
+      from,
+      "Formato inválido. Use: amber envia mensagem para <numero1,numero2> <mensagem>"
+    );
+    return;
   }
-                         }
+
+  const numeros = match[1]
+    .split(",")
+    .map(n => n.trim())
+    .filter(Boolean);
+
+  const mensagem = match[2];
+
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  for (const numero of numeros) {
+    await sendWhatsAppMessage(numero, mensagem);
+    await sleep(1500); // delay entre envios (1,5s)
+  }
+
+  await sendMessage(
+    from,
+    `Mensagem enviada com sucesso para ${numeros.length} número(s).`
+  );
+}
+
 
 
     /* ===== INGLÊS ===== */
