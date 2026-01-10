@@ -182,8 +182,7 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let imageUrlForGPT = null;
 
-    // --- 1. PROCESSAMENTO DE MÍDIA ---
-    
+   // --- 1. PROCESSAMENTO DE MÍDIA ---
     if (type === "text") {
       body = messageObj.text.body;
     } 
@@ -191,43 +190,47 @@ app.post("/webhook", async (req, res) => {
       body = await transcreverAudio(messageObj.audio.id);
     } 
     else if (type === "image") {
-      console.log("📸 Processando Imagem...");
+      console.log(`📸 Imagem detectada! ID: ${messageObj.image.id}`);
       await sendMessage(from, "👁️ Analisando imagem...");
-      try {
-        const buffer = await downloadMedia(messageObj.image.id);
-        if (buffer) {
-          const base64Image = buffer.toString('base64');
-          const mimeType = messageObj.image.mime_type || "image/jpeg";
-          imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
-          body = messageObj.caption || "O que você vê nesta imagem?";
-          console.log("✅ Imagem convertida para Base64.");
-        } else {
-          console.error("❌ Buffer de imagem vazio.");
-          await sendMessage(from, "Não consegui baixar a foto.");
-          return res.sendStatus(200);
-        }
-      } catch (err) {
-        console.error("❌ Erro no processamento de imagem:", err.message);
+      
+      const buffer = await downloadMedia(messageObj.image.id);
+      if (buffer) {
+        console.log("✅ Buffer da imagem obtido com sucesso.");
+        const base64Image = buffer.toString('base64');
+        const mimeType = messageObj.image.mime_type || "image/jpeg";
+        imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
+        body = messageObj.caption || "O que você vê nesta imagem?";
+      } else {
+        console.error("❌ Falha ao baixar o buffer da imagem.");
+        await sendMessage(from, "Não consegui baixar a foto.");
+        return res.sendStatus(200);
       }
     }
-    else if (type === "document" && messageObj.document.mime_type === "application/pdf") {
-      await sendMessage(from, "📄 Lendo PDF...");
-      const buffer = await downloadMedia(messageObj.document.id);
-      if (buffer) {
-        try {
-          const data = await pdfParse(buffer);
-          const textoPDF = data.text.slice(0, 3000);
-          body = `(Conteúdo do PDF): ${textoPDF}...\n\n Instrução: ${messageObj.caption || "Resuma"}`;
-        } catch (e) {
-          console.error("❌ Erro ao processar PDF:", e.message);
-          body = "Erro ao ler PDF.";
+    else if (type === "document") {
+      console.log(`📄 Documento detectado! Mime: ${messageObj.document.mime_type}`);
+      if (messageObj.document.mime_type === "application/pdf") {
+        await sendMessage(from, "📄 Lendo PDF...");
+        const buffer = await downloadMedia(messageObj.document.id);
+        if (buffer) {
+          try {
+            const data = await pdfParse(buffer);
+            body = `(Conteúdo do PDF enviado): ${data.text.slice(0, 3000)}...\n\n Instrução: ${messageObj.caption || "Resuma"}`;
+            console.log("✅ PDF processado com sucesso.");
+          } catch (e) {
+            console.error("❌ Erro no pdfParse:", e.message);
+            body = "Erro ao ler o texto do PDF.";
+          }
         }
+      } else {
+        await sendMessage(from, "Amber por enquanto só consegue ler documentos em formato PDF.");
+        return res.sendStatus(200);
       }
     }
 
     if (!body) return res.sendStatus(200);
     const bodyLower = body.toLowerCase();
 
+    // Segue para a memória automática
     await extractAutoMemoryGPT(from, body, askGPT);
 
     /* ===== 2. ROTINAS DE COMANDO ===== */
