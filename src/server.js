@@ -25,6 +25,7 @@ import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { selectMemoriesForPrompt } from "./memorySelector.js";
 // IMPORTANTE: Importamos o modelo de sessão aqui
 import { Session } from "./models/session.js";
+import { processarAgenda } from "./utils/calendarModule.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -289,6 +290,18 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200); // IMPORTANTE: Return para parar execução
     }
 
+    /* ===== AGENDA GOOGLE ===== */
+// Gatilhos: "agenda", "marcar", "reunião", "compromisso", "o que tenho hoje"
+const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
+if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
+   // Feedback imediato para o usuário não achar que travou
+   // await sendMessage(from, "Verificando sua agenda..."); 
+
+   const respostaAgenda = await processarAgenda(mensagemTexto);
+   await sendMessage(from, respostaAgenda);
+   return res.sendStatus(200);
+}
+    
     /* ===== 4. DIREITO ===== */
     if (["lei", "artigo", "direito", "jurisprudência"].some(p => bodyLower.includes(p))) {
       const refs = await buscarInformacaoDireito(mensagemTexto);
