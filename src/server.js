@@ -32,6 +32,7 @@ import { processarFinanceiro } from "./utils/financeModule.js";
 import { downloadMedia } from "./utils/downloadMedia.js"; 
 import { processarTasks } from "./utils/todoModule.js";
 import { buscarNoticiasComIA } from "./utils/newsModule.js";
+import { verificarContextoProativo } from "./utils/proactiveModule.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -382,6 +383,21 @@ if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
     console.error("❌ Erro fatal no webhook:", err);
     return res.sendStatus(200);
   }
+});
+
+// Agendamento proativo (roda a cada hora cheia)
+cron.schedule("0 * * * *", async () => {
+  const userId = "554195194485";
+  console.log("🧠 Amber analisando contexto para proatividade...");
+  
+  const sugestao = await verificarContextoProativo(userId);
+  
+  if (sugestao) {
+    await sendMessage(userId, sugestao);
+    console.log("🚀 Mensagem proativa enviada.");
+  }
+}, {
+  timezone: "America/Sao_Paulo"
 });
 
 app.listen(PORT, () => console.log(`✅ Amber Ultimate rodando na porta ${PORT}`));
