@@ -48,9 +48,13 @@ Mensagem do usuário: "${mensagem}"
 
     let dados = {};
     try {
-      dados = JSON.parse(resposta);
+// Remove possíveis blocos de Markdown (```json ... ```) antes de converter
+      const cleanContent = resposta.replace(/```json|```/g, "").trim();
+      dados = JSON.parse(cleanContent);
     } catch (e) {
-      console.log("❌ Erro ao interpretar JSON:", e);
+      console.error("❌ Erro ao interpretar JSON da Memória:", e.message);
+      // Logamos a resposta bruta para entender o que veio de errado se falhar
+      console.log("Resposta bruta da IA:", resposta);
       return {};
     }
 
