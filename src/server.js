@@ -8,12 +8,13 @@ import { DateTime } from "luxon";
 import path from "path";
 import fs from "fs-extra";
 import { fileURLToPath } from "url";
+import pdfParse from "pdf-parse"; // Leitor de PDF
 
 /* ========================= IMPORTS INTERNOS ========================= */
 import { startReminderCron } from "./cron/reminders.js";
 import { getWeather } from "./utils/weather.js";
 import { normalizeMessage, shouldIgnoreMessage } from "./utils/messageHelper.js";
-import { salvarMemoria, consultarFatos, consultarPerfil } from "./utils/memory.js";
+import { consultarFatos } from "./utils/memory.js";
 import { addSemanticMemory, querySemanticMemory } from "./models/semanticMemory.js";
 import { initRoutineFamily, handleCommand, handleReminder } from "./utils/routineFamily.js";
 import { amberMind } from "./core/amberMind.js";
@@ -23,68 +24,56 @@ import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { selectMemoriesForPrompt } from "./memorySelector.js";
-// IMPORTANTE: Importamos o modelo de sessão aqui
 import { Session } from "./models/session.js";
+
+// NOVOS MÓDULOS
 import { processarAgenda } from "./utils/calendarModule.js";
+import { processarFinanceiro } from "./utils/financeModule.js";
+import { downloadMedia } from "./utils/downloadMedia.js"; 
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
-mongoose.set("strictQuery", false); // Evita warnings do Mongoose
+mongoose.set("strictQuery", false);
 
 const app = express();
 app.use(bodyParser.json());
-
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-/* ========================= PATH ========================= */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Garante que a pasta de áudio existe para não quebrar no deploy
 fs.ensureDirSync(path.join(__dirname, "public/audio"));
 app.use("/audio", express.static(path.join(__dirname, "public/audio")));
 
 /* ========================= CONTROLE ========================= */
 const mensagensProcessadas = new Set();
-// REMOVIDO: const sessionMemory = {}; (Agora usamos o MongoDB)
-let db; // Referência para o driver nativo extraído do Mongoose
+let db;
 let cronStarted = false;
 
 /* ========================= DB ========================= */
 async function connectDB() {
   try {
-    // Conexão unificada via Mongoose
-    await mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 30000,
-    });
-    
+    await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 30000 });
     console.log("🔥 MongoDB Conectado (Mongoose)");
-    
-    // Extrai o driver nativo da conexão já estabelecida
     db = mongoose.connection.db;
-
     if (!cronStarted) {
       startReminderCron(db, sendMessage);
       cronStarted = true;
       console.log("⏰ Cron iniciado");
     }
   } catch (error) {
-    console.error("❌ Erro fatal ao conectar no DB:", error);
-    process.exit(1); // Encerra o app se não tiver banco, para o Render reiniciar
+    console.error("❌ Erro fatal DB:", error);
+    process.exit(1);
   }
 }
-
-// Inicialização
 await connectDB();
-// Passamos a função unificada sendMessage
 await initRoutineFamily(db, sendMessage);
 
 /* ========================= HELPERS ========================= */
-function dividirMensagem(texto, limite = 1500) { // WhatsApp aceita ~4096, 1500 é seguro
+function dividirMensagem(texto, limite = 1500) {
   if (!texto) return [];
   const partes = [];
   let inicio = 0;
@@ -100,74 +89,52 @@ function dividirMensagem(texto, limite = 1500) { // WhatsApp aceita ~4096, 1500 
   return partes;
 }
 
-// Função Unificada de Envio (Substitui as duas anteriores)
 async function sendMessage(to, text) {
   if (!to || !text) return;
-  
-  // Normaliza para string caso venha objeto
   const mensagemFinal = typeof text === 'string' ? text : JSON.stringify(text);
   const partes = dividirMensagem(mensagemFinal);
-
   try {
     for (const parte of partes) {
       await axios.post(
         `https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`,
-        { 
-          messaging_product: "whatsapp", 
-          to, 
-          text: { body: parte } 
-        },
+        { messaging_product: "whatsapp", to, text: { body: parte } },
         { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
       );
     }
   } catch (error) {
-    console.error(`Erro ao enviar msg para ${to}:`, error.response?.data || error.message);
+    console.error(`Erro envio:`, error.message);
   }
 }
 
-async function askGPT(prompt) {
-  const systemPrompt = `
-Você é Amber, uma assistente pessoal do Rafa, altamente inteligente, discreta e confiável, inspirada no arquétipo de Donna Paulsen (Suits).
+// ATUALIZADO: Suporte a Imagem (Vision)
+async function askGPT(prompt, imageUrl = null) {
+  const messages = [
+    { role: "system", content: "Você é Amber. Inteligente, sofisticada e útil." },
+    { role: "user", content: [] }
+  ];
 
-Agora no Brasil são ${DateTime.now().setZone("America/Sao_Paulo").toLocaleString(DateTime.DATETIME_MED)}.
+  messages[1].content.push({ type: "text", text: prompt });
 
-PERSONALIDADE:
-- Extremamente perceptiva e contextual.
-- Segura, calma e precisa.
-- Empática sem ser sentimental.
-- Confiante sem arrogância.
-- Inteligente sem precisar provar.
-- Direta, elegante e objetiva.
-
-COMPORTAMENTO FUNDAMENTAL:
-- Nunca explique processos internos ou que está "memorizando".
-- Nunca invente histórico.
-- Na dúvida, aja com neutralidade elegante.
-
-OBJETIVO:
-- Ajudar o usuário a pensar melhor e facilitar decisões.
-`;
+  if (imageUrl) {
+    messages[1].content.push({
+      type: "image_url",
+      image_url: { url: imageUrl }
+    });
+  }
 
   try {
+    // Usa gpt-4o se tiver imagem, senão gpt-4o-mini
+    const model = imageUrl ? "gpt-4o" : "gpt-4o-mini";
+    
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-4o-mini", 
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.7
-      },
-      {
-        headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }
-      }
+      { model, messages, temperature: 0.7 },
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } }
     );
-
     return response.data.choices?.[0]?.message?.content || "Certo.";
   } catch (error) {
-    console.error("Erro no GPT:", error.response?.data || error.message);
-    return "Desculpe, tive um problema momentâneo de conexão mental.";
+    console.error("Erro GPT:", error.message);
+    return "Erro de conexão mental.";
   }
 }
 
@@ -182,27 +149,18 @@ async function buscarInformacaoDireito(pergunta) {
   }
 }
 
-/* ========================= ROTAS DE VERIFICAÇÃO ========================= */
-// Rota Raiz para Health Check do Render
-app.get("/", (req, res) => {
-  res.status(200).send("Donna/Amber Online 🟢");
-});
-
-const NUMEROS_PERMITIDOS = ["554195194485"]; // Adicione outros se necessário
-const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
-
+app.get("/", (req, res) => res.status(200).send("Amber Ultimate Online 🟢"));
 app.get("/webhook", (req, res) => {
   const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook verificado");
-    return res.status(200).send(challenge);
-  }
+  if (mode === "subscribe" && token === VERIFY_TOKEN) return res.status(200).send(challenge);
   res.sendStatus(403);
 });
+
+const NUMEROS_PERMITIDOS = ["554195194485"];
+const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
 
 /* ========================= WEBHOOK POST ========================= */
 app.post("/webhook", async (req, res) => {
@@ -213,43 +171,86 @@ app.post("/webhook", async (req, res) => {
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
     mensagensProcessadas.add(messageId);
-    
-    // Limpeza automática do cache de IDs
     setTimeout(() => mensagensProcessadas.delete(messageId), 300000);
 
     const from = messageObj.from;
+    const type = messageObj.type;
     
-    // Filtro de segurança e ignore
-    if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) {
+    if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
+
+    let body = "";
+    let imageUrlForGPT = null;
+
+    // --- 1. PROCESSAMENTO DE MÍDIA ---
+    
+    // TEXTO
+    if (type === "text") {
+      body = messageObj.text.body;
+    } 
+    // ÁUDIO
+    else if (type === "audio") {
+      body = await transcreverAudio(messageObj.audio.id);
+    } 
+    // IMAGEM (Vision)
+    else if (type === "image") {
+      await sendMessage(from, "👁️ Analisando imagem...");
+      const buffer = await downloadMedia(messageObj.image.id);
+      if (buffer) {
+        const base64Image = buffer.toString('base64');
+        const mimeType = messageObj.image.mime_type || "image/jpeg";
+        imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
+        body = messageObj.caption || "O que você vê nesta imagem?";
+      } else {
+        await sendMessage(from, "Falha ao baixar imagem.");
         return res.sendStatus(200);
+      }
+    }
+    // DOCUMENTO (PDF)
+    else if (type === "document" && messageObj.document.mime_type === "application/pdf") {
+      await sendMessage(from, "📄 Lendo PDF...");
+      const buffer = await downloadMedia(messageObj.document.id);
+      if (buffer) {
+        try {
+          const data = await pdfParse(buffer);
+          const textoPDF = data.text.slice(0, 3000);
+          body = `(Conteúdo do PDF): ${textoPDF}...\n\n Instrução: ${messageObj.caption || "Resuma"}`;
+        } catch (e) {
+          body = "Erro ao ler PDF.";
+        }
+      }
     }
 
-    const normalized = normalizeMessage(messageObj);
-    if (!normalized) return res.sendStatus(200);
+    if (!body) return res.sendStatus(200);
+    const bodyLower = body.toLowerCase();
 
-    let { body, bodyLower, type, audioId } = normalized;
-    let responderEmAudio = false;
-    let mensagemTexto = body;
+    // Memória Automática
+    await extractAutoMemoryGPT(from, body, askGPT);
 
-    // Processamento de Áudio
-    if (type === "audio") {
-      mensagemTexto = await transcreverAudio(audioId);
-      if (!mensagemTexto) return res.sendStatus(200); // Falha na transcrição
-      bodyLower = mensagemTexto.toLowerCase();
-      responderEmAudio = true;
-    }
+    /* ===== 2. ROTINAS DE COMANDO ===== */
 
-    /* ===== MEMÓRIA AUTOMÁTICA ===== */
-    // Executa em "background" (sem await) se quiser velocidade, mas aqui deixei await para garantir contexto
-    await extractAutoMemoryGPT(from, mensagemTexto, askGPT);
-
-    /* ===== 1. COMANDOS DE ROTINA ===== */
+    // Comandos Básicos (RoutineFamily)
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
       return res.sendStatus(200);
     }
-   
-    /* ===== 2. BROADCAST (ENVIO EM MASSA) ===== */
-    // Regex flexível para: "Amber envia mensagem para X, Y msg" ou "Amber envia mensagem para X, Y: msg"
+
+    // Financeiro (Google Sheets)
+    if (["gastei", "compra", "paguei", "valor"].some(p => bodyLower.includes(p))) {
+      const respFin = await processarFinanceiro(body);
+      if (respFin) { 
+        await sendMessage(from, respFin);
+        return res.sendStatus(200);
+      }
+    }
+
+    // Agenda (Google Calendar)
+    const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
+    if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
+       const respAgenda = await processarAgenda(body);
+       await sendMessage(from, respAgenda);
+       return res.sendStatus(200);
+    }
+
+    // Broadcast (Envio em Massa) - RESTAURADO!
     if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
       const match = bodyLower.match(regex);
@@ -264,121 +265,83 @@ app.post("/webhook", async (req, res) => {
 
       await sendMessage(from, `Iniciando envio para ${numeros.length} contatos...`);
 
-      // 🔥 EXTREMAMENTE IMPORTANTE:
-      // Executamos o loop em background (sem await) para liberar o Webhook imediatamente.
-      // Isso evita Timeout do WhatsApp.
       (async () => {
           const sleep = ms => new Promise(r => setTimeout(r, ms));
           for (const numero of numeros) {
             await sendMessage(numero, mensagemParaEnviar);
-            await sleep(2000); // Pausa de 2s para evitar bloqueio por spam
+            await sleep(2000);
           }
           await sendMessage(from, "✅ Envio em massa concluído.");
-      })().catch(err => console.error("Erro no broadcast background:", err));
+      })().catch(err => console.error("Erro no broadcast:", err));
 
-      return res.sendStatus(200); // Retorna OK para o WhatsApp imediatamente
-    }
-
-    /* ===== 3. INGLÊS ===== */
-    if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
-      const respostaEnglish = await amberEnglishUltimate({
-        userId: from,
-        pergunta: mensagemTexto,
-        level: "beginner"
-      });
-      await sendMessage(from, respostaEnglish);
-      return res.sendStatus(200); // IMPORTANTE: Return para parar execução
-    }
-
-    /* ===== AGENDA GOOGLE ===== */
-// Gatilhos: "agenda", "marcar", "reunião", "compromisso", "o que tenho hoje"
-const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
-if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
-   // Feedback imediato para o usuário não achar que travou
-   // await sendMessage(from, "Verificando sua agenda..."); 
-
-   const respostaAgenda = await processarAgenda(mensagemTexto);
-   await sendMessage(from, respostaAgenda);
-   return res.sendStatus(200);
-}
-    
-    /* ===== 4. DIREITO ===== */
-    if (["lei", "artigo", "direito", "jurisprudência"].some(p => bodyLower.includes(p))) {
-      const refs = await buscarInformacaoDireito(mensagemTexto);
-      const resposta = await askGPT(
-        `Responda com base em leis brasileiras oficiais.\nReferências:\n${refs}\n\nPergunta: ${mensagemTexto}`
-      );
-      await sendMessage(from, resposta);
       return res.sendStatus(200);
     }
 
-    /* ===== 5. CLIMA ===== */
+    // Inglês
+    if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
+      const respEng = await amberEnglishUltimate({ userId: from, pergunta: body, level: "beginner" });
+      await sendMessage(from, respEng);
+      return res.sendStatus(200);
+    }
+
+    // Direito
+    if (["lei", "artigo", "direito", "jurisprudência"].some(p => bodyLower.includes(p))) {
+      const refs = await buscarInformacaoDireito(body);
+      const respDir = await askGPT(`Leis BR:\n${refs}\n\nPergunta: ${body}`);
+      await sendMessage(from, respDir);
+      return res.sendStatus(200);
+    }
+
+    // Clima - RESTAURADO!
     if (["clima", "tempo", "previsão"].some(p => bodyLower.includes(p))) {
       const clima = await getWeather("Curitiba", "hoje");
       await sendMessage(from, clima);
       return res.sendStatus(200);
     }
 
-    /* ===== 6. CONTEXTO GERAL + IA (Fallback) ===== */
+    /* ===== 3. FLUXO PRINCIPAL (IA + MEMÓRIA) ===== */
+    
+    let userSession = await Session.findOne({ userId: from });
+    if (!userSession) userSession = await Session.create({ userId: from, messages: [] });
+    
+    userSession.messages.push(`Usuário: ${body}`);
+    if (userSession.messages.length > 15) userSession.messages = userSession.messages.slice(-15);
+
     const fatos = (await consultarFatos(from)).map(f => typeof f === "string" ? f : f.content);
     const fatosFiltrados = selectMemoriesForPrompt(fatos);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
-    // [MODIFICADO] Gerenciamento de sessão PERSISTENTE (MongoDB)
-    let userSession = await Session.findOne({ userId: from });
-    if (!userSession) {
-      // Cria nova sessão se não existir
-      userSession = await Session.create({ userId: from, messages: [] });
-    }
-
-    // Adiciona a mensagem atual
-    userSession.messages.push(`Usuário: ${mensagemTexto}`);
-    
-    // Mantém apenas as últimas 15 mensagens no banco
-    if (userSession.messages.length > 15) {
-      userSession.messages = userSession.messages.slice(-15);
-    }
-
     const prompt = `
-FATOS CONHECIDOS:
-${fatosFiltrados.map(f => f.content || f).join("\n")}
+      FATOS: ${fatosFiltrados.join("\n")}
+      HISTÓRICO: ${memoriaSemantica.join("\n")}
+      CONVERSA: ${userSession.messages.join("\n")}
+      MSG ATUAL: ${body}
+    `;
 
-HISTÓRICO RELEVANTE:
-${memoriaSemantica.join("\n")}
-
-CONVERSA ATUAL:
-${userSession.messages.join("\n")}
-
-Última mensagem: ${mensagemTexto}
-`;
-
-    let respostaIA = await askGPT(prompt);
+    let respostaIA = await askGPT(prompt, imageUrlForGPT);
     
-    // AmberMind: Verifica se a IA alucinou ou precisa de ajuste
-    const decisao = await amberMind({ from, mensagem: mensagemTexto, respostaIA });
+    const decisao = await amberMind({ from, mensagem: body, respostaIA });
     const respostaFinal = decisao.override ? decisao.resposta : respostaIA;
 
-    // Salva a resposta da Amber na sessão
     userSession.messages.push(`Amber: ${respostaFinal}`);
-    
-    // Atualiza o TTL (expiração)
     userSession.lastUpdate = new Date();
-    await userSession.save(); // Salva no MongoDB
+    await userSession.save();
     
-    // Salva na memória semântica de longo prazo
+    // Salva na memória semântica (Longo prazo)
     await addSemanticMemory(
-      `Pergunta: ${mensagemTexto} | Resposta: ${respostaFinal}`,
+      `Pergunta: ${body} | Resposta: ${respostaFinal}`,
       "histórico",
       from,
       "user"
     );
 
-    if (responderEmAudio) {
+    // Resposta em Áudio ou Texto
+    if (type === "audio") { // Se entrou áudio, sai áudio
       try {
           const audioPath = await falar(respostaFinal);
           await sendAudio(from, audioPath);
       } catch (audioErr) {
-          console.error("Erro ao gerar audio, enviando texto:", audioErr);
+          console.error("Erro audio:", audioErr);
           await sendMessage(from, respostaFinal);
       }
     } else {
@@ -388,13 +351,9 @@ ${userSession.messages.join("\n")}
     return res.sendStatus(200);
 
   } catch (err) {
-    console.error("❌ Erro CRÍTICO no webhook:", err);
-    // Mesmo com erro, respondemos 200 para o WhatsApp não ficar reenviando a mensagem "travada"
-    return res.sendStatus(200); 
+    console.error("❌ Erro webhook:", err);
+    return res.sendStatus(200);
   }
 });
 
-/* ========================= START ========================= */
-app.listen(PORT, () => {
-  console.log(`✅ Donna rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Amber Ultimate rodando na porta ${PORT}`));
