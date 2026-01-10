@@ -122,18 +122,18 @@ async function askGPT(prompt, imageUrl = null) {
   }
 
   try {
-    // Tenta usar gpt-4o para visão, se der erro de "Tier", o catch captura
-    const model = imageUrl ? "gpt-4o" : "gpt-4o-mini";
+    // Forçamos o gpt-4o-mini que é mais estável e também tem visão
+    const model = "gpt-4o-mini"; 
     
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       { model, messages, temperature: 0.7 },
-      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } }
+      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
     );
     return response.data.choices?.[0]?.message?.content || "Certo.";
   } catch (error) {
-    console.error("❌ Erro OpenAI (askGPT):", error.response?.data || error.message);
-    return "Tive um problema ao processar essa informação agora.";
+    console.error("❌ Erro OpenAI:", error.response?.data || error.message);
+    return "Tive um soluço mental, pode repetir?";
   }
 }
 
