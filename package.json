@@ -12,6 +12,7 @@
   "license": "MIT",
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.16.0",
+    "@google-cloud/aiplatform": "^3.30.0",
     "axios": "^1.6.6",
     "body-parser": "^1.20.2",
     "dotenv": "^16.6.1",
@@ -23,15 +24,15 @@
     "mongoose": "^7.7.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.2",
+    "node-fetch": "^3.3.2",
     "openai": "^4.8.0",
     "pdf-parse-fork": "^1.1.1",
-    "say": "^0.16.0"
+    "pdfkit": "^0.13.0",
+    "say": "^0.16.0",
+    "tesseract.js": "^4.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1",
-    "xlsx": "^0.18.5",
-    "pdfkit": "^0.13.0",
-    "node-fetch": "^3.3.2",
-    "tesseract.js": "^4.1.1"
+    "nodemon": "^3.0.1"
   }
 }
