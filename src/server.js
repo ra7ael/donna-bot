@@ -189,8 +189,9 @@ app.post("/webhook", async (req, res) => {
     else if (type === "audio") {
       body = await transcreverAudio(messageObj.audio.id);
     } 
+    // ESTE BLOCO FOI REVISADO:
     else if (type === "image") {
-      console.log(`📸 Imagem detectada! ID: ${messageObj.image.id}`);
+      console.log(`📸 Iniciando processamento de imagem! ID: ${messageObj.image.id}`);
       await sendMessage(from, "👁️ Analisando imagem...");
       
       const buffer = await downloadMedia(messageObj.image.id);
@@ -202,12 +203,11 @@ app.post("/webhook", async (req, res) => {
         body = messageObj.caption || "O que você vê nesta imagem?";
       } else {
         console.error("❌ Falha ao baixar o buffer da imagem.");
-        await sendMessage(from, "Não consegui baixar a foto.");
+        await sendMessage(from, "Não consegui baixar a foto agora.");
         return res.sendStatus(200);
       }
-    }  
-      
-else if (type === "document") {
+    }
+    else if (type === "document") {
       console.log(`📄 Documento detectado! Mime: ${messageObj.document.mime_type}`);
       if (messageObj.document.mime_type === "application/pdf") {
         await sendMessage(from, "📄 Lendo PDF...");
@@ -215,27 +215,26 @@ else if (type === "document") {
         if (buffer) {
           try {
             const data = await pdfParse(buffer);
-            // Remove espaços extras e limpa o texto
             const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
             
             if (textoExtraido.length < 5) {
-               console.log("⚠️ PDF parece não conter texto extraível (pode ser uma imagem).");
-               body = "O usuário enviou um PDF, mas o arquivo parece ser uma imagem digitalizada ou estar sem texto reconhecível. Avise que você não conseguiu ler as letras dentro dele.";
+               console.log("⚠️ PDF sem texto (imagem).");
+               body = "O usuário enviou um PDF que parece ser apenas uma imagem digitalizada. Avise que você não conseguiu ler o texto dele.";
             } else {
-               console.log(`✅ PDF extraído com sucesso (${textoExtraido.length} caracteres).`);
-               body = `CONTEÚDO DO DOCUMENTO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
+               console.log(`✅ PDF extraído (${textoExtraido.length} caracteres).`);
+               body = `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
             }
           } catch (e) {
             console.error("❌ Erro no pdfParse:", e.message);
-            body = "Houve um erro técnico ao tentar decifrar este PDF.";
+            body = "Erro técnico ao ler o PDF.";
           }
         }
       } else {
-        await sendMessage(from, "Por enquanto, consigo ler apenas arquivos em formato PDF.");
+        await sendMessage(from, "Por enquanto só leio PDFs.");
         return res.sendStatus(200);
       }
     }
-
+    
     if (!body) return res.sendStatus(200);
     const bodyLower = body.toLowerCase();
 
