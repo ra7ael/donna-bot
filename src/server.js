@@ -8,7 +8,7 @@ import { DateTime } from "luxon";
 import path from "path";
 import fs from "fs-extra";
 import { fileURLToPath } from "url";
-import pdfParse from "pdf-parse"; // Leitor de PDF
+import pdfParse from "pdf-parse-fork";
 
 /* ========================= IMPORTS INTERNOS ========================= */
 import { startReminderCron } from "./cron/reminders.js";
