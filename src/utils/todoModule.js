@@ -1,11 +1,15 @@
 import { Todo } from "../models/todo.js";
 
 export async function processarTasks(userId, texto) {
-  const textoBaixo = texto.toLowerCase();
+  // Limpa o nome da Amber e espaços extras para a tarefa ficar limpa
+  const textoLimpo = texto.replace(/amber,?\s?/gi, "").trim();
+  const textoBaixo = textoLimpo.toLowerCase();
 
   // 1. ADICIONAR TAREFA
-  if (textoBaixo.includes("preciso") || textoBaixo.includes("anota aí") || textoBaixo.includes("tarefa:")) {
-    const task = texto.replace(/preciso|anota aí|tarefa:/gi, "").trim();
+  if (textoBaixo.includes("preciso") || textoBaixo.includes("anota aí") || textoBaixo.startsWith("tarefa:")) {
+    const task = textoLimpo.replace(/preciso|anota aí|tarefa:/gi, "").trim();
+    if (!task) return "O que exatamente você precisa que eu anote?";
+    
     await Todo.create({ userId, task });
     return `✅ Deixei anotado: "${task}"`;
   }
@@ -19,14 +23,15 @@ export async function processarTasks(userId, texto) {
     return `📝 Suas tarefas pendentes:\n\n${lista}`;
   }
 
-// 3. CONCLUIR TAREFA (Melhorado)
+  // 3. CONCLUIR TAREFA
   if (textoBaixo.startsWith("feito") || textoBaixo.startsWith("concluí") || textoBaixo.startsWith("check") || textoBaixo.includes("já comprei")) {
-    // Limpa o comando e foca na palavra-chave (ex: "pilhas")
+    // Pegamos apenas a palavra principal (ex: pilhas)
     const search = textoBaixo
-      .replace(/feito|concluí|check|já comprei|o das|as|os|da|do/gi, "")
+      .replace(/feito|concluí|check|já comprei|o das|as|os|da|do|de|do/gi, "")
       .trim();
 
-    // Busca por qualquer tarefa pendente que contenha essa palavra-chave
+    if (!search) return "Diga o nome da tarefa que você concluiu.";
+
     const task = await Todo.findOneAndUpdate(
       { 
         userId, 
@@ -39,6 +44,8 @@ export async function processarTasks(userId, texto) {
 
     if (task) return `✔️ Marquei como feito: "${task.task}"`;
     
-    // Plano B: Se não achou, lista o que tem para o usuário ser mais específico
-    return "Não encontrei essa tarefa. Digite 'minhas tarefas' para ver a lista exata.";
+    return "Não encontrei essa tarefa pendente. Digite 'minhas tarefas' para ver a lista.";
   }
+
+  return null;
+}
