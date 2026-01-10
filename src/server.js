@@ -33,6 +33,7 @@ import { downloadMedia } from "./utils/downloadMedia.js";
 import { processarTasks } from "./utils/todoModule.js";
 import { buscarNoticiasComIA } from "./utils/newsModule.js";
 import { verificarContextoProativo } from "./utils/proactiveModule.js";
+import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -283,6 +284,21 @@ if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
        await sendMessage(from, respAgenda);
        return res.sendStatus(200);
     }
+
+    if (bodyLower.startsWith("desenha") || bodyLower.startsWith("imagem de")) {
+  await sendMessage(from, "🎨 Deixa comigo! Estou criando sua imagem com o Imagen 3...");
+  
+  const prompt = body.replace(/desenha|imagem de/gi, "").trim();
+  const imageBase64 = await gerarImagemGoogle(prompt);
+
+  if (imageBase64) {
+    // Exemplo de envio via Media (ajuste para a sua função de envio de imagem)
+    await sendImage(from, imageBase64, `🖌️ "${prompt}"`);
+  } else {
+    await sendMessage(from, "Tive um problema técnico ao gerar a imagem. Verifique os logs no Render.");
+  }
+  return res.sendStatus(200);
+}
 
     if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
