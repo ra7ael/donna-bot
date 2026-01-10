@@ -207,7 +207,7 @@ app.post("/webhook", async (req, res) => {
       }
     }  
       
-    else if (type === "document") {
+else if (type === "document") {
       console.log(`📄 Documento detectado! Mime: ${messageObj.document.mime_type}`);
       if (messageObj.document.mime_type === "application/pdf") {
         await sendMessage(from, "📄 Lendo PDF...");
@@ -215,19 +215,23 @@ app.post("/webhook", async (req, res) => {
         if (buffer) {
           try {
             const data = await pdfParse(buffer);
-            // Limpamos o texto do PDF para tirar quebras de linha excessivas
-            const textoLimpo = data.text.replace(/\s+/g, ' ').trim().slice(0, 4000);
+            // Remove espaços extras e limpa o texto
+            const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
             
-            // Aqui damos uma instrução direta e colamos o conteúdo
-            body = `CONTEÚDO DO DOCUMENTO PDF: """${textoLimpo}"""\n\nInstrução do usuário: ${messageObj.caption || "Resuma este documento para mim."}`;
-            console.log("✅ PDF extraído e anexado ao corpo da mensagem.");
+            if (textoExtraido.length < 5) {
+               console.log("⚠️ PDF parece não conter texto extraível (pode ser uma imagem).");
+               body = "O usuário enviou um PDF, mas o arquivo parece ser uma imagem digitalizada ou estar sem texto reconhecível. Avise que você não conseguiu ler as letras dentro dele.";
+            } else {
+               console.log(`✅ PDF extraído com sucesso (${textoExtraido.length} caracteres).`);
+               body = `CONTEÚDO DO DOCUMENTO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
+            }
           } catch (e) {
             console.error("❌ Erro no pdfParse:", e.message);
-            body = "Erro ao ler o texto do PDF.";
+            body = "Houve um erro técnico ao tentar decifrar este PDF.";
           }
         }
       } else {
-        await sendMessage(from, "No momento só consigo ler arquivos PDF.");
+        await sendMessage(from, "Por enquanto, consigo ler apenas arquivos em formato PDF.");
         return res.sendStatus(200);
       }
     }
