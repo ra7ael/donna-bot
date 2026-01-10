@@ -32,6 +32,7 @@ import { processarFinanceiro } from "./utils/financeModule.js";
 import { downloadMedia } from "./utils/downloadMedia.js"; 
 import { processarTasks } from "./utils/todoModule.js";
 import { buscarNoticiasComIA } from "./utils/newsModule.js";
+import cron from "node-cron";
 import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 
