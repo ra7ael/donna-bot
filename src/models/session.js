@@ -12,8 +12,7 @@ const SessionSchema = new mongoose.Schema({
   }],
   lastUpdate: { 
     type: Date, 
-    default: Date.now,
-    expires: 86400 // TTL: Apaga a sessão automaticamente após 24h de inatividade
+    default: Date.now
   }
 });
 
