@@ -1,16 +1,14 @@
 // src/utils/downloadMedia.js
 import axios from 'axios';
-import fs from 'fs';
 
 export async function downloadMedia(mediaId) {
   if (!mediaId) return null;
-
   const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 
   try {
-    // Pega a URL do media
+    // Tente usar v19.0 que é mais estável para Vision
     const mediaInfo = await axios.get(
-      `https://graph.facebook.com/v17.0/${mediaId}`,
+      `https://graph.facebook.com/v19.0/${mediaId}`,
       { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
     );
 
@@ -22,7 +20,8 @@ export async function downloadMedia(mediaId) {
 
     return Buffer.from(mediaData.data);
   } catch (err) {
-    console.error('❌ Erro ao baixar áudio:', err.response?.data || err);
+    // Importante: Adicione este log para vermos o erro real se falhar
+    console.error('❌ Erro no downloadMedia:', err.response?.data || err.message);
     return null;
   }
 }
