@@ -168,6 +168,10 @@ app.post("/webhook", async (req, res) => {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
 
+    // ADICIONE ESTA LINHA AQUI:
+    console.log(`📩 Nova mensagem recebida! Tipo: ${messageObj.type} de: ${messageObj.from}`);
+
+    
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
     mensagensProcessadas.add(messageId);
