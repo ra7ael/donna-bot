@@ -30,6 +30,7 @@ import { Session } from "./models/session.js";
 import { processarAgenda } from "./utils/calendarModule.js";
 import { processarFinanceiro } from "./utils/financeModule.js";
 import { downloadMedia } from "./utils/downloadMedia.js"; 
+import { processarTasks } from "./utils/todoModule.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -253,6 +254,13 @@ app.post("/webhook", async (req, res) => {
         await sendMessage(from, respFin);
         return res.sendStatus(200);
       }
+    }
+
+    // NOVO: BLOCO DO GERENCIADOR DE TAREFAS (ToDo)
+    const respTask = await processarTasks(from, body);
+    if (respTask) {
+      await sendMessage(from, respTask);
+      return res.sendStatus(200);
     }
 
     const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
