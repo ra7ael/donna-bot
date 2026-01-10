@@ -299,13 +299,19 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /* ===== 3. FLUXO PRINCIPAL ===== */
+/* ===== 3. FLUXO PRINCIPAL ===== */
     
-    let userSession = await Session.findOne({ userId: from });
-    if (!userSession) userSession = await Session.create({ userId: from, messages: [] });
-    
-    userSession.messages.push(`Usuário: ${body}`);
-    if (userSession.messages.length > 15) userSession.messages = userSession.messages.slice(-15);
+    // Em vez de findOne + save, usamos findOneAndUpdate para evitar VersionError
+    const userSession = await Session.findOneAndUpdate(
+      { userId: from },
+      { 
+        $push: { 
+          messages: { $each: [`Usuário: ${body}`], $slice: -15 } 
+        },
+        $set: { lastUpdate: new Date() }
+      },
+      { upsert: true, new: true }
+    );
 
     const fatos = (await consultarFatos(from)).map(f => typeof f === "string" ? f : f.content);
     const fatosFiltrados = selectMemoriesForPrompt(fatos);
@@ -323,9 +329,15 @@ app.post("/webhook", async (req, res) => {
     const decisao = await amberMind({ from, mensagem: body, respostaIA });
     const respostaFinal = decisao.override ? decisao.resposta : respostaIA;
 
-    userSession.messages.push(`Amber: ${respostaFinal}`);
-    userSession.lastUpdate = new Date();
-    await userSession.save();
+    // Atualiza a resposta da Amber na sessão
+    await Session.updateOne(
+      { userId: from },
+      { 
+        $push: { 
+          messages: { $each: [`Amber: ${respostaFinal}`], $slice: -15 } 
+        } 
+      }
+    );
     
     await addSemanticMemory(`Pergunta: ${body} | Resposta: ${respostaFinal}`, "histórico", from, "user");
 
