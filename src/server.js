@@ -31,6 +31,7 @@ import { processarAgenda } from "./utils/calendarModule.js";
 import { processarFinanceiro } from "./utils/financeModule.js";
 import { downloadMedia } from "./utils/downloadMedia.js"; 
 import { processarTasks } from "./utils/todoModule.js";
+import { buscarNoticias } from "./utils/newsModule.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -263,6 +264,17 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
+  await sendMessage(from, "🔎 Buscando as últimas notícias...");
+  
+  // Tenta identificar o tema (ex: notícias de economia)
+  const tema = bodyLower.replace(/notícias|novidades|sobre|de|da/gi, "").trim() || "tecnologia";
+  
+  const news = await buscarNoticias(tema);
+  await sendMessage(from, news);
+  return res.sendStatus(200);
+}
+    
     const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
     if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
        const respAgenda = await processarAgenda(body);
