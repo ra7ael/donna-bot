@@ -23,6 +23,8 @@ import { transcreverAudio } from "./utils/transcreverAudio.js";
 import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { selectMemoriesForPrompt } from "./memorySelector.js";
+// IMPORTANTE: Importamos o modelo de sessão aqui
+import { Session } from "./models/session.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -47,7 +49,7 @@ app.use("/audio", express.static(path.join(__dirname, "public/audio")));
 
 /* ========================= CONTROLE ========================= */
 const mensagensProcessadas = new Set();
-const sessionMemory = {};
+// REMOVIDO: const sessionMemory = {}; (Agora usamos o MongoDB)
 let db; // Referência para o driver nativo extraído do Mongoose
 let cronStarted = false;
 
@@ -149,7 +151,7 @@ OBJETIVO:
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o-mini", // CORRIGIDO: gpt-5-mini não existe publicamente
+        model: "gpt-4o-mini", 
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt }
@@ -309,10 +311,20 @@ app.post("/webhook", async (req, res) => {
     const fatosFiltrados = selectMemoriesForPrompt(fatos);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
-    // Gerenciamento simples de sessão (Cuidado: reseta no restart do Render)
-    sessionMemory[from] = sessionMemory[from] || [];
-    sessionMemory[from].push(`Usuário: ${mensagemTexto}`);
-    if (sessionMemory[from].length > 15) sessionMemory[from].shift();
+    // [MODIFICADO] Gerenciamento de sessão PERSISTENTE (MongoDB)
+    let userSession = await Session.findOne({ userId: from });
+    if (!userSession) {
+      // Cria nova sessão se não existir
+      userSession = await Session.create({ userId: from, messages: [] });
+    }
+
+    // Adiciona a mensagem atual
+    userSession.messages.push(`Usuário: ${mensagemTexto}`);
+    
+    // Mantém apenas as últimas 15 mensagens no banco
+    if (userSession.messages.length > 15) {
+      userSession.messages = userSession.messages.slice(-15);
+    }
 
     const prompt = `
 FATOS CONHECIDOS:
@@ -322,7 +334,7 @@ HISTÓRICO RELEVANTE:
 ${memoriaSemantica.join("\n")}
 
 CONVERSA ATUAL:
-${sessionMemory[from].join("\n")}
+${userSession.messages.join("\n")}
 
 Última mensagem: ${mensagemTexto}
 `;
@@ -333,8 +345,12 @@ ${sessionMemory[from].join("\n")}
     const decisao = await amberMind({ from, mensagem: mensagemTexto, respostaIA });
     const respostaFinal = decisao.override ? decisao.resposta : respostaIA;
 
-    // Salva a interação
-    sessionMemory[from].push(`Amber: ${respostaFinal}`);
+    // Salva a resposta da Amber na sessão
+    userSession.messages.push(`Amber: ${respostaFinal}`);
+    
+    // Atualiza o TTL (expiração)
+    userSession.lastUpdate = new Date();
+    await userSession.save(); // Salva no MongoDB
     
     // Salva na memória semântica de longo prazo
     await addSemanticMemory(
