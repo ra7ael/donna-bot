@@ -205,7 +205,8 @@ app.post("/webhook", async (req, res) => {
         await sendMessage(from, "Não consegui baixar a foto.");
         return res.sendStatus(200);
       }
-    }
+    }  
+      
     else if (type === "document") {
       console.log(`📄 Documento detectado! Mime: ${messageObj.document.mime_type}`);
       if (messageObj.document.mime_type === "application/pdf") {
@@ -214,15 +215,19 @@ app.post("/webhook", async (req, res) => {
         if (buffer) {
           try {
             const data = await pdfParse(buffer);
-            body = `(Conteúdo do PDF enviado): ${data.text.slice(0, 3000)}...\n\n Instrução: ${messageObj.caption || "Resuma"}`;
-            console.log("✅ PDF processado com sucesso.");
+            // Limpamos o texto do PDF para tirar quebras de linha excessivas
+            const textoLimpo = data.text.replace(/\s+/g, ' ').trim().slice(0, 4000);
+            
+            // Aqui damos uma instrução direta e colamos o conteúdo
+            body = `CONTEÚDO DO DOCUMENTO PDF: """${textoLimpo}"""\n\nInstrução do usuário: ${messageObj.caption || "Resuma este documento para mim."}`;
+            console.log("✅ PDF extraído e anexado ao corpo da mensagem.");
           } catch (e) {
             console.error("❌ Erro no pdfParse:", e.message);
             body = "Erro ao ler o texto do PDF.";
           }
         }
       } else {
-        await sendMessage(from, "Amber por enquanto só consegue ler documentos em formato PDF.");
+        await sendMessage(from, "No momento só consigo ler arquivos PDF.");
         return res.sendStatus(200);
       }
     }
