@@ -1,29 +1,42 @@
 import axios from "axios";
 
-export async function buscarNoticias(tema = "tecnologia") {
+export async function buscarNoticiasComIA(tema, askGPT) {
   const apiKey = process.env.NEWS_API_KEY;
-  // Traduzimos alguns termos comuns para inglês para obter melhores resultados globais, 
-  // mas pediremos o resumo em português.
-  const query = tema === "tecnologia" ? "technology" : tema;
+  const query = tema || "tecnologia e inovação";
   
-  const url = `https://newsapi.org/v2/top-headlines?q=${query}&language=pt&apiKey=${apiKey}`;
+  // Buscamos notícias em português
+  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=pt&sortBy=relevancy&pageSize=5&apiKey=${apiKey}`;
 
   try {
     const response = await axios.get(url);
     const articles = response.data.articles;
 
     if (!articles || articles.length === 0) {
-      return "Não encontrei notícias recentes sobre esse tema agora.";
+      return "Não encontrei novidades relevantes sobre esse tema no momento.";
     }
 
-    // Pegamos as 3 principais notícias
-    const topNoticias = articles.slice(0, 3).map((art, i) => {
-      return `${i + 1}. *${art.title}*\n🔗 ${art.url}`;
-    }).join("\n\n");
+    // Criamos um bloco de texto com os títulos e descrições para a IA ler
+    const contextoNoticias = articles.map((art, i) => 
+      `Manchete ${i+1}: ${art.title}\nResumo: ${art.description}\nFonte: ${art.source.name}\n---`
+    ).join("\n");
 
-    return `📰 *Principais notícias sobre ${tema}:*\n\n${topNoticias}`;
+    const promptIA = `
+      Você é a Amber, uma analista de informações sofisticada. 
+      Recebi as seguintes notícias sobre "${query}":
+      
+      ${contextoNoticias}
+      
+      Sua tarefa:
+      1. Faça um resumo executivo de 2 a 3 parágrafos conectando os pontos principais dessas notícias.
+      2. Use um tom profissional e inteligente.
+      3. Ao final, liste apenas os links das 3 notícias mais importantes com o título.
+    `;
+
+    const resumoIA = await askGPT(promptIA);
+    return resumoIA;
+
   } catch (error) {
-    console.error("❌ Erro ao buscar notícias:", error.message);
-    return "Tive um problema ao conectar com o portal de notícias.";
+    console.error("❌ Erro no NewsModule:", error.message);
+    return "Houve um erro ao acessar o feed de notícias. Tente novamente em instantes.";
   }
 }
