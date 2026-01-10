@@ -19,16 +19,26 @@ export async function processarTasks(userId, texto) {
     return `📝 Suas tarefas pendentes:\n\n${lista}`;
   }
 
-  // 3. CONCLUIR TAREFA
-  if (textoBaixo.startsWith("feito") || textoBaixo.startsWith("concluí") || textoBaixo.startsWith("check")) {
-    const search = texto.replace(/feito|concluí|check/gi, "").trim();
-    const task = await Todo.findOneAndUpdate(
-      { userId, status: "pendente", task: new RegExp(search, "i") },
-      { status: "concluido", completedAt: new Date() }
-    );
-    if (task) return `✔️ Marquei como feito: "${task.task}"`;
-    return "Não encontrei essa tarefa pendente.";
-  }
+// 3. CONCLUIR TAREFA (Melhorado)
+  if (textoBaixo.startsWith("feito") || textoBaixo.startsWith("concluí") || textoBaixo.startsWith("check") || textoBaixo.includes("já comprei")) {
+    // Limpa o comando e foca na palavra-chave (ex: "pilhas")
+    const search = textoBaixo
+      .replace(/feito|concluí|check|já comprei|o das|as|os|da|do/gi, "")
+      .trim();
 
-  return null;
-}
+    // Busca por qualquer tarefa pendente que contenha essa palavra-chave
+    const task = await Todo.findOneAndUpdate(
+      { 
+        userId, 
+        status: "pendente", 
+        task: new RegExp(search, "i") 
+      },
+      { status: "concluido", completedAt: new Date() },
+      { new: true }
+    );
+
+    if (task) return `✔️ Marquei como feito: "${task.task}"`;
+    
+    // Plano B: Se não achou, lista o que tem para o usuário ser mais específico
+    return "Não encontrei essa tarefa. Digite 'minhas tarefas' para ver a lista exata.";
+  }
