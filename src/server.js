@@ -106,7 +106,6 @@ async function sendMessage(to, text) {
   }
 }
 
-// ATUALIZADO: Suporte a Imagem (Vision)
 async function askGPT(prompt, imageUrl = null) {
   const messages = [
     { role: "system", content: "Você é Amber. Inteligente, sofisticada e útil." },
@@ -123,7 +122,7 @@ async function askGPT(prompt, imageUrl = null) {
   }
 
   try {
-    // Usa gpt-4o se tiver imagem, senão gpt-4o-mini
+    // Tenta usar gpt-4o para visão, se der erro de "Tier", o catch captura
     const model = imageUrl ? "gpt-4o" : "gpt-4o-mini";
     
     const response = await axios.post(
@@ -133,8 +132,8 @@ async function askGPT(prompt, imageUrl = null) {
     );
     return response.data.choices?.[0]?.message?.content || "Certo.";
   } catch (error) {
-    console.error("Erro GPT:", error.message);
-    return "Erro de conexão mental.";
+    console.error("❌ Erro OpenAI (askGPT):", error.response?.data || error.message);
+    return "Tive um problema ao processar essa informação agora.";
   }
 }
 
@@ -168,10 +167,8 @@ app.post("/webhook", async (req, res) => {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
 
-    // ADICIONE ESTA LINHA AQUI:
     console.log(`📩 Nova mensagem recebida! Tipo: ${messageObj.type} de: ${messageObj.from}`);
 
-    
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
     mensagensProcessadas.add(messageId);
@@ -187,29 +184,32 @@ app.post("/webhook", async (req, res) => {
 
     // --- 1. PROCESSAMENTO DE MÍDIA ---
     
-    // TEXTO
     if (type === "text") {
       body = messageObj.text.body;
     } 
-    // ÁUDIO
     else if (type === "audio") {
       body = await transcreverAudio(messageObj.audio.id);
     } 
-    // IMAGEM (Vision)
     else if (type === "image") {
+      console.log("📸 Processando Imagem...");
       await sendMessage(from, "👁️ Analisando imagem...");
-      const buffer = await downloadMedia(messageObj.image.id);
-      if (buffer) {
-        const base64Image = buffer.toString('base64');
-        const mimeType = messageObj.image.mime_type || "image/jpeg";
-        imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
-        body = messageObj.caption || "O que você vê nesta imagem?";
-      } else {
-        await sendMessage(from, "Falha ao baixar imagem.");
-        return res.sendStatus(200);
+      try {
+        const buffer = await downloadMedia(messageObj.image.id);
+        if (buffer) {
+          const base64Image = buffer.toString('base64');
+          const mimeType = messageObj.image.mime_type || "image/jpeg";
+          imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
+          body = messageObj.caption || "O que você vê nesta imagem?";
+          console.log("✅ Imagem convertida para Base64.");
+        } else {
+          console.error("❌ Buffer de imagem vazio.");
+          await sendMessage(from, "Não consegui baixar a foto.");
+          return res.sendStatus(200);
+        }
+      } catch (err) {
+        console.error("❌ Erro no processamento de imagem:", err.message);
       }
     }
-    // DOCUMENTO (PDF)
     else if (type === "document" && messageObj.document.mime_type === "application/pdf") {
       await sendMessage(from, "📄 Lendo PDF...");
       const buffer = await downloadMedia(messageObj.document.id);
@@ -219,6 +219,7 @@ app.post("/webhook", async (req, res) => {
           const textoPDF = data.text.slice(0, 3000);
           body = `(Conteúdo do PDF): ${textoPDF}...\n\n Instrução: ${messageObj.caption || "Resuma"}`;
         } catch (e) {
+          console.error("❌ Erro ao processar PDF:", e.message);
           body = "Erro ao ler PDF.";
         }
       }
@@ -227,17 +228,14 @@ app.post("/webhook", async (req, res) => {
     if (!body) return res.sendStatus(200);
     const bodyLower = body.toLowerCase();
 
-    // Memória Automática
     await extractAutoMemoryGPT(from, body, askGPT);
 
     /* ===== 2. ROTINAS DE COMANDO ===== */
 
-    // Comandos Básicos (RoutineFamily)
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
       return res.sendStatus(200);
     }
 
-    // Financeiro (Google Sheets)
     if (["gastei", "compra", "paguei", "valor"].some(p => bodyLower.includes(p))) {
       const respFin = await processarFinanceiro(body);
       if (respFin) { 
@@ -246,7 +244,6 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // Agenda (Google Calendar)
     const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
     if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
        const respAgenda = await processarAgenda(body);
@@ -254,21 +251,16 @@ app.post("/webhook", async (req, res) => {
        return res.sendStatus(200);
     }
 
-    // Broadcast (Envio em Massa) - RESTAURADO!
     if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
       const match = bodyLower.match(regex);
-
       if (!match) {
         await sendMessage(from, "Formato: 'Amber envia mensagem para <numeros> <mensagem>'");
         return res.sendStatus(200);
       }
-
       const numeros = match[1].replace(/\s/g, "").split(",").filter(Boolean);
       const mensagemParaEnviar = match[2];
-
       await sendMessage(from, `Iniciando envio para ${numeros.length} contatos...`);
-
       (async () => {
           const sleep = ms => new Promise(r => setTimeout(r, ms));
           for (const numero of numeros) {
@@ -277,18 +269,15 @@ app.post("/webhook", async (req, res) => {
           }
           await sendMessage(from, "✅ Envio em massa concluído.");
       })().catch(err => console.error("Erro no broadcast:", err));
-
       return res.sendStatus(200);
     }
 
-    // Inglês
     if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
       const respEng = await amberEnglishUltimate({ userId: from, pergunta: body, level: "beginner" });
       await sendMessage(from, respEng);
       return res.sendStatus(200);
     }
 
-    // Direito
     if (["lei", "artigo", "direito", "jurisprudência"].some(p => bodyLower.includes(p))) {
       const refs = await buscarInformacaoDireito(body);
       const respDir = await askGPT(`Leis BR:\n${refs}\n\nPergunta: ${body}`);
@@ -296,14 +285,13 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Clima - RESTAURADO!
     if (["clima", "tempo", "previsão"].some(p => bodyLower.includes(p))) {
       const clima = await getWeather("Curitiba", "hoje");
       await sendMessage(from, clima);
       return res.sendStatus(200);
     }
 
-    /* ===== 3. FLUXO PRINCIPAL (IA + MEMÓRIA) ===== */
+    /* ===== 3. FLUXO PRINCIPAL ===== */
     
     let userSession = await Session.findOne({ userId: from });
     if (!userSession) userSession = await Session.create({ userId: from, messages: [] });
@@ -331,21 +319,13 @@ app.post("/webhook", async (req, res) => {
     userSession.lastUpdate = new Date();
     await userSession.save();
     
-    // Salva na memória semântica (Longo prazo)
-    await addSemanticMemory(
-      `Pergunta: ${body} | Resposta: ${respostaFinal}`,
-      "histórico",
-      from,
-      "user"
-    );
+    await addSemanticMemory(`Pergunta: ${body} | Resposta: ${respostaFinal}`, "histórico", from, "user");
 
-    // Resposta em Áudio ou Texto
-    if (type === "audio") { // Se entrou áudio, sai áudio
+    if (type === "audio") {
       try {
           const audioPath = await falar(respostaFinal);
           await sendAudio(from, audioPath);
       } catch (audioErr) {
-          console.error("Erro audio:", audioErr);
           await sendMessage(from, respostaFinal);
       }
     } else {
@@ -355,7 +335,7 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
 
   } catch (err) {
-    console.error("❌ Erro webhook:", err);
+    console.error("❌ Erro fatal no webhook:", err);
     return res.sendStatus(200);
   }
 });
