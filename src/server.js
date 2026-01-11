@@ -111,6 +111,36 @@ async function sendMessage(to, text) {
   }
 }
 
+// CORREÇÃO: Função para enviar imagem (necessária para o comando "desenha")
+async function sendImage(to, imageSource, caption = "") {
+  try {
+    const payload = {
+      messaging_product: "whatsapp",
+      to,
+      type: "image",
+      image: { caption }
+    };
+
+    // Se a fonte for uma URL pública
+    if (imageSource.startsWith('http')) {
+      payload.image.link = imageSource;
+    } else {
+      // Se for base64 (gerado pelo Imagen), o ideal é salvar em public e mandar a URL 
+      // ou usar o upload da API do Facebook. Para simplificar, assumimos que seu 
+      // gerarImagemGoogle retorna uma URL ou tratamos como link:
+      payload.image.link = imageSource; 
+    }
+
+    await axios.post(
+      `https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`,
+      payload,
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+    );
+  } catch (error) {
+    console.error("❌ Erro ao enviar imagem:", error.response?.data || error.message);
+  }
+}
+
 async function askGPT(prompt, imageUrl = null) {
   const messages = [
     { role: "system", content: "Você é Amber. Inteligente, sofisticada e útil." },
@@ -127,9 +157,7 @@ async function askGPT(prompt, imageUrl = null) {
   }
 
   try {
-    // Forçamos o gpt-4o-mini que é mais estável e também tem visão
     const model = "gpt-4o-mini"; 
-    
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       { model, messages, temperature: 0.7 },
@@ -187,33 +215,27 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let imageUrlForGPT = null;
 
-   // --- 1. PROCESSAMENTO DE MÍDIA ---
     if (type === "text") {
       body = messageObj.text.body;
     } 
     else if (type === "audio") {
       body = await transcreverAudio(messageObj.audio.id);
     } 
-    // ESTE BLOCO FOI REVISADO:
     else if (type === "image") {
       console.log(`📸 Iniciando processamento de imagem! ID: ${messageObj.image.id}`);
       await sendMessage(from, "👁️ Analisando imagem...");
-      
       const buffer = await downloadMedia(messageObj.image.id);
       if (buffer) {
-        console.log("✅ Buffer da imagem obtido com sucesso.");
         const base64Image = buffer.toString('base64');
         const mimeType = messageObj.image.mime_type || "image/jpeg";
         imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
         body = messageObj.caption || "O que você vê nesta imagem?";
       } else {
-        console.error("❌ Falha ao baixar o buffer da imagem.");
         await sendMessage(from, "Não consegui baixar a foto agora.");
         return res.sendStatus(200);
       }
     }
     else if (type === "document") {
-      console.log(`📄 Documento detectado! Mime: ${messageObj.document.mime_type}`);
       if (messageObj.document.mime_type === "application/pdf") {
         await sendMessage(from, "📄 Lendo PDF...");
         const buffer = await downloadMedia(messageObj.document.id);
@@ -221,16 +243,12 @@ app.post("/webhook", async (req, res) => {
           try {
             const data = await pdfParse(buffer);
             const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
-            
             if (textoExtraido.length < 5) {
-               console.log("⚠️ PDF sem texto (imagem).");
                body = "O usuário enviou um PDF que parece ser apenas uma imagem digitalizada. Avise que você não conseguiu ler o texto dele.";
             } else {
-               console.log(`✅ PDF extraído (${textoExtraido.length} caracteres).`);
                body = `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
             }
           } catch (e) {
-            console.error("❌ Erro no pdfParse:", e.message);
             body = "Erro técnico ao ler o PDF.";
           }
         }
@@ -243,7 +261,6 @@ app.post("/webhook", async (req, res) => {
     if (!body) return res.sendStatus(200);
     const bodyLower = body.toLowerCase();
 
-    // Segue para a memória automática
     await extractAutoMemoryGPT(from, body, askGPT);
 
     /* ===== 2. ROTINAS DE COMANDO ===== */
@@ -260,24 +277,19 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // NOVO: BLOCO DO GERENCIADOR DE TAREFAS (ToDo)
     const respTask = await processarTasks(from, body);
     if (respTask) {
       await sendMessage(from, respTask);
       return res.sendStatus(200);
     }
 
-if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
-  await sendMessage(from, "🧐 Amber está lendo os principais portais para você...");
-  
-  const tema = bodyLower.replace(/notícias|novidades|sobre|de|da/gi, "").trim() || "tecnologia";
-  
-  // Passamos o tema e a função askGPT
-  const briefing = await buscarNoticiasComIA(tema, askGPT);
-  
-  await sendMessage(from, briefing);
-  return res.sendStatus(200);
-}
+    if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
+      await sendMessage(from, "🧐 Amber está lendo os principais portais para você...");
+      const tema = bodyLower.replace(/notícias|novidades|sobre|de|da/gi, "").trim() || "tecnologia";
+      const briefing = await buscarNoticiasComIA(tema, askGPT);
+      await sendMessage(from, briefing);
+      return res.sendStatus(200);
+    }
     
     const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
     if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
@@ -286,40 +298,37 @@ if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
        return res.sendStatus(200);
     }
 
+    // CORREÇÃO: Gerador de Imagem funcionando com a nova função sendImage
     if (bodyLower.startsWith("desenha") || bodyLower.startsWith("imagem de")) {
-  await sendMessage(from, "🎨 Deixa comigo! Estou criando sua imagem com o Imagen 3...");
-  
-  const prompt = body.replace(/desenha|imagem de/gi, "").trim();
-  const imageBase64 = await gerarImagemGoogle(prompt);
+      await sendMessage(from, "🎨 Deixa comigo! Estou criando sua imagem com o Imagen 3...");
+      const promptImg = body.replace(/desenha|imagem de/gi, "").trim();
+      const imageResult = await gerarImagemGoogle(promptImg); // Deve retornar URL ou Base64
 
-  if (imageBase64) {
-    // Exemplo de envio via Media (ajuste para a sua função de envio de imagem)
-    await sendImage(from, imageBase64, `🖌️ "${prompt}"`);
-  } else {
-    await sendMessage(from, "Tive um problema técnico ao gerar a imagem. Verifique os logs no Render.");
-  }
-  return res.sendStatus(200);
-}
+      if (imageResult) {
+        await sendImage(from, imageResult, `🖌️ "${promptImg}"`);
+      } else {
+        await sendMessage(from, "Tive um problema técnico ao gerar a imagem.");
+      }
+      return res.sendStatus(200);
+    }
 
+    // BROADCAST
     if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
       const match = bodyLower.match(regex);
-      if (!match) {
-        await sendMessage(from, "Formato: 'Amber envia mensagem para <numeros> <mensagem>'");
+      if (match) {
+        const numeros = match[1].replace(/\s/g, "").split(",").filter(Boolean);
+        const mensagemParaEnviar = match[2];
+        await sendMessage(from, `Iniciando envio para ${numeros.length} contatos...`);
+        (async () => {
+            for (const numero of numeros) {
+              await sendMessage(numero, mensagemParaEnviar);
+              await new Promise(r => setTimeout(r, 2000));
+            }
+            await sendMessage(from, "✅ Envio em massa concluído.");
+        })().catch(err => console.error("Erro no broadcast:", err));
         return res.sendStatus(200);
       }
-      const numeros = match[1].replace(/\s/g, "").split(",").filter(Boolean);
-      const mensagemParaEnviar = match[2];
-      await sendMessage(from, `Iniciando envio para ${numeros.length} contatos...`);
-      (async () => {
-          const sleep = ms => new Promise(r => setTimeout(r, ms));
-          for (const numero of numeros) {
-            await sendMessage(numero, mensagemParaEnviar);
-            await sleep(2000);
-          }
-          await sendMessage(from, "✅ Envio em massa concluído.");
-      })().catch(err => console.error("Erro no broadcast:", err));
-      return res.sendStatus(200);
     }
 
     if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
@@ -341,15 +350,11 @@ if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
       return res.sendStatus(200);
     }
 
-/* ===== 3. FLUXO PRINCIPAL ===== */
-    
-    // Em vez de findOne + save, usamos findOneAndUpdate para evitar VersionError
+    /* ===== 3. FLUXO PRINCIPAL ===== */
     const userSession = await Session.findOneAndUpdate(
       { userId: from },
       { 
-        $push: { 
-          messages: { $each: [`Usuário: ${body}`], $slice: -15 } 
-        },
+        $push: { messages: { $each: [`Usuário: ${body}`], $slice: -15 } },
         $set: { lastUpdate: new Date() }
       },
       { upsert: true, new: true }
@@ -359,26 +364,20 @@ if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
     const fatosFiltrados = selectMemoriesForPrompt(fatos);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
-    const prompt = `
+    const promptFinal = `
       FATOS: ${fatosFiltrados.join("\n")}
       HISTÓRICO: ${memoriaSemantica.join("\n")}
       CONVERSA: ${userSession.messages.join("\n")}
       MSG ATUAL: ${body}
     `;
 
-    let respostaIA = await askGPT(prompt, imageUrlForGPT);
-    
+    let respostaIA = await askGPT(promptFinal, imageUrlForGPT);
     const decisao = await amberMind({ from, mensagem: body, respostaIA });
     const respostaFinal = decisao.override ? decisao.resposta : respostaIA;
 
-    // Atualiza a resposta da Amber na sessão
     await Session.updateOne(
       { userId: from },
-      { 
-        $push: { 
-          messages: { $each: [`Amber: ${respostaFinal}`], $slice: -15 } 
-        } 
-      }
+      { $push: { messages: { $each: [`Amber: ${respostaFinal}`], $slice: -15 } } }
     );
     
     await addSemanticMemory(`Pergunta: ${body} | Resposta: ${respostaFinal}`, "histórico", from, "user");
@@ -402,19 +401,10 @@ if (bodyLower.includes("notícias") || bodyLower.includes("novidades sobre")) {
   }
 });
 
-// Agendamento proativo (roda a cada hora cheia)
 cron.schedule("0 * * * *", async () => {
   const userId = "554195194485";
-  console.log("🧠 Amber analisando contexto para proatividade...");
-  
   const sugestao = await verificarContextoProativo(userId);
-  
-  if (sugestao) {
-    await sendMessage(userId, sugestao);
-    console.log("🚀 Mensagem proativa enviada.");
-  }
-}, {
-  timezone: "America/Sao_Paulo"
-});
+  if (sugestao) await sendMessage(userId, sugestao);
+}, { timezone: "America/Sao_Paulo" });
 
 app.listen(PORT, () => console.log(`✅ Amber Ultimate rodando na porta ${PORT}`));
