@@ -26,6 +26,7 @@ import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { selectMemoriesForPrompt } from "./memorySelector.js";
 import { Session } from "./models/session.js";
+import { traduzirEGerarAudio } from "./utils/translatorModule.js"; 
 
 // NOVOS MÓDULOS
 import { processarAgenda } from "./utils/calendarModule.js";
@@ -339,6 +340,32 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
     }
+
+      // Gatilho: "Amber, traduza para [idioma]: [texto]" ou enviando áudio e pedindo tradução
+if (bodyLower.includes("traduza para") || bodyLower.includes("traduz para")) {
+    await sendMessage(from, "🌐 Traduzindo e gerando áudio oficial...");
+    
+    // 1. Extrair o idioma e o texto
+    const promptTraducao = `Traduza o seguinte texto para o idioma solicitado. Retorne APENAS a tradução, sem comentários:
+    Texto: ${body}
+    Idioma solicitado: ${bodyLower.split("para")[1].trim()}`;
+    
+    const textoTraduzido = await askGPT(promptTraducao);
+    
+    // 2. Gerar áudio com ElevenLabs (usando o módulo novo)
+    const audioFile = await traduzirEGerarAudio(textoTraduzido);
+    
+    if (audioFile) {
+        const audioUrl = `${process.env.SERVER_URL}/audio/${audioFile}`;
+        await sendMessage(from, `*Tradução:* ${textoTraduzido}`);
+        await sendAudio(from, audioUrl);
+    } else {
+        await sendMessage(from, "Consegui traduzir o texto, mas tive um erro no áudio.");
+        await sendMessage(from, textoTraduzido);
+    }
+    return res.sendStatus(200);
+}
+
 
     if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
       const respEng = await amberEnglishUltimate({ userId: from, pergunta: body, level: "beginner" });
