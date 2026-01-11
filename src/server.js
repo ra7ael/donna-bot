@@ -111,7 +111,7 @@ async function sendMessage(to, text) {
   }
 }
 
-// CORREÇÃO: Função para enviar imagem (necessária para o comando "desenha")
+// CORREÇÃO: Função para enviar imagem via link ou buffer
 async function sendImage(to, imageSource, caption = "") {
   try {
     const payload = {
@@ -121,13 +121,9 @@ async function sendImage(to, imageSource, caption = "") {
       image: { caption }
     };
 
-    // Se a fonte for uma URL pública
     if (imageSource.startsWith('http')) {
       payload.image.link = imageSource;
     } else {
-      // Se for base64 (gerado pelo Imagen), o ideal é salvar em public e mandar a URL 
-      // ou usar o upload da API do Facebook. Para simplificar, assumimos que seu 
-      // gerarImagemGoogle retorna uma URL ou tratamos como link:
       payload.image.link = imageSource; 
     }
 
@@ -200,8 +196,6 @@ app.post("/webhook", async (req, res) => {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
 
-    console.log(`📩 Nova mensagem recebida! Tipo: ${messageObj.type} de: ${messageObj.from}`);
-
     const messageId = messageObj.id;
     if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
     mensagensProcessadas.add(messageId);
@@ -222,7 +216,6 @@ app.post("/webhook", async (req, res) => {
       body = await transcreverAudio(messageObj.audio.id);
     } 
     else if (type === "image") {
-      console.log(`📸 Iniciando processamento de imagem! ID: ${messageObj.image.id}`);
       await sendMessage(from, "👁️ Analisando imagem...");
       const buffer = await downloadMedia(messageObj.image.id);
       if (buffer) {
@@ -243,11 +236,7 @@ app.post("/webhook", async (req, res) => {
           try {
             const data = await pdfParse(buffer);
             const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
-            if (textoExtraido.length < 5) {
-               body = "O usuário enviou um PDF que parece ser apenas uma imagem digitalizada. Avise que você não conseguiu ler o texto dele.";
-            } else {
-               body = `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
-            }
+            body = textoExtraido.length < 5 ? "PDF sem texto." : `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
           } catch (e) {
             body = "Erro técnico ao ler o PDF.";
           }
@@ -260,6 +249,21 @@ app.post("/webhook", async (req, res) => {
     
     if (!body) return res.sendStatus(200);
     const bodyLower = body.toLowerCase();
+    const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
+
+    /* ===== PRIORIDADE: GERAÇÃO DE IMAGEM ===== */
+    if (corpoLimpo.startsWith("desenha") || corpoLimpo.startsWith("imagem de")) {
+      await sendMessage(from, "🎨 Deixa comigo! Estou criando sua imagem com o Imagen 3...");
+      const promptImg = corpoLimpo.replace(/desenha|imagem de/gi, "").trim();
+      const imageResult = await gerarImagemGoogle(promptImg);
+
+      if (imageResult) {
+        await sendImage(from, imageResult, `🖌️ "${promptImg}"`);
+      } else {
+        await sendMessage(from, "Tive um problema técnico ao gerar a imagem.");
+      }
+      return res.sendStatus(200);
+    }
 
     await extractAutoMemoryGPT(from, body, askGPT);
 
@@ -296,20 +300,6 @@ app.post("/webhook", async (req, res) => {
        const respAgenda = await processarAgenda(body);
        await sendMessage(from, respAgenda);
        return res.sendStatus(200);
-    }
-
-    // CORREÇÃO: Gerador de Imagem funcionando com a nova função sendImage
-    if (bodyLower.startsWith("desenha") || bodyLower.startsWith("imagem de")) {
-      await sendMessage(from, "🎨 Deixa comigo! Estou criando sua imagem com o Imagen 3...");
-      const promptImg = body.replace(/desenha|imagem de/gi, "").trim();
-      const imageResult = await gerarImagemGoogle(promptImg); // Deve retornar URL ou Base64
-
-      if (imageResult) {
-        await sendImage(from, imageResult, `🖌️ "${promptImg}"`);
-      } else {
-        await sendMessage(from, "Tive um problema técnico ao gerar a imagem.");
-      }
-      return res.sendStatus(200);
     }
 
     // BROADCAST
