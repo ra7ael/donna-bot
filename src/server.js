@@ -9,6 +9,7 @@ import path from "path";
 import fs from "fs-extra";
 import { fileURLToPath } from "url";
 import pdfParse from "pdf-parse-fork";
+import { v4 as uuidv4 } from 'uuid'; // Adicionado para nomes únicos de arquivos
 
 /* ========================= IMPORTS INTERNOS ========================= */
 import { startReminderCron } from "./cron/reminders.js";
@@ -50,8 +51,12 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Garante pastas de upload
 fs.ensureDirSync(path.join(__dirname, "public/audio"));
+fs.ensureDirSync(path.join(__dirname, "public/images")); // Pasta para imagens geradas
 app.use("/audio", express.static(path.join(__dirname, "public/audio")));
+app.use("/images", express.static(path.join(__dirname, "public/images")));
 
 /* ========================= CONTROLE ========================= */
 const mensagensProcessadas = new Set();
@@ -94,6 +99,24 @@ function dividirMensagem(texto, limite = 1500) {
   return partes;
 }
 
+// Salva o Base64 do Google em um arquivo físico e retorna a URL
+function salvarImagemBase64(base64Data) {
+  try {
+    const base64Image = base64Data.replace(/^data:image\/\w+;base64,/, "");
+    const fileName = `img_${uuidv4()}.png`;
+    const filePath = path.join(__dirname, "public/images", fileName);
+    
+    fs.writeFileSync(filePath, base64Image, 'base64');
+    
+    // Altere para a URL do seu Render se não estiver no ENV
+    const serverUrl = process.env.SERVER_URL || "https://donna-bot-59gx.onrender.com";
+    return `${serverUrl}/images/${fileName}`;
+  } catch (error) {
+    console.error("❌ Erro ao salvar imagem localmente:", error);
+    return null;
+  }
+}
+
 async function sendMessage(to, text) {
   if (!to || !text) return;
   const mensagemFinal = typeof text === 'string' ? text : JSON.stringify(text);
@@ -111,21 +134,14 @@ async function sendMessage(to, text) {
   }
 }
 
-// CORREÇÃO: Função para enviar imagem via link ou buffer
 async function sendImage(to, imageSource, caption = "") {
   try {
     const payload = {
       messaging_product: "whatsapp",
       to,
       type: "image",
-      image: { caption }
+      image: { caption, link: imageSource }
     };
-
-    if (imageSource.startsWith('http')) {
-      payload.image.link = imageSource;
-    } else {
-      payload.image.link = imageSource; 
-    }
 
     await axios.post(
       `https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`,
@@ -255,12 +271,17 @@ app.post("/webhook", async (req, res) => {
     if (corpoLimpo.startsWith("desenha") || corpoLimpo.startsWith("imagem de")) {
       await sendMessage(from, "🎨 Deixa comigo! Estou criando sua imagem com o Imagen 3...");
       const promptImg = corpoLimpo.replace(/desenha|imagem de/gi, "").trim();
-      const imageResult = await gerarImagemGoogle(promptImg);
+      const base64Result = await gerarImagemGoogle(promptImg);
 
-      if (imageResult) {
-        await sendImage(from, imageResult, `🖌️ "${promptImg}"`);
+      if (base64Result) {
+        const publicUrl = salvarImagemBase64(base64Result);
+        if (publicUrl) {
+          await sendImage(from, publicUrl, `🖌️ "${promptImg}"`);
+        } else {
+          await sendMessage(from, "Erro ao processar o arquivo da imagem.");
+        }
       } else {
-        await sendMessage(from, "Tive um problema técnico ao gerar a imagem.");
+        await sendMessage(from, "Tive um problema técnico. Verifique se o faturamento no Google Cloud está ativo.");
       }
       return res.sendStatus(200);
     }
@@ -268,7 +289,6 @@ app.post("/webhook", async (req, res) => {
     await extractAutoMemoryGPT(from, body, askGPT);
 
     /* ===== 2. ROTINAS DE COMANDO ===== */
-
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
       return res.sendStatus(200);
     }
@@ -302,7 +322,6 @@ app.post("/webhook", async (req, res) => {
        return res.sendStatus(200);
     }
 
-    // BROADCAST
     if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
       const match = bodyLower.match(regex);
