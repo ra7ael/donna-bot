@@ -30,6 +30,7 @@
     "pdfkit": "^0.13.0",
     "say": "^0.16.0",
     "tesseract.js": "^4.1.1",
+    "uuid": "^9.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
