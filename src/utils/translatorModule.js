@@ -12,30 +12,36 @@ const client = new ElevenLabsClient({
   apiKey: process.env.ELEVENLABS_API_KEY,
 });
 
-/**
- * Gera um áudio a partir de um texto traduzido
- * @param {string} texto - O texto já traduzido
- * @returns {string|null} - Nome do arquivo gerado ou null
- */
 export async function traduzirEGerarAudio(texto) {
   try {
-    const audio = await client.generate({
-      voice: "Amber", // Certifique-se de que este nome de voz existe no seu ElevenLabs
+    // A MUDANÇA ESTÁ AQUI: client.textToSpeech.convert
+    const response = await client.textToSpeech.convert("21m00Tcm4TlvDq8ikWAM", { // ID da voz (Rachel/Amber)
       text: texto,
       model_id: "eleven_multilingual_v2",
+      output_format: "mp3_44100_128",
     });
 
     const fileName = `traducao_${uuidv4()}.mp3`;
-    // Salva na pasta public/audio que o seu server.js já monitora
     const filePath = path.join(__dirname, "..", "public", "audio", fileName);
 
+    // Na versão nova, a resposta pode ser tratada como stream assim:
     const fileStream = fs.createWriteStream(filePath);
-    audio.pipe(fileStream);
+    
+    // Se a resposta for um stream direto:
+    if (response.pipe) {
+        response.pipe(fileStream);
+    } else {
+        // Caso a biblioteca retorne o buffer direto (depende da subversão)
+        await fs.writeFile(filePath, response);
+    }
 
     return new Promise((resolve, reject) => {
       fileStream.on("finish", () => resolve(fileName));
       fileStream.on("error", reject);
+      // Caso não seja stream, resolvemos direto
+      if (!response.pipe) resolve(fileName);
     });
+
   } catch (error) {
     console.error("❌ Erro no ElevenLabs:", error);
     return null;
