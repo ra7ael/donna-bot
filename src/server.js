@@ -26,7 +26,7 @@ import { consultarDataJud } from "./utils/datajudAPI.js";
 import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { selectMemoriesForPrompt } from "./memorySelector.js";
 import { Session } from "./models/session.js";
-import { traduzirEGerarAudio } from "./utils/translatorModule.js"; 
+import { traduzirEGerarAudio } from "./utils/translatorModule.js";
 
 // NOVOS MÓDULOS
 import { processarAgenda } from "./utils/calendarModule.js";
