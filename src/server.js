@@ -43,11 +43,18 @@ import { criarVideoAmber } from "./utils/videoMaker.js";
 dotenv.config();
 mongoose.set("strictQuery", false);
 
+dotenv.config(); // 1. Primeiro carrega o .env
+mongoose.set("strictQuery", false);
+
 const app = express();
 app.use(bodyParser.json());
-const PORT = process.env.PORT || 3000;
 
-// ... (suas outras constantes de ENV)
+// 2. DEPOIS define as constantes pegando do process.env
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI; 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
 // --- AJUSTE AQUI ---
 // Definimos o caminho base do projeto de forma absoluta
