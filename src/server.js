@@ -39,6 +39,11 @@ import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 import { criarVideoAmber } from "./utils/videoMaker.js";
 
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
 /* ========================= CONFIG ========================= */
 dotenv.config();
 mongoose.set("strictQuery", false);
