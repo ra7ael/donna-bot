@@ -1,6 +1,10 @@
 import ffmpeg from 'fluent-ffmpeg';
+import ffmpegInstaller from 'ffmpeg-static';
 import path from 'path';
 import fs from 'fs-extra';
+
+// Configura o caminho do executável do FFmpeg
+ffmpeg.setFfmpegPath(ffmpegInstaller);
 
 export async function criarVideoAmber(caminhosImagens, nomeArquivo) {
     // Pasta onde o vídeo final será salvo
@@ -18,14 +22,21 @@ export async function criarVideoAmber(caminhosImagens, nomeArquivo) {
         command
             .fps(25)
             .videoCodec('libx264')
-            .outputOptions(['-pix_fmt yuv420p']) // Formato compatível com WhatsApp/Celular
-            .on('start', (cmd) => console.log('🎬 FFmpeg iniciado:', cmd))
+            // Redimensiona para 720p (HD) - É o equilíbrio perfeito entre qualidade e leveza
+            .size('1280x720') 
+            .outputOptions([
+                '-pix_fmt yuv420p',   // Formato compatível com WhatsApp/Celular
+                '-preset ultrafast',  // Processamento o mais rápido possível (poupa CPU)
+                '-tune stillimage',   // Otimização para slideshows (poupa muita RAM)
+                '-shortest'           // Garante que o vídeo termine no tempo certo
+            ])
+            .on('start', (cmd) => console.log('🎬 FFmpeg iniciado (Modo Leve):', cmd))
             .on('error', (err) => {
                 console.error('❌ Erro FFmpeg:', err);
                 reject(err);
             })
             .on('end', () => {
-                console.log('✅ Vídeo finalizado!');
+                console.log('✅ Vídeo finalizado com sucesso!');
                 // Retorna o caminho relativo para a URL
                 resolve(`/images/${nomeArquivo}.mp4`);
             })
