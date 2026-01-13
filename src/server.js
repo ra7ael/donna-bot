@@ -50,7 +50,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // 2. DEPOIS define as constantes pegando do process.env
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const MONGO_URI = process.env.MONGO_URI; 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
