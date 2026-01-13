@@ -46,19 +46,21 @@ mongoose.set("strictQuery", false);
 const app = express();
 app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ... (suas outras constantes de ENV)
 
-// Garante pastas de upload
-fs.ensureDirSync(path.join(__dirname, "public/audio"));
-fs.ensureDirSync(path.join(__dirname, "public/images")); // Pasta para imagens geradas
-app.use("/audio", express.static(path.join(__dirname, "public/audio")));
-app.use("/images", express.static(path.join(__dirname, "public/images")));
+// --- AJUSTE AQUI ---
+// Definimos o caminho base do projeto de forma absoluta
+const ROOT_DIR = process.cwd();
+
+// Garante que as pastas existam na raiz do projeto
+fs.ensureDirSync(path.join(ROOT_DIR, "public/audio"));
+fs.ensureDirSync(path.join(ROOT_DIR, "public/images"));
+
+// Serve os arquivos estáticos apontando para o lugar certo
+app.use("/audio", express.static(path.join(ROOT_DIR, "public/audio")));
+app.use("/images", express.static(path.join(ROOT_DIR, "public/images")));
+// -------------------
 
 /* ========================= CONTROLE ========================= */
 const mensagensProcessadas = new Set();
