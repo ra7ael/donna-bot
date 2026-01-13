@@ -290,48 +290,55 @@ app.post("/webhook", async (req, res) => {
 
     await extractAutoMemoryGPT(from, body, askGPT);
 
-    if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
+if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
     const tema = bodyLower.replace("amber, faz um vídeo sobre", "").trim();
-    await sendMessage(from, `🎬 Vou criar um vídeo de 30 segundos sobre "${tema}". Vou gerar 6 cenas detalhadas. Aguarda um pouco...`);
+    
+    // Verifica se você pediu alta qualidade na frase original
+    const querAltaQualidade = bodyLower.includes("4k") || bodyLower.includes("detalhado");
+    const modo = querAltaQualidade ? "Alta Qualidade (HQ)" : "Modo Econômico (Fast)";
+
+    await sendMessage(from, `🎬 Iniciando produção em ${modo} sobre "${tema}"... Aguarda um pouco.`);
 
     try {
         const caminhosImagens = [];
         for (let i = 1; i <= 6; i++) {
-            console.log(`🖼️ Gerando cena ${i}...`);
-            // Gera o Base64 do Google
-            const base64Result = await gerarImagemGoogle(`${tema}, cena cinematográfica ${i}, ultra detalhado, 4k`);
+            console.log(`🖼️ Gerando cena ${i} (${modo})...`);
+            
+            // Se NÃO pediu 4k, mandamos um prompt simples (ativa o Fast)
+            // Se pediu 4k, mandamos o prompt turbinado (ativa o HQ)
+            const promptFinal = querAltaQualidade 
+                ? `${tema}, cena cinematográfica ${i}, ultra detalhado, 4k, photorealistic`
+                : `${tema}, scene ${i}`; 
+
+            const base64Result = await gerarImagemGoogle(promptFinal);
             
             if (base64Result) {
-                // SALVA A IMAGEM NO DISCO E PEGA O CAMINHO LOCAL
                 const fileName = `temp_vid_${uuidv4()}.png`;
                 const filePath = path.join(__dirname, "public/images", fileName);
                 const base64Data = base64Result.replace(/^data:image\/\w+;base64,/, "");
                 fs.writeFileSync(filePath, base64Data, 'base64');
-                
-                // Guardamos o caminho do arquivo no computador para o FFmpeg usar
                 caminhosImagens.push(filePath);
             }
         }
 
         if (caminhosImagens.length < 1) {
-            return await sendMessage(from, "❌ Não consegui gerar as imagens para o vídeo.");
+            return await sendMessage(from, "❌ Falha ao gerar imagens.");
         }
 
         const nomeDoVideo = `video_${Date.now()}`;
-        // Chamamos a função passando os arquivos locais
         const videoUrlRelativa = await criarVideoAmber(caminhosImagens, nomeDoVideo);
         
         const serverUrl = process.env.SERVER_URL || "https://donna-bot-59gx.onrender.com";
         const linkFinal = `${serverUrl}${videoUrlRelativa}`;
 
-        await sendMessage(from, `✅ O teu vídeo está pronto!\n\n📺 Assiste aqui: ${linkFinal}`);
+        await sendMessage(from, `✅ Vídeo pronto (${modo})!\n\n📺 Assiste aqui: ${linkFinal}`);
 
-        // Limpeza opcional: apagar as imagens temporárias usadas no vídeo
-        caminhosImagens.forEach(p => fs.remove(p).catch(e => console.log("Erro limpar temp:", e)));
+        // Limpeza
+        caminhosImagens.forEach(p => fs.remove(p).catch(e => console.log("Erro limpar:", e)));
 
     } catch (error) {
         console.error("❌ Erro ao criar vídeo:", error);
-        await sendMessage(from, "❌ Desculpa, o servidor cansou ao processar o vídeo. Tente um tema mais simples.");
+        await sendMessage(from, "❌ Erro ao processar o vídeo.");
     }
     return res.sendStatus(200);
 }
