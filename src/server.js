@@ -37,6 +37,7 @@ import { buscarNoticiasComIA } from "./utils/newsModule.js";
 import cron from "node-cron";
 import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
+import { criarVideoAmber } from "./utils/videoMaker.js";
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
@@ -289,6 +290,51 @@ app.post("/webhook", async (req, res) => {
 
     await extractAutoMemoryGPT(from, body, askGPT);
 
+    if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
+    const tema = bodyLower.replace("amber, faz um vídeo sobre", "").trim();
+    await sendMessage(from, `🎬 Vou criar um vídeo de 30 segundos sobre "${tema}". Vou gerar 6 cenas detalhadas. Aguarda um pouco...`);
+
+    try {
+        const caminhosImagens = [];
+        for (let i = 1; i <= 6; i++) {
+            console.log(`🖼️ Gerando cena ${i}...`);
+            // Gera o Base64 do Google
+            const base64Result = await gerarImagemGoogle(`${tema}, cena cinematográfica ${i}, ultra detalhado, 4k`);
+            
+            if (base64Result) {
+                // SALVA A IMAGEM NO DISCO E PEGA O CAMINHO LOCAL
+                const fileName = `temp_vid_${uuidv4()}.png`;
+                const filePath = path.join(__dirname, "public/images", fileName);
+                const base64Data = base64Result.replace(/^data:image\/\w+;base64,/, "");
+                fs.writeFileSync(filePath, base64Data, 'base64');
+                
+                // Guardamos o caminho do arquivo no computador para o FFmpeg usar
+                caminhosImagens.push(filePath);
+            }
+        }
+
+        if (caminhosImagens.length < 1) {
+            return await sendMessage(from, "❌ Não consegui gerar as imagens para o vídeo.");
+        }
+
+        const nomeDoVideo = `video_${Date.now()}`;
+        // Chamamos a função passando os arquivos locais
+        const videoUrlRelativa = await criarVideoAmber(caminhosImagens, nomeDoVideo);
+        
+        const serverUrl = process.env.SERVER_URL || "https://donna-bot-59gx.onrender.com";
+        const linkFinal = `${serverUrl}${videoUrlRelativa}`;
+
+        await sendMessage(from, `✅ O teu vídeo está pronto!\n\n📺 Assiste aqui: ${linkFinal}`);
+
+        // Limpeza opcional: apagar as imagens temporárias usadas no vídeo
+        caminhosImagens.forEach(p => fs.remove(p).catch(e => console.log("Erro limpar temp:", e)));
+
+    } catch (error) {
+        console.error("❌ Erro ao criar vídeo:", error);
+        await sendMessage(from, "❌ Desculpa, o servidor cansou ao processar o vídeo. Tente um tema mais simples.");
+    }
+    return res.sendStatus(200);
+}
     /* ===== 2. ROTINAS DE COMANDO ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
       return res.sendStatus(200);
