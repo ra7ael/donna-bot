@@ -295,7 +295,6 @@ app.post("/webhook", async (req, res) => {
 if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
     const tema = bodyLower.replace("amber, faz um vídeo sobre", "").trim();
     
-    // Verifica se você pediu alta qualidade na frase original
     const querAltaQualidade = bodyLower.includes("4k") || bodyLower.includes("detalhado");
     const modo = querAltaQualidade ? "Alta Qualidade (HQ)" : "Modo Econômico (Fast)";
 
@@ -306,8 +305,6 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
         for (let i = 1; i <= 6; i++) {
             console.log(`🖼️ Gerando cena ${i} (${modo})...`);
             
-            // Se NÃO pediu 4k, mandamos um prompt simples (ativa o Fast)
-            // Se pediu 4k, mandamos o prompt turbinado (ativa o HQ)
             const promptFinal = querAltaQualidade 
                 ? `${tema}, cena cinematográfica ${i}, ultra detalhado, 4k, photorealistic`
                 : `${tema}, scene ${i}`; 
@@ -316,7 +313,9 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
             
             if (base64Result) {
                 const fileName = `temp_vid_${uuidv4()}.png`;
-                const filePath = path.join(__dirname, "public/images", fileName);
+                // AJUSTE AQUI: Usando process.cwd() para evitar erro de pastas no Render
+                const filePath = path.join(process.cwd(), "public/images", fileName);
+                
                 const base64Data = base64Result.replace(/^data:image\/\w+;base64,/, "");
                 fs.writeFileSync(filePath, base64Data, 'base64');
                 caminhosImagens.push(filePath);
@@ -330,12 +329,13 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
         const nomeDoVideo = `video_${Date.now()}`;
         const videoUrlRelativa = await criarVideoAmber(caminhosImagens, nomeDoVideo);
         
-        const serverUrl = process.env.SERVER_URL || "https://donna-bot-59gx.onrender.com";
+        // AJUSTE NO LINK: Remove barras extras para o link não quebrar
+        const serverUrl = (process.env.SERVER_URL || "https://donna-bot-59gx.onrender.com").replace(/\/$/, "");
         const linkFinal = `${serverUrl}${videoUrlRelativa}`;
 
         await sendMessage(from, `✅ Vídeo pronto (${modo})!\n\n📺 Assiste aqui: ${linkFinal}`);
 
-        // Limpeza
+        // Limpeza das imagens temporárias
         caminhosImagens.forEach(p => fs.remove(p).catch(e => console.log("Erro limpar:", e)));
 
     } catch (error) {
