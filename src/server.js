@@ -8,8 +8,9 @@ import { DateTime } from "luxon";
 import path from "path";
 import fs from "fs-extra";
 import { fileURLToPath } from "url";
+import { dirname } from "path";
 import pdfParse from "pdf-parse-fork";
-import { v4 as uuidv4 } from 'uuid'; // Adicionado para nomes únicos de arquivos
+import { v4 as uuidv4 } from 'uuid';
 
 /* ========================= IMPORTS INTERNOS ========================= */
 import { startReminderCron } from "./cron/reminders.js";
@@ -39,40 +40,24 @@ import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 import { criarVideoAmber } from "./utils/videoMaker.js";
 
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /* ========================= CONFIG ========================= */
 dotenv.config();
 mongoose.set("strictQuery", false);
 
-dotenv.config(); // 1. Primeiro carrega o .env
-mongoose.set("strictQuery", false);
-
 const app = express();
 app.use(bodyParser.json());
 
-// 2. DEPOIS define as constantes pegando do process.env
 const PORT = process.env.PORT || 8080;
 const MONGO_URI = process.env.MONGO_URI; 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// --- AJUSTE AQUI ---
-// Definimos o caminho base do projeto de forma absoluta
-const ROOT_DIR = process.cwd();
-
-// Garante que as pastas existam na raiz do projeto
-fs.ensureDirSync(path.join(ROOT_DIR, "public/audio"));
-fs.ensureDirSync(path.join(ROOT_DIR, "public/images"));
-
-// Serve os arquivos estáticos apontando para o lugar certo
-app.use("/audio", express.static(path.join(ROOT_DIR, "public/audio")));
-app.use("/images", express.static(path.join(ROOT_DIR, "public/images")));
-// -------------------
+// --- AJUSTE PARA GOOGLE CLOUD (USANDO /tmp) ---
+app.use("/audio", express.static('/tmp'));
+app.use("/images", express.static('/tmp'));
+// ----------------------------------------------
 
 /* ========================= CONTROLE ========================= */
 const mensagensProcessadas = new Set();
@@ -120,12 +105,20 @@ function salvarImagemBase64(base64Data) {
   try {
     const base64Image = base64Data.replace(/^data:image\/\w+;base64,/, "");
     const fileName = `img_${uuidv4()}.png`;
-    const filePath = path.join(__dirname, "public/images", fileName);
+    
+    // USAMOS /tmp PORQUE O GOOGLE CLOUD BLOQUEIA GRAVAÇÃO NA PASTA DO APP
+    const filePath = path.join('/tmp', fileName);
     
     fs.writeFileSync(filePath, base64Image, 'base64');
     
-    // Altere para a URL do seu Render se não estiver no ENV
-    const serverUrl = process.env.SERVER_URL || "https://donna-bot-59gx.onrender.com";
+    // PEGA A URL DO GOOGLE CLOUD DAS VARIÁVEIS DE AMBIENTE
+    const serverUrl = (process.env.SERVER_URL || "").replace(/\/$/, "");
+    
+    if (!serverUrl) {
+      console.error("❌ ERRO: Variável SERVER_URL não definida no Google Cloud!");
+      return null;
+    }
+
     return `${serverUrl}/images/${fileName}`;
   } catch (error) {
     console.error("❌ Erro ao salvar imagem localmente:", error);
@@ -325,8 +318,7 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
             
             if (base64Result) {
                 const fileName = `temp_vid_${uuidv4()}.png`;
-                // AJUSTE AQUI: Usando process.cwd() para evitar erro de pastas no Render
-                const filePath = path.join(process.cwd(), "public/images", fileName);
+                const filePath = path.join('/tmp', fileName);
                 
                 const base64Data = base64Result.replace(/^data:image\/\w+;base64,/, "");
                 fs.writeFileSync(filePath, base64Data, 'base64');
@@ -341,13 +333,11 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
         const nomeDoVideo = `video_${Date.now()}`;
         const videoUrlRelativa = await criarVideoAmber(caminhosImagens, nomeDoVideo);
         
-        // AJUSTE NO LINK: Remove barras extras para o link não quebrar
-        const serverUrl = (process.env.SERVER_URL || "https://donna-bot-59gx.onrender.com").replace(/\/$/, "");
+        const serverUrl = (process.env.SERVER_URL || "").replace(/\/$/, "");
         const linkFinal = `${serverUrl}${videoUrlRelativa}`;
 
         await sendMessage(from, `✅ Vídeo pronto (${modo})!\n\n📺 Assiste aqui: ${linkFinal}`);
 
-        // Limpeza das imagens temporárias
         caminhosImagens.forEach(p => fs.remove(p).catch(e => console.log("Erro limpar:", e)));
 
     } catch (error) {
@@ -408,18 +398,16 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
       }
     }
 
-      // Gatilho: "Amber, traduza para [idioma]: [texto]" ou enviando áudio e pedindo tradução
+      // Gatilho: "Amber, traduza para [idioma]: [texto]"
 if (bodyLower.includes("traduza para") || bodyLower.includes("traduz para")) {
     await sendMessage(from, "🌐 Traduzindo e gerando áudio oficial...");
     
-    // 1. Extrair o idioma e o texto
     const promptTraducao = `Traduza o seguinte texto para o idioma solicitado. Retorne APENAS a tradução, sem comentários:
     Texto: ${body}
     Idioma solicitado: ${bodyLower.split("para")[1].trim()}`;
     
     const textoTraduzido = await askGPT(promptTraducao);
     
-    // 2. Gerar áudio com ElevenLabs (usando o módulo novo)
     const audioFile = await traduzirEGerarAudio(textoTraduzido);
     
     if (audioFile) {
