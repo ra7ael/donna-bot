@@ -28,6 +28,7 @@ import { extractAutoMemoryGPT } from "./utils/autoMemoryGPT.js";
 import { selectMemoriesForPrompt } from "./memorySelector.js";
 import { Session } from "./models/session.js";
 import { traduzirEGerarAudio } from "./utils/translatorModule.js";
+import { postarInstagram } from "./instagram.js";
 
 // NOVOS MÓDULOS
 import { processarAgenda } from "./utils/calendarModule.js";
@@ -396,6 +397,58 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
         })().catch(err => console.error("Erro no broadcast:", err));
         return res.sendStatus(200);
       }
+    }
+
+    /* ===== PRIORIDADE: GERAÇÃO E POSTAGEM DE IMAGEM ===== */
+    
+    // COMANDO PARA POSTAR A ÚLTIMA IMAGEM GERADA
+    if (corpoLimpo.startsWith("poste isso no instagram")) {
+      await sendMessage(from, "📸 Preparando postagem para o Instagram...");
+      
+      // Buscamos a última imagem que a Amber gerou (podemos salvar o nome no contexto ou buscar no log)
+      // Para facilitar, vamos pedir que você gere a imagem e em seguida diga "poste isso"
+      // Se você quiser postar uma imagem específica que ela acabou de criar:
+      const legenda = corpoLimpo.replace("poste isso no instagram", "").trim() || "Postado via Amber AI 🤖";
+      
+      // Aqui precisamos saber qual foi o último arquivo. 
+      // DICA: Você pode guardar o nome do arquivo em uma variável global simples para teste rápido
+      if (global.ultimaImagemGerada) {
+        const resultado = await postarInstagram({ 
+          filename: global.ultimaImagemGerada, 
+          caption: legenda 
+        });
+
+        if (resultado && !resultado.error) {
+          await sendMessage(from, `✅ Sucesso! Sua foto já está no feed. ID: ${resultado.id}`);
+        } else {
+          await sendMessage(from, "❌ Falha ao postar. Verifique se a imagem ainda existe no servidor temporário.");
+        }
+      } else {
+        await sendMessage(from, "🤔 Não encontrei nenhuma imagem recente para postar. Gere uma imagem primeiro!");
+      }
+      return res.sendStatus(200);
+    }
+
+    // AJUSTE NA GERAÇÃO PARA SALVAR O NOME DO ARQUIVO
+    if (corpoLimpo.startsWith("desenha") || corpoLimpo.startsWith("imagem de")) {
+      await sendMessage(from, "🎨 Deixa comigo! Estou criando sua imagem...");
+      const promptImg = corpoLimpo.replace(/desenha|imagem de/gi, "").trim();
+      const base64Result = await gerarImagemGoogle(promptImg);
+
+      if (base64Result) {
+        const publicUrl = salvarImagemBase64(base64Result);
+        if (publicUrl) {
+          // GUARDAMOS O NOME DO ARQUIVO NA MEMÓRIA PARA PODER POSTAR DEPOIS
+          global.ultimaImagemGerada = publicUrl.split('/').pop(); 
+          
+          await sendImage(from, publicUrl, `🖌️ "${promptImg}"\n\n(Diga "Poste isso no Instagram" para publicar!)`);
+        } else {
+          await sendMessage(from, "Erro ao processar o arquivo da imagem.");
+        }
+      } else {
+        await sendMessage(from, "Tive um problema técnico na geração.");
+      }
+      return res.sendStatus(200);
     }
 
       // Gatilho: "Amber, traduza para [idioma]: [texto]"
