@@ -100,19 +100,15 @@ function dividirMensagem(texto, limite = 1500) {
   }
   return partes;
 }
-
-// Salva o Base64 do Google em um arquivo físico e retorna a URL
+//Função salvar imagem
 function salvarImagemBase64(base64Data) {
   try {
     const base64Image = base64Data.replace(/^data:image\/\w+;base64,/, "");
     const fileName = `img_${uuidv4()}.png`;
-    
-    // USAMOS /tmp PORQUE O GOOGLE CLOUD BLOQUEIA GRAVAÇÃO NA PASTA DO APP
     const filePath = path.join('/tmp', fileName);
     
     fs.writeFileSync(filePath, base64Image, 'base64');
     
-    // PEGA A URL DO GOOGLE CLOUD DAS VARIÁVEIS DE AMBIENTE
     const serverUrl = (process.env.SERVER_URL || "").replace(/\/$/, "");
     
     if (!serverUrl) {
@@ -120,12 +116,17 @@ function salvarImagemBase64(base64Data) {
       return null;
     }
 
+    // AJUSTE CRUCIAL: Salva globalmente para o comando de postar encontrar
+    global.ultimaImagemGerada = fileName; 
+    console.log(`💾 Imagem salva e memorizada: ${fileName}`);
+
     return `${serverUrl}/images/${fileName}`;
   } catch (error) {
     console.error("❌ Erro ao salvar imagem localmente:", error);
     return null;
   }
 }
+
 
 async function sendMessage(to, text) {
   if (!to || !text) return;
