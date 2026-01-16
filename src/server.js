@@ -283,13 +283,16 @@ app.post("/webhook", async (req, res) => {
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
-    /* ===== PRIORIDADE: GERAÇÃO E POSTAGEM DE IMAGEM ===== */
-    
-    // CORRIGIDO: Gatilho persistente via MongoDB para postagem
+// GATILHO PERSISTENTE VIA MONGODB PARA POSTAGEM
     if (corpoLimpo.startsWith("poste isso no instagram")) {
       await sendMessage(from, "📸 Preparando postagem para o Instagram...");
       
+      console.log(`🔍 Buscando imagem para o usuário: ${from}`);
       const session = await Session.findOne({ userId: from });
+      
+      // LOG DE DIAGNÓSTICO
+      console.log(`Dados da sessão encontrados:`, session);
+
       const arquivoRecente = session?.ultimaImagemGerada;
       const legenda = corpoLimpo.replace("poste isso no instagram", "").trim() || "Postado via Amber AI 🤖";
       
@@ -302,10 +305,13 @@ app.post("/webhook", async (req, res) => {
         if (resultado && !resultado.error) {
           await sendMessage(from, `✅ Sucesso! Sua foto já está no feed.`);
         } else {
-          await sendMessage(from, "❌ Falha ao postar. Verifique os créditos ou permissões da Meta.");
+          // Caso a API do Instagram retorne erro, mostramos aqui
+          const erroDetalhado = resultado?.details ? JSON.stringify(resultado.details) : "Erro desconhecido";
+          console.error("❌ Falha na API do Instagram:", erroDetalhado);
+          await sendMessage(from, "❌ Falha ao postar. Verifique o console do Google Cloud para ver o erro da Meta.");
         }
       } else {
-        await sendMessage(from, "🤔 Não encontrei registro de imagem recente para este usuário.");
+        await sendMessage(from, "🤔 Não encontrei o nome da imagem no banco de dados. Tente gerar uma nova imagem e pedir a postagem em seguida.");
       }
       return res.sendStatus(200);
     }
