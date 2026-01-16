@@ -55,10 +55,9 @@ const MONGO_URI = process.env.MONGO_URI;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-// --- AJUSTE PARA GOOGLE CLOUD (USANDO /tmp) ---
-app.use("/audio", express.static('/tmp'));
-app.use("/images", express.static('/tmp'));
-// ----------------------------------------------
+// Ajuste para garantir que o Express encontre a pasta /tmp no Google Cloud
+app.use("/audio", express.static(path.resolve('/tmp')));
+app.use("/images", express.static(path.resolve('/tmp')));
 
 /* ========================= CONTROLE ========================= */
 const mensagensProcessadas = new Set();
