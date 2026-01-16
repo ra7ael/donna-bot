@@ -10,6 +10,11 @@ const SessionSchema = new mongoose.Schema({
   messages: [{ 
     type: String // Ex: "Usuário: oi", "Amber: olá"
   }],
+  // ADICIONADO: Campo para memorizar a última imagem e permitir postagem no Instagram
+  ultimaImagemGerada: {
+    type: String,
+    default: null
+  },
   lastUpdate: { 
     type: Date, 
     default: Date.now
