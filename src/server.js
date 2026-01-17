@@ -182,10 +182,24 @@ app.post("/webhook", async (req, res) => {
     
     if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
+    /* --- NOVO: BUSCA DE IDENTIDADE --- */
+    // 1. Busca o nome no banco de dados
+    let nomeUsuario = await getUserName(from);
+
+    // 2. Se for você e o nome não estiver lá, registra como Rafael automaticamente
+    if (!nomeUsuario && from === "554195194485") {
+        await setUserName(from, "Rafael");
+        nomeUsuario = "Rafael";
+    }
+    
+    // Define como a Amber vai se referir a você (ou ao usuário futuro)
+    const tratamento = nomeUsuario || "usuário";
+    /* --------------------------------- */
+
     let body = "";
     let imageUrlForGPT = null;
 
-    /* 1. EXTRAÇÃO DE CONTEÚDO (Movi para o topo para garantir que o 'body' exista) */
+    /* 1. EXTRAÇÃO DE CONTEÚDO */
     if (type === "text") {
       body = messageObj.text.body;
     } 
@@ -215,7 +229,7 @@ app.post("/webhook", async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    /* 2. NORMALIZAÇÃO DE VARIÁVEIS (Agora o body já existe com certeza) */
+    /* 2. NORMALIZAÇÃO DE VARIÁVEIS */
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
@@ -358,7 +372,10 @@ app.post("/webhook", async (req, res) => {
     const fatos = (await consultarFatos(from)).map(f => typeof f === "string" ? f : f.content);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
-    const promptFinal = `
+      const promptFinal = `
+      SISTEMA: Você é Amber. Você está conversando com ${tratamento}. 
+      ${tratamento === 'Rafael' ? 'Ele é seu criador e desenvolvedor. Trate-o com exclusividade e inteligência.' : 'Trate-o pelo nome.'}
+      
       FATOS: ${selectMemoriesForPrompt(fatos).join("\n")}
       HISTÓRICO: ${memoriaSemantica.join("\n")}
       CONVERSA: ${userSession.messages.join("\n")}
