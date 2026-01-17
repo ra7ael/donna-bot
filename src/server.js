@@ -192,6 +192,26 @@ async function setUserName(number, name) {
 }
 /* ========================= WEBHOOK POST ========================= */
 app.post("/webhook", async (req, res) => {
+  // FUNÇÕES DEFINIDAS AQUI DENTRO PARA GARANTIR ACESSO AO 'db'
+  const getUserName = async (number) => {
+    try {
+      if (!db) return null;
+      const doc = await db.collection("users").findOne({ numero: number });
+      return doc?.nome || null;
+    } catch (err) { return null; }
+  };
+
+  const setUserName = async (number, name) => {
+    try {
+      if (!db) return;
+      await db.collection("users").updateOne(
+        { numero: number },
+        { $set: { nome: name } },
+        { upsert: true }
+      );
+    } catch (err) { console.error(err); }
+  };
+
   try {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
@@ -206,13 +226,16 @@ app.post("/webhook", async (req, res) => {
     
     if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
-    /* --- IDENTIDADE --- */
+    /* --- AGORA O RECONHECIMENTO VAI FUNCIONAR --- */
     let nomeUsuario = await getUserName(from);
+
     if (!nomeUsuario && from === "554195194485") {
         await setUserName(from, "Rafael");
         nomeUsuario = "Rafael";
     }
+    
     const tratamento = nomeUsuario || "usuário";
+    /* ------------------------------------------- */
 
     let body = "";
     let imageUrlForGPT = null;
