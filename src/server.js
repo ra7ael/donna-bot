@@ -260,6 +260,33 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
     }
+
+      /* ========================= NOVO: BLOCO DE INTERNET (LUGAR CORRETO) ========================= */
+    const palavrasChave = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje", "pesquise"];
+    const precisaDeInternet = palavrasChave.some(p => bodyLower.includes(p));
+
+    if (precisaDeInternet) {
+        console.log("🌐 Gatilho de internet ativado para:", corpoLimpo);
+        const infoFrequinhas = await pesquisarWeb(corpoLimpo); // Use o corpo limpo para a busca ser melhor
+        
+        if (infoFrequinhas) {
+            // Aqui nós REESCREVEMOS o body para que as funções abaixo já leiam o contexto
+            body = `
+            DADOS REAIS DA INTERNET (DE AGORA):
+            ${infoFrequinhas.resumo}
+            
+            DETALHES ADICIONAIS:
+            ${infoFrequinhas.contexto}
+            
+            PERGUNTA DO RAFAEL:
+            ${body}
+            
+            INSTRUÇÃO: Use os dados acima. Se for futebol, foque no Athletico-PR.
+            `;
+            // Não damos return aqui! Deixamos o código seguir para o askGPT processar tudo.
+        }
+    }
+ 
     else if (type === "document") {
       if (messageObj.document.mime_type === "application/pdf") {
         await sendMessage(from, "📄 Lendo PDF...");
@@ -384,32 +411,6 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
         await sendMessage(from, "❌ Erro ao processar o vídeo.");
     }
     return res.sendStatus(200);
-}
-
-// No seu webhook, antes do askGPT principal:
-const palavrasChave = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje"];
-const precisaDeInternet = palavrasChave.some(p => bodyLower.includes(p));
-
-if (precisaDeInternet) {
-    await sendMessage(from, "🌐 Consultando as últimas atualizações na web...");
-    
-    const infoFrequinhas = await pesquisarWeb(body);
-    
-    if (infoFrequinhas) {
-        // Injetamos a internet na "cabeça" da Amber
-        body = `
-        DADOS REAIS DA INTERNET (DE AGORA):
-        ${infoFrequinhas.resumo}
-        
-        DETALHES ADICIONAIS:
-        ${infoFrequinhas.contexto}
-        
-        PERGUNTA DO RAFAEL:
-        ${body}
-        
-        INSTRUÇÃO: Use os dados da internet acima para responder. Se for sobre o Athletico ou futebol, seja entusiasta e preciso!
-        `;
-    }
 }
     
     /* ===== 2. ROTINAS DE COMANDO ===== */
