@@ -385,6 +385,33 @@ if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
     }
     return res.sendStatus(200);
 }
+
+// No seu webhook, antes do askGPT principal:
+const palavrasChave = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje"];
+const precisaDeInternet = palavrasChave.some(p => bodyLower.includes(p));
+
+if (precisaDeInternet) {
+    await sendMessage(from, "🌐 Consultando as últimas atualizações na web...");
+    
+    const infoFrequinhas = await pesquisarWeb(body);
+    
+    if (infoFrequinhas) {
+        // Injetamos a internet na "cabeça" da Amber
+        body = `
+        DADOS REAIS DA INTERNET (DE AGORA):
+        ${infoFrequinhas.resumo}
+        
+        DETALHES ADICIONAIS:
+        ${infoFrequinhas.contexto}
+        
+        PERGUNTA DO RAFAEL:
+        ${body}
+        
+        INSTRUÇÃO: Use os dados da internet acima para responder. Se for sobre o Athletico ou futebol, seja entusiasta e preciso!
+        `;
+    }
+}
+    
     /* ===== 2. ROTINAS DE COMANDO ===== */
     if (await handleCommand(body, from) || await handleReminder(body, from)) {
       return res.sendStatus(200);
