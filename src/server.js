@@ -167,6 +167,29 @@ app.get("/webhook", (req, res) => {
 const NUMEROS_PERMITIDOS = ["554195194485"];
 const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
 
+
+/* ========================= FUNÇÕES DE IDENTIDADE ========================= */
+async function getUserName(number) {
+  try {
+    const doc = await db.collection("users").findOne({ numero: number });
+    return doc?.nome || null;
+  } catch (err) {
+    console.error("❌ Erro ao buscar nome do usuário:", err);
+    return null;
+  }
+}
+
+async function setUserName(number, name) {
+  try {
+    await db.collection("users").updateOne(
+      { numero: number },
+      { $set: { nome: name } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error("❌ Erro ao salvar nome do usuário:", err);
+  }
+}
 /* ========================= WEBHOOK POST ========================= */
 app.post("/webhook", async (req, res) => {
   try {
