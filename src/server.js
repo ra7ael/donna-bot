@@ -30,13 +30,14 @@ import { Session } from "./models/session.js";
 import { traduzirEGerarAudio } from "./utils/translatorModule.js";
 import { postarInstagram } from "./instagram.js";
 
-// NOVOS MÓDULOS
+// NOVOS MÓDULOS E IDENTIDADE
 import { processarAgenda } from "./utils/calendarModule.js";
 import { processarFinanceiro } from "./utils/financeModule.js";
 import { downloadMedia } from "./utils/downloadMedia.js"; 
 import { processarTasks } from "./utils/todoModule.js";
 import { buscarNoticiasComIA } from "./utils/newsModule.js";
 import { pesquisarWeb } from "./utils/searchModule.js";
+import { getUserName, setUserName } from "./utils/userProfile.js"; // Certifique-se de que este arquivo existe
 import cron from "node-cron";
 import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
@@ -182,19 +183,13 @@ app.post("/webhook", async (req, res) => {
     
     if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
-    /* --- NOVO: BUSCA DE IDENTIDADE --- */
-    // 1. Busca o nome no banco de dados
+    /* --- IDENTIDADE --- */
     let nomeUsuario = await getUserName(from);
-
-    // 2. Se for você e o nome não estiver lá, registra como Rafael automaticamente
     if (!nomeUsuario && from === "554195194485") {
         await setUserName(from, "Rafael");
         nomeUsuario = "Rafael";
     }
-    
-    // Define como a Amber vai se referir a você (ou ao usuário futuro)
     const tratamento = nomeUsuario || "usuário";
-    /* --------------------------------- */
 
     let body = "";
     let imageUrlForGPT = null;
@@ -229,7 +224,7 @@ app.post("/webhook", async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    /* 2. NORMALIZAÇÃO DE VARIÁVEIS */
+    /* 2. NORMALIZAÇÃO */
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
@@ -238,7 +233,7 @@ app.post("/webhook", async (req, res) => {
     if (palavrasChaveInternet.some(p => bodyLower.includes(p))) {
         const infoFrequinhas = await pesquisarWeb(corpoLimpo);
         if (infoFrequinhas) {
-            body = `DADOS REAIS DA INTERNET:\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
+            body = `DADOS REAIS DA INTERNET (DE AGORA):\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
         }
     }
 
@@ -340,14 +335,13 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
     }
 
-    // Inglês
+    // Inglês e Direito
     if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
       const respEng = await amberEnglishUltimate({ userId: from, pergunta: body, level: "beginner" });
       await sendMessage(from, respEng);
       return res.sendStatus(200);
     }
 
-    // Direito
     if (["lei", "artigo", "direito", "jurisprudência"].some(p => bodyLower.includes(p))) {
       const refs = await buscarInformacaoDireito(body);
       const respDir = await askGPT(`Jurisprudência:\n${refs}\n\nPergunta: ${body}`);
@@ -372,7 +366,7 @@ app.post("/webhook", async (req, res) => {
     const fatos = (await consultarFatos(from)).map(f => typeof f === "string" ? f : f.content);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
-      const promptFinal = `
+    const promptFinal = `
       SISTEMA: Você é Amber. Você está conversando com ${tratamento}. 
       ${tratamento === 'Rafael' ? 'Ele é seu criador e desenvolvedor. Trate-o com exclusividade e inteligência.' : 'Trate-o pelo nome.'}
       
