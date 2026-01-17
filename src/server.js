@@ -107,14 +107,10 @@ async function salvarImagemBase64(base64Data, from) {
     const filePath = path.join('/tmp', fileName);
     fs.writeFileSync(filePath, base64Image, 'base64');
     const serverUrl = (process.env.SERVER_URL || "").replace(/\/$/, "");
-    if (!serverUrl) {
-      console.error("❌ ERRO: Variável SERVER_URL não definida!");
-      return null;
-    }
+    if (!serverUrl) return null;
     await Session.updateOne({ userId: from }, { $set: { ultimaImagemGerada: fileName } }, { upsert: true });
     return `${serverUrl}/images/${fileName}`;
   } catch (error) {
-    console.error("❌ Erro ao salvar imagem localmente:", error);
     return null;
   }
 }
@@ -156,7 +152,6 @@ async function askGPT(prompt, imageUrl = null) {
     const response = await axios.post("https://api.openai.com/v1/chat/completions", { model, messages, temperature: 0.7 }, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
     return response.data.choices?.[0]?.message?.content || "Certo.";
   } catch (error) {
-    console.error("❌ Erro OpenAI:", error.response?.data || error.message);
     return "Tive um soluço mental, pode repetir?";
   }
 }
@@ -167,7 +162,6 @@ async function buscarInformacaoDireito(pergunta) {
     if (!resultados || !resultados.length) return "Não encontrei dados oficiais.";
     return resultados.map((r, i) => `${i + 1}. ${r.titulo} - ${r.link}`).join("\n");
   } catch (e) {
-    console.error("Erro DataJud:", e);
     return "Erro ao consultar base jurídica.";
   }
 }
@@ -218,37 +212,31 @@ app.post("/webhook", async (req, res) => {
         body = messageObj.caption || "O que você vê nesta imagem?";
       }
     }
-    else if (type === "document") {
-      if (messageObj.document.mime_type === "application/pdf") {
-        await sendMessage(from, "📄 Lendo PDF...");
-        const buffer = await downloadMedia(messageObj.document.id);
-        if (buffer) {
-          try {
-            const data = await pdfParse(buffer);
-            const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
-            body = textoExtraido.length < 5 ? "PDF sem texto." : `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
-          } catch (e) {
-            body = "Erro técnico ao ler o PDF.";
-          }
-        }
+    else if (type === "document" && messageObj.document.mime_type === "application/pdf") {
+      await sendMessage(from, "📄 Lendo PDF...");
+      const buffer = await downloadMedia(messageObj.document.id);
+      if (buffer) {
+        try {
+          const data = await pdfParse(buffer);
+          const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
+          body = textoExtraido.length < 5 ? "PDF sem texto." : `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
+        } catch (e) { body = "Erro no PDF."; }
       }
     }
 
     if (!body) return res.sendStatus(200);
 
-    /* 2. NORMALIZAÇÃO DE VARIÁVEIS (CORRIGIDO: Definidas antes de tudo) */
+    /* 2. NORMALIZAÇÃO DE VARIÁVEIS (DECLARADAS APENAS UMA VEZ AQUI) */
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
-    /* 3. BLOCO DE INTERNET (Tavily) - Enriquecimento */
+    /* 3. BLOCO DE INTERNET (Tavily) */
     const palavrasChaveInternet = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje", "pesquise"];
-    const precisaDeInternet = palavrasChaveInternet.some(p => bodyLower.includes(p));
-
-    if (precisaDeInternet) {
-        console.log("🌐 Gatilho de internet ativado para:", corpoLimpo);
+    if (palavrasChaveInternet.some(p => bodyLower.includes(p))) {
+        console.log("🌐 Gatilho de internet para:", corpoLimpo);
         const infoFrequinhas = await pesquisarWeb(corpoLimpo);
         if (infoFrequinhas) {
-            body = `DADOS REAIS DA INTERNET (DE AGORA):\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
+            body = `DADOS REAIS DA INTERNET:\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
         }
     }
 
@@ -259,22 +247,21 @@ app.post("/webhook", async (req, res) => {
       await sendMessage(from, "📸 Preparando postagem...");
       const session = await Session.findOne({ userId: from });
       const arquivoRecente = session?.ultimaImagemGerada;
-      const legenda = corpoLimpo.replace("poste isso no instagram", "").trim() || "Postado via Amber AI 🤖";
       if (arquivoRecente) {
-        const resultado = await postarInstagram({ filename: arquivoRecente, caption: legenda });
-        if (resultado && !resultado.error) await sendMessage(from, `✅ Sucesso! Sua foto já está no feed.`);
+        const resultado = await postarInstagram({ filename: arquivoRecente, caption: corpoLimpo.replace("poste isso no instagram", "").trim() || "Postado via Amber AI 🤖" });
+        if (resultado && !resultado.error) await sendMessage(from, `✅ Sucesso! Postado no feed.`);
       }
       return res.sendStatus(200);
     }
 
     // Gerar Imagem
     if (corpoLimpo.startsWith("desenha") || corpoLimpo.startsWith("imagem de")) {
-      await sendMessage(from, "🎨 Criando sua imagem com o Imagen 3...");
+      await sendMessage(from, "🎨 Criando sua imagem...");
       const promptImg = corpoLimpo.replace(/desenha|imagem de/gi, "").trim();
       const base64Result = await gerarImagemGoogle(promptImg);
       if (base64Result) {
         const publicUrl = await salvarImagemBase64(base64Result, from);
-        if (publicUrl) await sendImage(from, publicUrl, `🖌️ "${promptImg}"\n\n(Diga "Poste isso no Instagram" para publicar!)`);
+        if (publicUrl) await sendImage(from, publicUrl, `🖌️ "${promptImg}"`);
       }
       return res.sendStatus(200);
     }
@@ -284,28 +271,27 @@ app.post("/webhook", async (req, res) => {
     // Gerar Vídeo
     if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
         const tema = bodyLower.replace("amber, faz um vídeo sobre", "").trim();
-        const querAltaQualidade = bodyLower.includes("4k") || bodyLower.includes("detalhado");
-        await sendMessage(from, `🎬 Iniciando produção de vídeo sobre "${tema}"...`);
+        await sendMessage(from, `🎬 Produzindo vídeo sobre "${tema}"...`);
         try {
             const caminhosImagens = [];
             for (let i = 1; i <= 6; i++) {
-                const promptFinal = querAltaQualidade ? `${tema}, cena cinematográfica ${i}, ultra detalhado, 4k` : `${tema}, scene ${i}`;
-                const base64Result = await gerarImagemGoogle(promptFinal);
+                const base64Result = await gerarImagemGoogle(`${tema}, scene ${i}`);
                 if (base64Result) {
-                    const filePath = path.join('/tmp', `temp_vid_${uuidv4()}.png`);
+                    const filePath = path.join('/tmp', `v_${uuidv4()}.png`);
                     fs.writeFileSync(filePath, base64Result.replace(/^data:image\/\w+;base64,/, ""), 'base64');
                     caminhosImagens.push(filePath);
                 }
             }
             if (caminhosImagens.length > 0) {
-                const videoUrlRelativa = await criarVideoAmber(caminhosImagens, `video_${Date.now()}`);
-                await sendMessage(from, `✅ Vídeo pronto: ${(process.env.SERVER_URL || "").replace(/\/$/, "")}${videoUrlRelativa}`);
+                const videoUrl = await criarVideoAmber(caminhosImagens, `v_${Date.now()}`);
+                await sendMessage(from, `✅ Vídeo pronto: ${(process.env.SERVER_URL || "").replace(/\/$/, "")}${videoUrl}`);
             }
             caminhosImagens.forEach(p => fs.remove(p).catch(() => {}));
-        } catch (error) { console.error(error); }
+        } catch (e) { console.error(e); }
         return res.sendStatus(200);
     }
 
+    // Rotinas
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
 
     // Financeiro
@@ -326,7 +312,7 @@ app.post("/webhook", async (req, res) => {
        return res.sendStatus(200);
     }
 
-    // Envio em Massa
+    // Mensagem em Massa
     if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
       const match = bodyLower.match(regex);
@@ -338,7 +324,7 @@ app.post("/webhook", async (req, res) => {
               await sendMessage(numero, mensagemParaEnviar);
               await new Promise(r => setTimeout(r, 2000));
             }
-            await sendMessage(from, "✅ Envio em massa concluído.");
+            await sendMessage(from, "✅ Envio concluído.");
         })();
         return res.sendStatus(200);
       }
@@ -346,8 +332,7 @@ app.post("/webhook", async (req, res) => {
 
     // Tradução
     if (bodyLower.includes("traduza para") || bodyLower.includes("traduz para")) {
-        await sendMessage(from, "🌐 Traduzindo e gerando áudio...");
-        const textoTraduzido = await askGPT(`Traduza APENAS o texto para o idioma solicitado: ${body}`);
+        const textoTraduzido = await askGPT(`Traduza: ${body}`);
         const audioFile = await traduzirEGerarAudio(textoTraduzido);
         if (audioFile) await sendAudio(from, `${process.env.SERVER_URL}/audio/${audioFile}`);
         else await sendMessage(from, textoTraduzido);
@@ -376,7 +361,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /* 5. FLUXO PRINCIPAL (MEMÓRIA E RESPOSTA) */
+    /* 5. FLUXO PRINCIPAL */
     const userSession = await Session.findOneAndUpdate(
       { userId: from },
       { $push: { messages: { $each: [`Usuário: ${body}`], $slice: -15 } }, $set: { lastUpdate: new Date() } },
@@ -384,11 +369,10 @@ app.post("/webhook", async (req, res) => {
     );
 
     const fatos = (await consultarFatos(from)).map(f => typeof f === "string" ? f : f.content);
-    const fatosFiltrados = selectMemoriesForPrompt(fatos);
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
     const promptFinal = `
-      FATOS: ${fatosFiltrados.join("\n")}
+      FATOS: ${selectMemoriesForPrompt(fatos).join("\n")}
       HISTÓRICO: ${memoriaSemantica.join("\n")}
       CONVERSA: ${userSession.messages.join("\n")}
       MSG ATUAL: ${body}
@@ -402,12 +386,11 @@ app.post("/webhook", async (req, res) => {
     await addSemanticMemory(`Pergunta: ${body} | Resposta: ${respostaFinal}`, "histórico", from, "user");
 
     if (type === "audio") {
-      const audioPath = await falar(respostaFinal);
-      await sendAudio(from, audioPath);
+        const audioPath = await falar(respostaFinal);
+        await sendAudio(from, audioPath);
     } else {
-      await sendMessage(from, respostaFinal);
+        await sendMessage(from, respostaFinal);
     }
-
     return res.sendStatus(200);
 
   } catch (err) {
