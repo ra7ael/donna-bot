@@ -37,11 +37,12 @@ import { downloadMedia } from "./utils/downloadMedia.js";
 import { processarTasks } from "./utils/todoModule.js";
 import { buscarNoticiasComIA } from "./utils/newsModule.js";
 import { pesquisarWeb } from "./utils/searchModule.js";
-// REMOVI O IMPORT DE USERPROFILE POIS VAMOS USAR AS FUNÇÕES LOCAIS ABAIXO
 import cron from "node-cron";
 import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 import { criarVideoAmber } from "./utils/videoMaker.js";
+
+// AQUI: REMOVI O IMPORT QUE DAVA ERRO (userProfile.js)
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
