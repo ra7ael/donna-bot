@@ -110,9 +110,7 @@ async function salvarImagemBase64(base64Data, from) {
     if (!serverUrl) return null;
     await Session.updateOne({ userId: from }, { $set: { ultimaImagemGerada: fileName } }, { upsert: true });
     return `${serverUrl}/images/${fileName}`;
-  } catch (error) {
-    return null;
-  }
+  } catch (error) { return null; }
 }
 
 async function sendMessage(to, text) {
@@ -127,18 +125,14 @@ async function sendMessage(to, text) {
         { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
       );
     }
-  } catch (error) {
-    console.error(`Erro envio:`, error.message);
-  }
+  } catch (error) { console.error(`Erro envio:`, error.message); }
 }
 
 async function sendImage(to, imageSource, caption = "") {
   try {
     const payload = { messaging_product: "whatsapp", to, type: "image", image: { caption, link: imageSource } };
     await axios.post(`https://graph.facebook.com/v24.0/${WHATSAPP_PHONE_ID}/messages`, payload, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
-  } catch (error) {
-    console.error("❌ Erro ao enviar imagem:", error.response?.data || error.message);
-  }
+  } catch (error) { console.error("❌ Erro ao enviar imagem:", error.response?.data || error.message); }
 }
 
 async function askGPT(prompt, imageUrl = null) {
@@ -151,9 +145,7 @@ async function askGPT(prompt, imageUrl = null) {
     const model = "gpt-4o-mini"; 
     const response = await axios.post("https://api.openai.com/v1/chat/completions", { model, messages, temperature: 0.7 }, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
     return response.data.choices?.[0]?.message?.content || "Certo.";
-  } catch (error) {
-    return "Tive um soluço mental, pode repetir?";
-  }
+  } catch (error) { return "Tive um soluço mental, pode repetir?"; }
 }
 
 async function buscarInformacaoDireito(pergunta) {
@@ -161,9 +153,7 @@ async function buscarInformacaoDireito(pergunta) {
     const resultados = await consultarDataJud(pergunta);
     if (!resultados || !resultados.length) return "Não encontrei dados oficiais.";
     return resultados.map((r, i) => `${i + 1}. ${r.titulo} - ${r.link}`).join("\n");
-  } catch (e) {
-    return "Erro ao consultar base jurídica.";
-  }
+  } catch (e) { return "Erro ao consultar base jurídica."; }
 }
 
 app.get("/", (req, res) => res.status(200).send("Amber Ultimate Online 🟢"));
@@ -195,7 +185,7 @@ app.post("/webhook", async (req, res) => {
     let body = "";
     let imageUrlForGPT = null;
 
-    /* 1. EXTRAÇÃO DE CONTEÚDO */
+    /* 1. EXTRAÇÃO DE CONTEÚDO (Movi para o topo para garantir que o 'body' exista) */
     if (type === "text") {
       body = messageObj.text.body;
     } 
@@ -207,8 +197,7 @@ app.post("/webhook", async (req, res) => {
       const buffer = await downloadMedia(messageObj.image.id);
       if (buffer) {
         const base64Image = buffer.toString('base64');
-        const mimeType = messageObj.image.mime_type || "image/jpeg";
-        imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
+        imageUrlForGPT = `data:${messageObj.image.mime_type || "image/jpeg"};base64,${base64Image}`;
         body = messageObj.caption || "O que você vê nesta imagem?";
       }
     }
@@ -219,21 +208,20 @@ app.post("/webhook", async (req, res) => {
         try {
           const data = await pdfParse(buffer);
           const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
-          body = textoExtraido.length < 5 ? "PDF sem texto." : `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma este documento."}`;
+          body = `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma."}`;
         } catch (e) { body = "Erro no PDF."; }
       }
     }
 
     if (!body) return res.sendStatus(200);
 
-    /* 2. NORMALIZAÇÃO DE VARIÁVEIS (DECLARADAS APENAS UMA VEZ AQUI) */
+    /* 2. NORMALIZAÇÃO DE VARIÁVEIS (Agora o body já existe com certeza) */
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
     /* 3. BLOCO DE INTERNET (Tavily) */
     const palavrasChaveInternet = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje", "pesquise"];
     if (palavrasChaveInternet.some(p => bodyLower.includes(p))) {
-        console.log("🌐 Gatilho de internet para:", corpoLimpo);
         const infoFrequinhas = await pesquisarWeb(corpoLimpo);
         if (infoFrequinhas) {
             body = `DADOS REAIS DA INTERNET:\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
@@ -248,7 +236,7 @@ app.post("/webhook", async (req, res) => {
       const session = await Session.findOne({ userId: from });
       const arquivoRecente = session?.ultimaImagemGerada;
       if (arquivoRecente) {
-        const resultado = await postarInstagram({ filename: arquivoRecente, caption: corpoLimpo.replace("poste isso no instagram", "").trim() || "Postado via Amber AI 🤖" });
+        const resultado = await postarInstagram({ filename: arquivoRecente, caption: corpoLimpo.replace("poste isso no instagram", "").trim() });
         if (resultado && !resultado.error) await sendMessage(from, `✅ Sucesso! Postado no feed.`);
       }
       return res.sendStatus(200);
@@ -291,7 +279,6 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
     }
 
-    // Rotinas
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
 
     // Financeiro
@@ -312,7 +299,7 @@ app.post("/webhook", async (req, res) => {
        return res.sendStatus(200);
     }
 
-    // Mensagem em Massa
+    // Envio em Massa
     if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
       const match = bodyLower.match(regex);
@@ -386,10 +373,10 @@ app.post("/webhook", async (req, res) => {
     await addSemanticMemory(`Pergunta: ${body} | Resposta: ${respostaFinal}`, "histórico", from, "user");
 
     if (type === "audio") {
-        const audioPath = await falar(respostaFinal);
-        await sendAudio(from, audioPath);
+      const audioPath = await falar(respostaFinal);
+      await sendAudio(from, audioPath);
     } else {
-        await sendMessage(from, respostaFinal);
+      await sendMessage(from, respostaFinal);
     }
     return res.sendStatus(200);
 
