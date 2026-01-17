@@ -30,14 +30,14 @@ import { Session } from "./models/session.js";
 import { traduzirEGerarAudio } from "./utils/translatorModule.js";
 import { postarInstagram } from "./instagram.js";
 
-// NOVOS MÓDULOS E IDENTIDADE
+// NOVOS MÓDULOS
 import { processarAgenda } from "./utils/calendarModule.js";
 import { processarFinanceiro } from "./utils/financeModule.js";
 import { downloadMedia } from "./utils/downloadMedia.js"; 
 import { processarTasks } from "./utils/todoModule.js";
 import { buscarNoticiasComIA } from "./utils/newsModule.js";
 import { pesquisarWeb } from "./utils/searchModule.js";
-import { getUserName, setUserName } from "./utils/userProfile.js"; // Certifique-se de que este arquivo existe
+// REMOVI O IMPORT DE USERPROFILE POIS VAMOS USAR AS FUNÇÕES LOCAIS ABAIXO
 import cron from "node-cron";
 import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
@@ -167,22 +167,18 @@ app.get("/webhook", (req, res) => {
 const NUMEROS_PERMITIDOS = ["554195194485"];
 const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
 
-
 /* ========================= WEBHOOK POST ========================= */
 app.post("/webhook", async (req, res) => {
-  // 1. DEFINIÇÃO DAS FUNÇÕES (DENTRO DO WEBHOOK PARA GARANTIR ACESSO AO DB)
-  const getUserName = async (number) => {
+  // 1. FUNÇÕES DE APOIO (LOCAIS)
+  const getUserNameLocal = async (number) => {
     try {
       if (!db) return null;
       const doc = await db.collection("users").findOne({ numero: number });
       return doc?.nome || null;
-    } catch (err) {
-      console.error("❌ Erro ao buscar nome:", err);
-      return null;
-    }
+    } catch (err) { return null; }
   };
 
-  const setUserName = async (number, name) => {
+  const setUserNameLocal = async (number, name) => {
     try {
       if (!db) return;
       await db.collection("users").updateOne(
@@ -190,9 +186,7 @@ app.post("/webhook", async (req, res) => {
         { $set: { nome: name } },
         { upsert: true }
       );
-    } catch (err) {
-      console.error("❌ Erro ao salvar nome:", err);
-    }
+    } catch (err) { console.error(err); }
   };
 
   try {
@@ -209,10 +203,10 @@ app.post("/webhook", async (req, res) => {
     
     if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
-    /* --- IDENTIDADE --- */
-    let nomeUsuario = await getUserName(from);
+    /* --- RECONHECIMENTO DE IDENTIDADE --- */
+    let nomeUsuario = await getUserNameLocal(from);
     if (!nomeUsuario && from === "554195194485") {
-        await setUserName(from, "Rafael");
+        await setUserNameLocal(from, "Rafael");
         nomeUsuario = "Rafael";
     }
     const tratamento = nomeUsuario || "usuário";
@@ -250,11 +244,10 @@ app.post("/webhook", async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    // 2. NORMALIZAÇÃO (bodyLower agora é criado DEPOIS de extrair o body)
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
-    /* 3. BLOCO DE INTERNET (Tavily) */
+    /* 2. BLOCO DE INTERNET (Tavily) */
     const palavrasChaveInternet = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje", "pesquise"];
     if (palavrasChaveInternet.some(p => bodyLower.includes(p))) {
         const infoFrequinhas = await pesquisarWeb(corpoLimpo);
@@ -263,16 +256,15 @@ app.post("/webhook", async (req, res) => {
         }
     }
 
-    /* 4. GATILHOS DE COMANDO */
+    /* 3. GATILHOS DE COMANDO */
 
     // Instagram
     if (corpoLimpo.startsWith("poste isso no instagram")) {
       await sendMessage(from, "📸 Preparando postagem...");
       const session = await Session.findOne({ userId: from });
-      const arquivoRecente = session?.ultimaImagemGerada;
-      if (arquivoRecente) {
-        const resultado = await postarInstagram({ filename: arquivoRecente, caption: corpoLimpo.replace("poste isso no instagram", "").trim() });
-        if (resultado && !resultado.error) await sendMessage(from, `✅ Sucesso! Postado no feed.`);
+      if (session?.ultimaImagemGerada) {
+        const resultado = await postarInstagram({ filename: session.ultimaImagemGerada, caption: corpoLimpo.replace("poste isso no instagram", "").trim() });
+        if (resultado && !resultado.error) await sendMessage(from, `✅ Postado com sucesso.`);
       }
       return res.sendStatus(200);
     }
@@ -316,17 +308,14 @@ app.post("/webhook", async (req, res) => {
 
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
 
-    // Financeiro
     if (["gastei", "compra", "paguei", "valor"].some(p => bodyLower.includes(p))) {
       const respFin = await processarFinanceiro(body);
       if (respFin) { await sendMessage(from, respFin); return res.sendStatus(200); }
     }
 
-    // Tarefas
     const respTask = await processarTasks(from, body);
     if (respTask) { await sendMessage(from, respTask); return res.sendStatus(200); }
 
-    // Agenda
     const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
     if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
        const respAgenda = await processarAgenda(body);
@@ -334,16 +323,15 @@ app.post("/webhook", async (req, res) => {
        return res.sendStatus(200);
     }
 
-    // Envio em Massa
-    if (bodyLower.startsWith("amber envia mensagem") || bodyLower.startsWith("amber, envia mensagem")) {
+    if (bodyLower.startsWith("amber envia mensagem")) {
       const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
       const match = bodyLower.match(regex);
       if (match) {
         const numeros = match[1].replace(/\s/g, "").split(",").filter(Boolean);
-        const mensagemParaEnviar = match[2];
+        const msgParaEnviar = match[2];
         (async () => {
             for (const numero of numeros) {
-              await sendMessage(numero, mensagemParaEnviar);
+              await sendMessage(numero, msgParaEnviar);
               await new Promise(r => setTimeout(r, 2000));
             }
             await sendMessage(from, "✅ Envio concluído.");
@@ -352,8 +340,7 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // Tradução
-    if (bodyLower.includes("traduza para") || bodyLower.includes("traduz para")) {
+    if (bodyLower.includes("traduza para")) {
         const textoTraduzido = await askGPT(`Traduza: ${body}`);
         const audioFile = await traduzirEGerarAudio(textoTraduzido);
         if (audioFile) await sendAudio(from, `${process.env.SERVER_URL}/audio/${audioFile}`);
@@ -361,28 +348,13 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
     }
 
-    // Inglês e Direito
-    if (bodyLower.includes("english") || bodyLower.startsWith("translate")) {
-      const respEng = await amberEnglishUltimate({ userId: from, pergunta: body, level: "beginner" });
-      await sendMessage(from, respEng);
-      return res.sendStatus(200);
-    }
-
-    if (["lei", "artigo", "direito", "jurisprudência"].some(p => bodyLower.includes(p))) {
-      const refs = await buscarInformacaoDireito(body);
-      const respDir = await askGPT(`Jurisprudência:\n${refs}\n\nPergunta: ${body}`);
-      await sendMessage(from, respDir);
-      return res.sendStatus(200);
-    }
-
-    // Clima
-    if (["clima", "tempo", "previsão"].some(p => bodyLower.includes(p))) {
+    if (bodyLower.includes("clima") || bodyLower.includes("previsão")) {
       const clima = await getWeather("Curitiba", "hoje");
       await sendMessage(from, clima);
       return res.sendStatus(200);
     }
 
-    /* 5. FLUXO PRINCIPAL */
+    /* 4. FLUXO PRINCIPAL GPT */
     const userSession = await Session.findOneAndUpdate(
       { userId: from },
       { $push: { messages: { $each: [`Usuário: ${body}`], $slice: -15 } }, $set: { lastUpdate: new Date() } },
@@ -393,8 +365,8 @@ app.post("/webhook", async (req, res) => {
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
     const promptFinal = `
-      SISTEMA: Você é Amber. Você está conversando com ${tratamento}. 
-      ${tratamento === 'Rafael' ? 'Ele é seu criador e desenvolvedor. Trate-o com exclusividade e inteligência.' : 'Trate-o pelo nome.'}
+      SISTEMA: Você é Amber. Você fala com ${tratamento}. 
+      ${tratamento === 'Rafael' ? 'Ele é seu criador.' : ''}
       
       FATOS: ${selectMemoriesForPrompt(fatos).join("\n")}
       HISTÓRICO: ${memoriaSemantica.join("\n")}
