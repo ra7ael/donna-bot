@@ -42,8 +42,6 @@ import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 import { criarVideoAmber } from "./utils/videoMaker.js";
 
-// AQUI: REMOVI O IMPORT QUE DAVA ERRO (userProfile.js)
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /* ========================= CONFIG ========================= */
@@ -156,7 +154,7 @@ async function askGPT(prompt, imageUrl = null) {
     const response = await axios.post("https://api.openai.com/v1/chat/completions", { 
       model, 
       messages, 
-      temperature: 0.8 // Aumentei um pouco para ela ter mais 'atitude' nas respostas
+      temperature: 0.8
     }, { 
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } 
     });
@@ -186,7 +184,6 @@ const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
 
 /* ========================= WEBHOOK POST ========================= */
 app.post("/webhook", async (req, res) => {
-  // 1. FUNÇÕES DE APOIO (LOCAIS)
   const getUserNameLocal = async (number) => {
     try {
       if (!db) return null;
@@ -220,7 +217,6 @@ app.post("/webhook", async (req, res) => {
     
     if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
-    /* --- RECONHECIMENTO DE IDENTIDADE --- */
     let nomeUsuario = await getUserNameLocal(from);
     if (!nomeUsuario && from === "554195194485") {
         await setUserNameLocal(from, "Rafael");
@@ -228,7 +224,6 @@ app.post("/webhook", async (req, res) => {
     }
     const tratamento = nomeUsuario || "usuário";
 
-    /* --- EXTRAÇÃO DE CONTEÚDO --- */
     let body = "";
     let imageUrlForGPT = null;
 
@@ -275,18 +270,41 @@ app.post("/webhook", async (req, res) => {
 
     /* 3. GATILHOS DE COMANDO */
 
-    // Instagram
-    if (corpoLimpo.startsWith("poste isso no instagram")) {
-      await sendMessage(from, "📸 Preparando postagem...");
-      const session = await Session.findOne({ userId: from });
-      if (session?.ultimaImagemGerada) {
-        const resultado = await postarInstagram({ filename: session.ultimaImagemGerada, caption: corpoLimpo.replace("poste isso no instagram", "").trim() });
-        if (resultado && !resultado.error) await sendMessage(from, `✅ Postado com sucesso.`);
-      }
-      return res.sendStatus(200);
+    // --- NOVA FUNÇÃO DE BLOGUEIRA (DONNA STYLE) ---
+    if (corpoLimpo.includes("crie um post para o instagram")) {
+        const temaDoPost = corpoLimpo.replace("crie um post para o instagram", "").trim() || "estratégia e sucesso";
+        await sendMessage(from, "✨ Deixe comigo, Rafael. Vou preparar algo à nossa altura.");
+
+        const promptImg = `Uma mulher deslumbrante e poderosa, estilo Donna Paulsen, em um escritório luxuoso de Curitiba, luz do pôr do sol, segurando café, olhar inteligente. Fotorrealista.`;
+        const base64Result = await gerarImagemGoogle(promptImg);
+        
+        if (base64Result) {
+          const publicUrl = await salvarImagemBase64(base64Result, from);
+          if (publicUrl) {
+            await sendImage(from, publicUrl, "O que acha desta presença, Rafael?");
+            const promptLegenda = `Como Amber (personalidade Donna Paulsen), escreva uma legenda curta e sedutora sobre: ${temaDoPost}.`;
+            const legendaGerada = await askGPT(promptLegenda);
+            await Session.updateOne({ userId: from }, { $set: { ultimaLegendaGerada: legendaGerada } });
+            await sendMessage(from, `📝 Legenda:\n\n"${legendaGerada}"`);
+            await sendMessage(from, "Diga apenas *'Postar'* e eu cuido de tudo.");
+          }
+        }
+        return res.sendStatus(200);
     }
 
-    // Gerar Imagem
+    if (corpoLimpo === "postar") {
+        const session = await Session.findOne({ userId: from });
+        if (session?.ultimaImagemGerada && session?.ultimaLegendaGerada) {
+            await sendMessage(from, "🚀 Enviando... Considere feito.");
+            const resInsta = await postarInstagram({ filename: session.ultimaImagemGerada, caption: session.ultimaLegendaGerada });
+            if (resInsta && !resInsta.error) await sendMessage(from, "✅ Está no ar, Rafael. Impecável.");
+        } else {
+            await sendMessage(from, "Não encontrei nenhum post pronto.");
+        }
+        return res.sendStatus(200);
+    }
+
+    // Gerar Imagem Genérica
     if (corpoLimpo.startsWith("desenha") || corpoLimpo.startsWith("imagem de")) {
       await sendMessage(from, "🎨 Criando sua imagem...");
       const promptImg = corpoLimpo.replace(/desenha|imagem de/gi, "").trim();
@@ -300,29 +318,7 @@ app.post("/webhook", async (req, res) => {
 
     await extractAutoMemoryGPT(from, body, askGPT);
 
-    // Gerar Vídeo
-    if (bodyLower.startsWith("amber, faz um vídeo sobre")) {
-        const tema = bodyLower.replace("amber, faz um vídeo sobre", "").trim();
-        await sendMessage(from, `🎬 Produzindo vídeo sobre "${tema}"...`);
-        try {
-            const caminhosImagens = [];
-            for (let i = 1; i <= 6; i++) {
-                const base64Result = await gerarImagemGoogle(`${tema}, scene ${i}`);
-                if (base64Result) {
-                    const filePath = path.join('/tmp', `v_${uuidv4()}.png`);
-                    fs.writeFileSync(filePath, base64Result.replace(/^data:image\/\w+;base64,/, ""), 'base64');
-                    caminhosImagens.push(filePath);
-                }
-            }
-            if (caminhosImagens.length > 0) {
-                const videoUrl = await criarVideoAmber(caminhosImagens, `v_${Date.now()}`);
-                await sendMessage(from, `✅ Vídeo pronto: ${(process.env.SERVER_URL || "").replace(/\/$/, "")}${videoUrl}`);
-            }
-            caminhosImagens.forEach(p => fs.remove(p).catch(() => {}));
-        } catch (e) { console.error(e); }
-        return res.sendStatus(200);
-    }
-
+    // Outros comandos (Agenda, Financeiro, etc)
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
 
     if (["gastei", "compra", "paguei", "valor"].some(p => bodyLower.includes(p))) {
@@ -340,37 +336,6 @@ app.post("/webhook", async (req, res) => {
        return res.sendStatus(200);
     }
 
-    if (bodyLower.startsWith("amber envia mensagem")) {
-      const regex = /para\s+([\d,\s]+)[\s:]+(.*)/i;
-      const match = bodyLower.match(regex);
-      if (match) {
-        const numeros = match[1].replace(/\s/g, "").split(",").filter(Boolean);
-        const msgParaEnviar = match[2];
-        (async () => {
-            for (const numero of numeros) {
-              await sendMessage(numero, msgParaEnviar);
-              await new Promise(r => setTimeout(r, 2000));
-            }
-            await sendMessage(from, "✅ Envio concluído.");
-        })();
-        return res.sendStatus(200);
-      }
-    }
-
-    if (bodyLower.includes("traduza para")) {
-        const textoTraduzido = await askGPT(`Traduza: ${body}`);
-        const audioFile = await traduzirEGerarAudio(textoTraduzido);
-        if (audioFile) await sendAudio(from, `${process.env.SERVER_URL}/audio/${audioFile}`);
-        else await sendMessage(from, textoTraduzido);
-        return res.sendStatus(200);
-    }
-
-    if (bodyLower.includes("clima") || bodyLower.includes("previsão")) {
-      const clima = await getWeather("Curitiba", "hoje");
-      await sendMessage(from, clima);
-      return res.sendStatus(200);
-    }
-
     /* 4. FLUXO PRINCIPAL GPT */
     const userSession = await Session.findOneAndUpdate(
       { userId: from },
@@ -384,7 +349,6 @@ app.post("/webhook", async (req, res) => {
     const promptFinal = `
       SISTEMA: Você é Amber. Você fala com ${tratamento}. 
       ${tratamento === 'Rafael' ? 'Ele é seu criador.' : ''}
-      
       FATOS: ${selectMemoriesForPrompt(fatos).join("\n")}
       HISTÓRICO: ${memoriaSemantica.join("\n")}
       CONVERSA: ${userSession.messages.join("\n")}
