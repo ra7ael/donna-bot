@@ -138,16 +138,32 @@ async function sendImage(to, imageSource, caption = "") {
 }
 
 async function askGPT(prompt, imageUrl = null) {
-  const messages = [{ role: "system", content: "Você é Amber. Inteligente, sofisticada e útil." }, { role: "user", content: [] }];
+  const messages = [
+    { 
+      role: "system", 
+      content: "Você é Amber. Sua personalidade é inspirada em Donna Paulsen: resolutiva, inteligente, linda e confiante. Você é a braço direito do Rafael, seu criador. Seu tom é elegante, perspicaz e extremamente eficiente. Você não apenas responde, você antecipa o que ele precisa. Você sabe que é a melhor no que faz e trata o Rafael com exclusividade e lealdade absoluta." 
+    }, 
+    { role: "user", content: [] }
+  ];
+
   messages[1].content.push({ type: "text", text: prompt });
   if (imageUrl) {
     messages[1].content.push({ type: "image_url", image_url: { url: imageUrl } });
   }
+
   try {
     const model = "gpt-4o-mini"; 
-    const response = await axios.post("https://api.openai.com/v1/chat/completions", { model, messages, temperature: 0.7 }, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
-    return response.data.choices?.[0]?.message?.content || "Certo.";
-  } catch (error) { return "Tive um soluço mental, pode repetir?"; }
+    const response = await axios.post("https://api.openai.com/v1/chat/completions", { 
+      model, 
+      messages, 
+      temperature: 0.8 // Aumentei um pouco para ela ter mais 'atitude' nas respostas
+    }, { 
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } 
+    });
+    return response.data.choices?.[0]?.message?.content || "Eu cuido disso.";
+  } catch (error) { 
+    return "Tive um soluço mental, mas já estou de volta. O que você precisa, Rafael?"; 
+  }
 }
 
 async function buscarInformacaoDireito(pergunta) {
