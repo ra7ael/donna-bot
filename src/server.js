@@ -168,37 +168,18 @@ const NUMEROS_PERMITIDOS = ["554195194485"];
 const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
 
 
-/* ========================= FUNÇÕES DE IDENTIDADE ========================= */
-async function getUserName(number) {
-  try {
-    const doc = await db.collection("users").findOne({ numero: number });
-    return doc?.nome || null;
-  } catch (err) {
-    console.error("❌ Erro ao buscar nome do usuário:", err);
-    return null;
-  }
-}
-
-async function setUserName(number, name) {
-  try {
-    await db.collection("users").updateOne(
-      { numero: number },
-      { $set: { nome: name } },
-      { upsert: true }
-    );
-  } catch (err) {
-    console.error("❌ Erro ao salvar nome do usuário:", err);
-  }
-}
 /* ========================= WEBHOOK POST ========================= */
 app.post("/webhook", async (req, res) => {
-  // FUNÇÕES DEFINIDAS AQUI DENTRO PARA GARANTIR ACESSO AO 'db'
+  // 1. DEFINIÇÃO DAS FUNÇÕES (DENTRO DO WEBHOOK PARA GARANTIR ACESSO AO DB)
   const getUserName = async (number) => {
     try {
       if (!db) return null;
       const doc = await db.collection("users").findOne({ numero: number });
       return doc?.nome || null;
-    } catch (err) { return null; }
+    } catch (err) {
+      console.error("❌ Erro ao buscar nome:", err);
+      return null;
+    }
   };
 
   const setUserName = async (number, name) => {
@@ -209,7 +190,9 @@ app.post("/webhook", async (req, res) => {
         { $set: { nome: name } },
         { upsert: true }
       );
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error("❌ Erro ao salvar nome:", err);
+    }
   };
 
   try {
@@ -226,21 +209,18 @@ app.post("/webhook", async (req, res) => {
     
     if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
-    /* --- AGORA O RECONHECIMENTO VAI FUNCIONAR --- */
+    /* --- IDENTIDADE --- */
     let nomeUsuario = await getUserName(from);
-
     if (!nomeUsuario && from === "554195194485") {
         await setUserName(from, "Rafael");
         nomeUsuario = "Rafael";
     }
-    
     const tratamento = nomeUsuario || "usuário";
-    /* ------------------------------------------- */
 
+    /* --- EXTRAÇÃO DE CONTEÚDO --- */
     let body = "";
     let imageUrlForGPT = null;
 
-    /* 1. EXTRAÇÃO DE CONTEÚDO */
     if (type === "text") {
       body = messageObj.text.body;
     } 
@@ -270,7 +250,7 @@ app.post("/webhook", async (req, res) => {
 
     if (!body) return res.sendStatus(200);
 
-    /* 2. NORMALIZAÇÃO */
+    // 2. NORMALIZAÇÃO (bodyLower agora é criado DEPOIS de extrair o body)
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
@@ -279,7 +259,7 @@ app.post("/webhook", async (req, res) => {
     if (palavrasChaveInternet.some(p => bodyLower.includes(p))) {
         const infoFrequinhas = await pesquisarWeb(corpoLimpo);
         if (infoFrequinhas) {
-            body = `DADOS REAIS DA INTERNET (DE AGORA):\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
+            body = `DADOS REAIS DA INTERNET:\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
         }
     }
 
