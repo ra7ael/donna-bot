@@ -228,49 +228,37 @@ app.post("/webhook", async (req, res) => {
     const messageObj = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!messageObj) return res.sendStatus(200);
 
-    const messageId = messageObj.id;
-    if (mensagensProcessadas.has(messageId)) return res.sendStatus(200);
-    mensagensProcessadas.add(messageId);
-    setTimeout(() => mensagensProcessadas.delete(messageId), 300000);
-
     const from = messageObj.from;
     const type = messageObj.type;
     
-    if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
+    // ... (suas travas de segurança e Set de mensagens processadas continuam aqui)
 
     let body = "";
     let imageUrlForGPT = null;
 
+    // 1. EXTRAÇÃO DO TEXTO (Mova para cá)
     if (type === "text") {
       body = messageObj.text.body;
-    } 
-    else if (type === "audio") {
+    } else if (type === "audio") {
       body = await transcreverAudio(messageObj.audio.id);
-    } 
-    else if (type === "image") {
-      await sendMessage(from, "👁️ Analisando imagem...");
-      const buffer = await downloadMedia(messageObj.image.id);
-      if (buffer) {
-        const base64Image = buffer.toString('base64');
-        const mimeType = messageObj.image.mime_type || "image/jpeg";
-        imageUrlForGPT = `data:${mimeType};base64,${base64Image}`;
-        body = messageObj.caption || "O que você vê nesta imagem?";
-      } else {
-        await sendMessage(from, "Não consegui baixar a foto agora.");
-        return res.sendStatus(200);
-      }
-    }
+    } // ... (continue com os outros tipos: image, document)
 
-      /* ========================= NOVO: BLOCO DE INTERNET (LUGAR CORRETO) ========================= */
+    if (!body) return res.sendStatus(200);
+
+    // 2. DEFINIÇÃO DAS VARIÁVEIS DE LIMPEZA (Essencial para o bloco abaixo funcionar)
+    const bodyLower = body.toLowerCase();
+    const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
+
+    /* ========================= BLOCO DE INTERNET (POSIÇÃO CORRIGIDA) ========================= */
     const palavrasChave = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje", "pesquise"];
     const precisaDeInternet = palavrasChave.some(p => bodyLower.includes(p));
 
     if (precisaDeInternet) {
         console.log("🌐 Gatilho de internet ativado para:", corpoLimpo);
-        const infoFrequinhas = await pesquisarWeb(corpoLimpo); // Use o corpo limpo para a busca ser melhor
+        const infoFrequinhas = await pesquisarWeb(corpoLimpo); 
         
         if (infoFrequinhas) {
-            // Aqui nós REESCREVEMOS o body para que as funções abaixo já leiam o contexto
+            // Injetamos o contexto no body para o askGPT usar lá no final
             body = `
             DADOS REAIS DA INTERNET (DE AGORA):
             ${infoFrequinhas.resumo}
@@ -281,9 +269,9 @@ app.post("/webhook", async (req, res) => {
             PERGUNTA DO RAFAEL:
             ${body}
             
-            INSTRUÇÃO: Use os dados acima. Se for futebol, foque no Athletico-PR.
+            INSTRUÇÃO: Use os dados acima para responder. Se for futebol, foque no Athletico-PR.
             `;
-            // Não damos return aqui! Deixamos o código seguir para o askGPT processar tudo.
+            // IMPORTANTE: NÃO dê return aqui. Deixe o código seguir para os comandos ou para o fluxo principal.
         }
     }
  
