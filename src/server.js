@@ -408,7 +408,7 @@ if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesq
   }
 });
 
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat-backend", async (req, res) => {
   const { message, userId } = req.body;
   const from = userId || "554195194485"; // Padrão Rafael de Curitiba
 
