@@ -1,29 +1,42 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 export default function AmberInterface() {
   const [status, setStatus] = useState("ONLINE");
   const [input, setInput] = useState("");
+  // Corrigido: O estado deve bater com o nome usado nas funções
   const [chat, setChat] = useState<{ role: string, text: string }[]>([
     { role: 'amber', text: 'Sistemas carregados. Aguardando comandos, Rafael.' }
   ]);
 
-const handleCommand = async (e) => {
-  if (e.key === 'Enter' && input) {
-    const userMsg = input;
-    setInput("");
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+  const handleCommand = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && input) {
+      const userMsg = input;
+      setInput("");
+      
+      // 1. Adiciona a mensagem do Rafael na tela imediatamente
+      setChat(prev => [...prev, { role: 'user', text: userMsg }]);
 
-    const res = await fetch('https://donna-bot.vercel.app/api/chat', { // Use sua URL oficial
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: userMsg, userId: '554195194485' }),
-    });
+      try {
+        // 2. Chama a API interna do Next.js que criamos (a ponte)
+        const res = await fetch('/api/chat', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userMsg, userId: '554195194485' }),
+        });
 
-    const data = await res.json();
-    setMessages(prev => [...prev, { role: 'amber', text: data.text }]);
-  }
-};
+        if (!res.ok) throw new Error("Erro na resposta do servidor");
+
+        const data = await res.json();
+        
+        // 3. Adiciona a resposta da Amber na tela
+        setChat(prev => [...prev, { role: 'amber', text: data.text }]);
+      } catch (error) {
+        setChat(prev => [...prev, { role: 'amber', text: '⚠️ Falha na conexão com o núcleo. Verifique o servidor.' }]);
+        console.error("Erro no chat:", error);
+      }
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#050505] text-cyan-400 font-mono p-4 flex flex-col items-center selection:bg-cyan-500/30">
@@ -48,45 +61,28 @@ const handleCommand = async (e) => {
         </div>
       </header>
 
-      {/* Grid de Apps com Efeito Glassmorphism */}
+      {/* Grid de Apps */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl z-10">
-        
-        {/* Financeiro */}
         <div className="relative group overflow-hidden bg-slate-900/20 border border-white/5 p-6 rounded-2xl transition-all duration-500 hover:border-cyan-500/50 hover:bg-slate-900/40">
           <div className="absolute -right-4 -top-4 text-6xl opacity-10 group-hover:opacity-20 transition-opacity">🏦</div>
           <h3 className="text-lg font-bold mb-4 text-white group-hover:text-cyan-400 transition-colors">Financeiro B2B</h3>
           <p className="text-xs text-slate-400 leading-relaxed">Gestão de fluxo e auditoria de NFe integrada.</p>
-          <div className="mt-6 flex items-end justify-between">
-             <span className="text-[10px] text-cyan-600">STATUS: OTIMIZADO</span>
-             <div className="flex gap-1">
-                {[1,2,3,4].map(i => <div key={i} className="w-1 h-3 bg-cyan-500/30 rounded-full"></div>)}
-             </div>
-          </div>
         </div>
 
-        {/* RH - Estilo Purple Glow */}
         <div className="relative group overflow-hidden bg-slate-900/20 border border-white/5 p-6 rounded-2xl transition-all duration-500 hover:border-purple-500/50 hover:bg-slate-900/40">
           <div className="absolute -right-4 -top-4 text-6xl opacity-10 group-hover:opacity-20 transition-opacity">⚖️</div>
           <h3 className="text-lg font-bold mb-4 text-white group-hover:text-purple-400 transition-colors">Gestão de RH</h3>
-          <p className="text-xs text-slate-400 leading-relaxed">Contratos Lei 6.019 e folha 2026.</p>
-          <div className="mt-6 flex gap-2">
-             <span className="text-[9px] border border-purple-500/30 px-2 py-1 rounded text-purple-300">MIGUEL OK</span>
-             <span className="text-[9px] border border-purple-500/30 px-2 py-1 rounded text-purple-300">RECRUTAMENTO</span>
-          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">Contratos Miguel e folha 2026.</p>
         </div>
 
-        {/* Blogueira - Estilo Pink Glow */}
         <div className="relative group overflow-hidden bg-slate-900/20 border border-white/5 p-6 rounded-2xl transition-all duration-500 hover:border-pink-500/50 hover:bg-slate-900/40">
           <div className="absolute -right-4 -top-4 text-6xl opacity-10 group-hover:opacity-20 transition-opacity">📸</div>
           <h3 className="text-lg font-bold mb-4 text-white group-hover:text-pink-400 transition-colors">Amber Social</h3>
           <p className="text-xs text-slate-400 leading-relaxed">IA Criativa e Automação de Influência.</p>
-          <div className="mt-6 bg-pink-500/10 h-1.5 w-full rounded-full overflow-hidden">
-             <div className="bg-pink-500 h-full w-[80%]"></div>
-          </div>
         </div>
       </div>
 
-      {/* Terminal de Chat "Real" */}
+      {/* Terminal de Chat */}
       <section className="mt-12 w-full max-w-5xl bg-[#0a0a0a] border border-white/10 rounded-2xl shadow-2xl z-10 overflow-hidden">
         <div className="bg-white/5 p-3 flex items-center justify-between border-b border-white/5">
            <div className="flex gap-2">
