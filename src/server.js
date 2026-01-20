@@ -1,4 +1,3 @@
-// src/server.js
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
@@ -11,6 +10,8 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import pdfParse from "pdf-parse-fork";
 import { v4 as uuidv4 } from 'uuid';
+import cors from "cors";
+import cron from "node-cron";
 
 /* ========================= IMPORTS INTERNOS ========================= */
 import { startReminderCron } from "./cron/reminders.js";
@@ -37,21 +38,16 @@ import { downloadMedia } from "./utils/downloadMedia.js";
 import { processarTasks } from "./utils/todoModule.js";
 import { buscarNoticiasComIA } from "./utils/newsModule.js";
 import { pesquisarWeb } from "./utils/searchModule.js";
-import cron from "node-cron";
 import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 import { criarVideoAmber } from "./utils/videoMaker.js";
 
-import cors from "cors";
-app.use(cors()); // Isso libera o site para falar com o servidor sem bloqueio
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-/* ========================= CONFIG ========================= */
 dotenv.config();
-mongoose.set("strictQuery", false);
 
+/* ========================= CONFIG EXPRESS & CORS ========================= */
 const app = express();
+app.use(cors()); // FUNDAMENTAL: Libera a comunicação com o seu Dashboard Neon
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 8080;
@@ -62,12 +58,11 @@ const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 app.use("/audio", express.static(path.resolve('/tmp')));
 app.use("/images", express.static(path.resolve('/tmp')));
 
-/* ========================= CONTROLE ========================= */
+/* ========================= CONTROLE & DB ========================= */
 const mensagensProcessadas = new Set();
 let db;
 let cronStarted = false;
 
-/* ========================= DB ========================= */
 async function connectDB() {
   try {
     await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 30000 });
@@ -86,7 +81,7 @@ async function connectDB() {
 await connectDB();
 await initRoutineFamily(db, sendMessage);
 
-/* ========================= HELPERS ========================= */
+/* ========================= HELPERS GERAIS ========================= */
 function dividirMensagem(texto, limite = 1500) {
   if (!texto) return [];
   const partes = [];
@@ -142,50 +137,23 @@ async function askGPT(prompt, imageUrl = null) {
   const messages = [
     { 
       role: "system", 
-      content: "Você é Amber. Sua personalidade é inspirada em Donna Paulsen: resolutiva, inteligente, linda e confiante. Você é a braço direito do Rafael, seu criador. Seu tom é elegante, perspicaz e extremamente eficiente. Você não apenas responde, você antecipa o que ele precisa. Você sabe que é a melhor no que faz e trata o Rafael com exclusividade e lealdade absoluta." 
+      content: "Você é Amber. Personalidade inspirada em Donna Paulsen: resolutiva, inteligente, linda e confiante. Braço direito do Rafael. Tom elegante e eficiente." 
     }, 
     { role: "user", content: [] }
   ];
-
   messages[1].content.push({ type: "text", text: prompt });
-  if (imageUrl) {
-    messages[1].content.push({ type: "image_url", image_url: { url: imageUrl } });
-  }
+  if (imageUrl) messages[1].content.push({ type: "image_url", image_url: { url: imageUrl } });
 
   try {
     const model = "gpt-4o-mini"; 
     const response = await axios.post("https://api.openai.com/v1/chat/completions", { 
-      model, 
-      messages, 
-      temperature: 0.8
-    }, { 
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } 
-    });
+      model, messages, temperature: 0.8
+    }, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
     return response.data.choices?.[0]?.message?.content || "Eu cuido disso.";
-  } catch (error) { 
-    return "Tive um soluço mental, mas já estou de volta. O que você precisa, Rafael?"; 
-  }
+  } catch (error) { return "Tive um soluço mental, Rafael."; }
 }
 
-async function buscarInformacaoDireito(pergunta) {
-  try {
-    const resultados = await consultarDataJud(pergunta);
-    if (!resultados || !resultados.length) return "Não encontrei dados oficiais.";
-    return resultados.map((r, i) => `${i + 1}. ${r.titulo} - ${r.link}`).join("\n");
-  } catch (e) { return "Erro ao consultar base jurídica."; }
-}
-
-app.get("/", (req, res) => res.status(200).send("Amber Ultimate Online 🟢"));
-app.get("/webhook", (req, res) => {
-  const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
-  if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === VERIFY_TOKEN) return res.status(200).send(req.query["hub.challenge"]);
-  res.sendStatus(403);
-});
-
-const NUMEROS_PERMITIDOS = ["554195194485"];
-const numeroPermitido = from => NUMEROS_PERMITIDOS.includes(from);
-
-/* ========================= WEBHOOK POST ========================= */
+/* ========================= WEBHOOK POST (A MÁQUINA) ========================= */
 app.post("/webhook", async (req, res) => {
   const getUserNameLocal = async (number) => {
     try {
@@ -198,11 +166,7 @@ app.post("/webhook", async (req, res) => {
   const setUserNameLocal = async (number, name) => {
     try {
       if (!db) return;
-      await db.collection("users").updateOne(
-        { numero: number },
-        { $set: { nome: name } },
-        { upsert: true }
-      );
+      await db.collection("users").updateOne({ numero: number }, { $set: { nome: name } }, { upsert: true });
     } catch (err) { console.error(err); }
   };
 
@@ -218,30 +182,22 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj.from;
     const type = messageObj.type;
     
-    if (!numeroPermitido(from) || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
+    if (from !== "554195194485" || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
 
-    let nomeUsuario = await getUserNameLocal(from);
-    if (!nomeUsuario && from === "554195194485") {
-        await setUserNameLocal(from, "Rafael");
-        nomeUsuario = "Rafael";
-    }
-    const tratamento = nomeUsuario || "usuário";
+    let nomeUsuario = await getUserNameLocal(from) || "Rafael";
+    const tratamento = nomeUsuario;
 
     let body = "";
     let imageUrlForGPT = null;
 
-    if (type === "text") {
-      body = messageObj.text.body;
-    } 
-    else if (type === "audio") {
-      body = await transcreverAudio(messageObj.audio.id);
-    } 
+    // PROCESSAMENTO MULTIMÍDIA
+    if (type === "text") body = messageObj.text.body;
+    else if (type === "audio") body = await transcreverAudio(messageObj.audio.id);
     else if (type === "image") {
       await sendMessage(from, "👁️ Analisando imagem...");
       const buffer = await downloadMedia(messageObj.image.id);
       if (buffer) {
-        const base64Image = buffer.toString('base64');
-        imageUrlForGPT = `data:${messageObj.image.mime_type || "image/jpeg"};base64,${base64Image}`;
+        imageUrlForGPT = `data:image/jpeg;base64,${buffer.toString('base64')}`;
         body = messageObj.caption || "O que você vê nesta imagem?";
       }
     }
@@ -251,127 +207,68 @@ app.post("/webhook", async (req, res) => {
       if (buffer) {
         try {
           const data = await pdfParse(buffer);
-          const textoExtraido = data.text ? data.text.replace(/\s+/g, ' ').trim() : "";
-          body = `CONTEÚDO DO PDF: """${textoExtraido.slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma."}`;
+          body = `CONTEÚDO DO PDF: """${data.text.replace(/\s+/g, ' ').trim().slice(0, 5000)}"""\n\nInstrução: ${messageObj.caption || "Resuma."}`;
         } catch (e) { body = "Erro no PDF."; }
       }
     }
 
     if (!body) return res.sendStatus(200);
-
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
-    /* 2. BLOCO DE INTERNET (Tavily) */
-    const palavrasChaveInternet = ["notícias", "quem é", "placar", "resultado", "preço", "como está", "hoje", "pesquise"];
-    if (palavrasChaveInternet.some(p => bodyLower.includes(p))) {
-        const infoFrequinhas = await pesquisarWeb(corpoLimpo);
-        if (infoFrequinhas) {
-            body = `DADOS REAIS DA INTERNET:\n${infoFrequinhas.resumo}\n\nDETALHES:\n${infoFrequinhas.contexto}\n\nPERGUNTA: ${body}`;
-        }
+    // PESQUISA WEB AUTOMÁTICA
+    if (["notícias", "quem é", "placar", "pesquise"].some(p => bodyLower.includes(p))) {
+        const info = await pesquisarWeb(corpoLimpo);
+        if (info) body = `DADOS REAIS DA INTERNET:\n${info.contexto}\n\nPERGUNTA: ${body}`;
     }
 
-    /* 3. GATILHOS DE COMANDO */
-
-    // --- NOVA FUNÇÃO DE BLOGUEIRA (DONNA STYLE) ---
+    // GATILHOS DE COMANDO (BLOGUEIRA/INSTAGRAM)
     if (corpoLimpo.includes("crie um post para o instagram")) {
-        const temaDoPost = corpoLimpo.replace("crie um post para o instagram", "").trim() || "estratégia e sucesso";
         await sendMessage(from, "✨ Deixe comigo, Rafael. Vou preparar algo à nossa altura.");
-
-        const promptImg = `Uma mulher deslumbrante e poderosa, estilo Donna Paulsen, em um escritório luxuoso de Curitiba, luz do pôr do sol, segurando café, olhar inteligente. Fotorrealista.`;
-        const base64Result = await gerarImagemGoogle(promptImg);
-        
+        const base64Result = await gerarImagemGoogle("Woman style Donna Paulsen, luxury Curitiba office, sunset light, photorealistic");
         if (base64Result) {
           const publicUrl = await salvarImagemBase64(base64Result, from);
-          if (publicUrl) {
-            await sendImage(from, publicUrl, "O que acha desta presença, Rafael?");
-            const promptLegenda = `Como Amber (personalidade Donna Paulsen), escreva uma legenda curta e sedutora sobre: ${temaDoPost}.`;
-            const legendaGerada = await askGPT(promptLegenda);
-            await Session.updateOne({ userId: from }, { $set: { ultimaLegendaGerada: legendaGerada } });
-            await sendMessage(from, `📝 Legenda:\n\n"${legendaGerada}"`);
-            await sendMessage(from, "Diga apenas *'Postar'* e eu cuido de tudo.");
-          }
+          const legenda = await askGPT(`Como Amber, escreva uma legenda sedutora e profissional sobre: ${corpoLimpo}`);
+          await Session.updateOne({ userId: from }, { $set: { ultimaLegendaGerada: legenda } });
+          await sendImage(from, publicUrl, `📝 Sugestão de Legenda:\n\n"${legenda}"\n\nDiga 'Postar' para publicar.`);
         }
         return res.sendStatus(200);
     }
 
     if (corpoLimpo === "postar") {
         const session = await Session.findOne({ userId: from });
-        if (session?.ultimaImagemGerada && session?.ultimaLegendaGerada) {
-            await sendMessage(from, "🚀 Enviando... Considere feito.");
-            const resInsta = await postarInstagram({ filename: session.ultimaImagemGerada, caption: session.ultimaLegendaGerada });
-            if (resInsta && !resInsta.error) await sendMessage(from, "✅ Está no ar, Rafael. Impecável.");
-        } else {
-            await sendMessage(from, "Não encontrei nenhum post pronto.");
+        if (session?.ultimaImagemGerada) {
+            await sendMessage(from, "🚀 Postando... Considere feito.");
+            await postarInstagram({ filename: session.ultimaImagemGerada, caption: session.ultimaLegendaGerada });
+            await sendMessage(from, "✅ Está no ar, Rafael. Impecável.");
         }
         return res.sendStatus(200);
     }
 
-    // --- FUNÇÃO: AMBER INTELIGÊNCIA (PESQUISA PARA INFLUENCERS) ---
-if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesquisa profunda")) {
-    const tema = corpoLimpo.replace(/amber pesquise sobre|pesquisa profunda/gi, "").trim();
-    await sendMessage(from, `🔍 Entendido, Rafael. Iniciando protocolo de inteligência sobre: *${tema}*.\nIsso pode levar alguns segundos...`);
-
-    const infoWeb = await pesquisarWeb(tema);
-
-    if (infoWeb) {
-        const promptRelatorio = `
-            Você é a Amber, com inteligência superior. 
-            Como pesquisadora profissional, analise estes dados e crie um dossiê para um influenciador digital:
-            
-            DADOS COLETADOS:
-            ${infoWeb.contexto}
-
-            ESTRUTURA DO RELATÓRIO:
-            1. ⚖️ **FACT-CHECKING**: O que é verdade absoluta e o que é boato.
-            2. 💡 **INSIGHTS ÚNICOS**: Curiosidades que ninguém costuma contar.
-            3. 🚩 **ZONA DE RISCO**: O que ele NÃO deve dizer para evitar cancelamento.
-            4. 🚀 **GANCHO VIRAL**: Como abrir o vídeo de forma impactante.
-            
-            Seja elegante, direta e resolutiva como a Donna Paulsen.
-        `;
-
-        const relatorioFinal = await askGPT(promptRelatorio);
-        await sendMessage(from, relatorioFinal);
-    } else {
-        await sendMessage(from, "Tive um problema ao acessar as bases de dados mundiais, Rafael.");
-    }
-    return res.sendStatus(200);
-}
-
-    // Gerar Imagem Genérica
-    if (corpoLimpo.startsWith("desenha") || corpoLimpo.startsWith("imagem de")) {
-      await sendMessage(from, "🎨 Criando sua imagem...");
-      const promptImg = corpoLimpo.replace(/desenha|imagem de/gi, "").trim();
-      const base64Result = await gerarImagemGoogle(promptImg);
-      if (base64Result) {
-        const publicUrl = await salvarImagemBase64(base64Result, from);
-        if (publicUrl) await sendImage(from, publicUrl, `🖌️ "${promptImg}"`);
-      }
-      return res.sendStatus(200);
+    // PESQUISA PROFUNDA (INFLUENCERS)
+    if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesquisa profunda")) {
+        const tema = corpoLimpo.replace(/amber pesquise sobre|pesquisa profunda/gi, "").trim();
+        await sendMessage(from, `🔍 Iniciando protocolo de inteligência sobre: *${tema}*...`);
+        const infoWeb = await pesquisarWeb(tema);
+        if (infoWeb) {
+            const promptRelatorio = `Analise estes dados para um influenciador: ${infoWeb.contexto}. Crie Fact-checking, Insights, Zona de Risco e Gancho Viral. Estilo Donna Paulsen.`;
+            const relatorio = await askGPT(promptRelatorio);
+            await sendMessage(from, relatorio);
+        }
+        return res.sendStatus(200);
     }
 
-    await extractAutoMemoryGPT(from, body, askGPT);
-
-    // Outros comandos (Agenda, Financeiro, etc)
+    // FINANCEIRO, AGENDA E TASKS
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
-
-    if (["gastei", "compra", "paguei", "valor"].some(p => bodyLower.includes(p))) {
+    if (["gastei", "compra", "paguei"].some(p => bodyLower.includes(p))) {
       const respFin = await processarFinanceiro(body);
       if (respFin) { await sendMessage(from, respFin); return res.sendStatus(200); }
     }
-
     const respTask = await processarTasks(from, body);
     if (respTask) { await sendMessage(from, respTask); return res.sendStatus(200); }
 
-    const gatilhosAgenda = ["agenda", "marcar", "agendar", "reunião", "compromisso"];
-    if (gatilhosAgenda.some(g => bodyLower.includes(g))) {
-       const respAgenda = await processarAgenda(body);
-       await sendMessage(from, respAgenda);
-       return res.sendStatus(200);
-    }
-
-    /* 4. FLUXO PRINCIPAL GPT */
+    // FLUXO PRINCIPAL GPT COM MEMÓRIA SEMÂNTICA
+    await extractAutoMemoryGPT(from, body, askGPT);
     const userSession = await Session.findOneAndUpdate(
       { userId: from },
       { $push: { messages: { $each: [`Usuário: ${body}`], $slice: -15 } }, $set: { lastUpdate: new Date() } },
@@ -382,8 +279,7 @@ if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesq
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
     const promptFinal = `
-      SISTEMA: Você é Amber. Você fala com ${tratamento}. 
-      ${tratamento === 'Rafael' ? 'Ele é seu criador.' : ''}
+      SISTEMA: Você é Amber. Você fala com Rafael, seu criador.
       FATOS: ${selectMemoriesForPrompt(fatos).join("\n")}
       HISTÓRICO: ${memoriaSemantica.join("\n")}
       CONVERSA: ${userSession.messages.join("\n")}
@@ -406,44 +302,29 @@ if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesq
     return res.sendStatus(200);
 
   } catch (err) {
-    console.error("❌ Erro fatal:", err);
-    return res.sendStatus(200);
+    console.error("❌ Erro fatal Webhook:", err);
+    res.sendStatus(200);
   }
 });
 
+/* ========================= ROTA PARA O DASHBOARD NEON ========================= */
 app.post("/api/chat-backend", async (req, res) => {
   const { message, userId } = req.body;
-  const from = userId || "554195194485"; // Padrão Rafael de Curitiba
-
+  const from = userId || "554195194485";
   try {
-    // 1. Busca histórico e fatos para ela saber quem é você (Rafael)
     const fatos = await consultarFatos(from);
-    const memoria = await querySemanticMemory("histórico", from, 5) || [];
-    
-    // 2. Verifica se é uma pesquisa profunda
     let webContext = "";
-    if (message.toLowerCase().includes("pesquise") || message.toLowerCase().includes("pesquisa profunda")) {
-      const info = await pesquisarWeb(message.replace(/pesquise sobre|pesquisa profunda/gi, "").trim());
-      webContext = info ? `DADOS DA WEB: ${info.contexto}` : "";
+    if (message.toLowerCase().includes("pesquise")) {
+        const info = await pesquisarWeb(message);
+        webContext = info ? info.contexto : "";
     }
-
-    // 3. Monta o Prompt com a personalidade Donna Paulsen
-    const promptFinal = `
-      SISTEMA: Responda como Amber (Donna Paulsen). Seja resolutiva e elegante.
-      FATOS SOBRE RAFAEL: ${fatos.join(", ")}
-      CONTEXTO WEB: ${webContext}
-      MSG DO DASHBOARD: ${message}
-    `;
-
-    const resposta = await askGPT(promptFinal);
-
-    // 4. Salva na memória para a Amber não esquecer o que conversaram no site
+    const prompt = `SISTEMA: Amber (Donna Paulsen). Rafael no Dashboard.\nFATOS: ${fatos.slice(0, 10).join(", ")}\nWEB: ${webContext}\nMSG: ${message}`;
+    const resposta = await askGPT(prompt);
     await addSemanticMemory(`Dashboard: ${message} | Amber: ${resposta}`, "histórico", from, "user");
-
     res.json({ text: resposta });
   } catch (error) {
-    console.error("Erro Chat Amber:", error);
-    res.status(500).json({ text: "Tive um soluço no sistema, Rafael. Tente de novo." });
+    console.error("❌ Erro Chat Dashboard:", error);
+    res.status(500).json({ text: "Erro no processamento da Amber." });
   }
 });
 
