@@ -408,6 +408,28 @@ if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesq
   }
 });
 
+// Rota para o Dashboard conversar com a Amber
+app.post("/api/chat", async (req, res) => {
+  const { message, userId } = req.body;
+
+  try {
+    // 1. Verifica se precisa pesquisar na web (mesma lógica do Whats)
+    let context = "";
+    if (message.toLowerCase().includes("pesquise") || message.toLowerCase().includes("notícias")) {
+      const info = await pesquisarWeb(message);
+      context = info ? `DADOS REAIS: ${info.contexto}` : "";
+    }
+
+    // 2. Chama o GPT
+    const prompt = `CONTEXTO: ${context}\nUSUÁRIO: ${message}`;
+    const resposta = await askGPT(prompt);
+
+    res.json({ text: resposta });
+  } catch (error) {
+    res.status(500).json({ error: "Erro na Amber" });
+  }
+});
+
 /* ========================= CRONS ========================= */
 cron.schedule("0 * * * *", async () => {
   const userId = "554195194485";
