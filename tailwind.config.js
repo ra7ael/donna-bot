@@ -1,16 +1,21 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    // Se você NÃO usar a pasta src, use as linhas abaixo:
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
+    "./amber-interface/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        cyan: {
+          900: '#164e63',
+          950: '#083344',
+        }
+      }
+    },
   },
   plugins: [],
 }
