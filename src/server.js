@@ -42,6 +42,9 @@ import { verificarContextoProativo } from "./utils/proactiveModule.js";
 import { gerarImagemGoogle } from "./utils/imageGenGoogle.js";
 import { criarVideoAmber } from "./utils/videoMaker.js";
 
+import cors from "cors";
+app.use(cors()); // Isso libera o site para falar com o servidor sem bloqueio
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /* ========================= CONFIG ========================= */
