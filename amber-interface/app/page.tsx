@@ -8,17 +8,22 @@ export default function AmberInterface() {
     { role: 'amber', text: 'Sistemas carregados. Aguardando comandos, Rafael.' }
   ]);
 
-  // Função para simular o envio (conecta com aquele /api/chat que criamos)
-  const handleCommand = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && input) {
-      const userMsg = input;
-      setInput("");
-      setChat(prev => [...prev, { role: 'user', text: userMsg }]);
+const handleCommand = async (e) => {
+  if (e.key === 'Enter' && input) {
+    const userMsg = input;
+    setInput("");
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
 
-      // Aqui você chamaria seu backend
-      // const res = await fetch('SUA_URL/api/chat', ...);
-    }
-  };
+    const res = await fetch('https://donna-bot.vercel.app/api/chat', { // Use sua URL oficial
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: userMsg, userId: '554195194485' }),
+    });
+
+    const data = await res.json();
+    setMessages(prev => [...prev, { role: 'amber', text: data.text }]);
+  }
+};
 
   return (
     <main className="min-h-screen bg-[#050505] text-cyan-400 font-mono p-4 flex flex-col items-center selection:bg-cyan-500/30">
