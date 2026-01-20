@@ -408,25 +408,39 @@ if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesq
   }
 });
 
-// Rota para o Dashboard conversar com a Amber
 app.post("/api/chat", async (req, res) => {
   const { message, userId } = req.body;
+  const from = userId || "554195194485"; // Padrão Rafael de Curitiba
 
   try {
-    // 1. Verifica se precisa pesquisar na web (mesma lógica do Whats)
-    let context = "";
-    if (message.toLowerCase().includes("pesquise") || message.toLowerCase().includes("notícias")) {
-      const info = await pesquisarWeb(message);
-      context = info ? `DADOS REAIS: ${info.contexto}` : "";
+    // 1. Busca histórico e fatos para ela saber quem é você (Rafael)
+    const fatos = await consultarFatos(from);
+    const memoria = await querySemanticMemory("histórico", from, 5) || [];
+    
+    // 2. Verifica se é uma pesquisa profunda
+    let webContext = "";
+    if (message.toLowerCase().includes("pesquise") || message.toLowerCase().includes("pesquisa profunda")) {
+      const info = await pesquisarWeb(message.replace(/pesquise sobre|pesquisa profunda/gi, "").trim());
+      webContext = info ? `DADOS DA WEB: ${info.contexto}` : "";
     }
 
-    // 2. Chama o GPT
-    const prompt = `CONTEXTO: ${context}\nUSUÁRIO: ${message}`;
-    const resposta = await askGPT(prompt);
+    // 3. Monta o Prompt com a personalidade Donna Paulsen
+    const promptFinal = `
+      SISTEMA: Responda como Amber (Donna Paulsen). Seja resolutiva e elegante.
+      FATOS SOBRE RAFAEL: ${fatos.join(", ")}
+      CONTEXTO WEB: ${webContext}
+      MSG DO DASHBOARD: ${message}
+    `;
+
+    const resposta = await askGPT(promptFinal);
+
+    // 4. Salva na memória para a Amber não esquecer o que conversaram no site
+    await addSemanticMemory(`Dashboard: ${message} | Amber: ${resposta}`, "histórico", from, "user");
 
     res.json({ text: resposta });
   } catch (error) {
-    res.status(500).json({ error: "Erro na Amber" });
+    console.error("Erro Chat Amber:", error);
+    res.status(500).json({ text: "Tive um soluço no sistema, Rafael. Tente de novo." });
   }
 });
 
