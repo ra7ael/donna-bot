@@ -304,6 +304,38 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
     }
 
+    // --- FUNÇÃO: AMBER INTELIGÊNCIA (PESQUISA PARA INFLUENCERS) ---
+if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesquisa profunda")) {
+    const tema = corpoLimpo.replace(/amber pesquise sobre|pesquisa profunda/gi, "").trim();
+    await sendMessage(from, `🔍 Entendido, Rafael. Iniciando protocolo de inteligência sobre: *${tema}*.\nIsso pode levar alguns segundos...`);
+
+    const infoWeb = await pesquisarWeb(tema);
+
+    if (infoWeb) {
+        const promptRelatorio = `
+            Você é a Amber, com inteligência superior. 
+            Como pesquisadora profissional, analise estes dados e crie um dossiê para um influenciador digital:
+            
+            DADOS COLETADOS:
+            ${infoWeb.contexto}
+
+            ESTRUTURA DO RELATÓRIO:
+            1. ⚖️ **FACT-CHECKING**: O que é verdade absoluta e o que é boato.
+            2. 💡 **INSIGHTS ÚNICOS**: Curiosidades que ninguém costuma contar.
+            3. 🚩 **ZONA DE RISCO**: O que ele NÃO deve dizer para evitar cancelamento.
+            4. 🚀 **GANCHO VIRAL**: Como abrir o vídeo de forma impactante.
+            
+            Seja elegante, direta e resolutiva como a Donna Paulsen.
+        `;
+
+        const relatorioFinal = await askGPT(promptRelatorio);
+        await sendMessage(from, relatorioFinal);
+    } else {
+        await sendMessage(from, "Tive um problema ao acessar as bases de dados mundiais, Rafael.");
+    }
+    return res.sendStatus(200);
+}
+
     // Gerar Imagem Genérica
     if (corpoLimpo.startsWith("desenha") || corpoLimpo.startsWith("imagem de")) {
       await sendMessage(from, "🎨 Criando sua imagem...");
