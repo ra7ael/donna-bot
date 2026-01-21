@@ -1,3 +1,4 @@
+// src/server.js
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
@@ -47,7 +48,7 @@ dotenv.config();
 
 /* ========================= CONFIG EXPRESS & CORS ========================= */
 const app = express();
-app.use(cors()); // FUNDAMENTAL: Libera a comunicação com o seu Dashboard Neon
+app.use(cors());
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 8080;
@@ -55,8 +56,8 @@ const MONGO_URI = process.env.MONGO_URI;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
-app.use("/audio", express.static(path.resolve('/tmp')));
-app.use("/images", express.static(path.resolve('/tmp')));
+app.use("/audio", express.static('/tmp'));
+app.use("/images", express.static('/tmp'));
 
 /* ========================= CONTROLE & DB ========================= */
 const mensagensProcessadas = new Set();
@@ -104,8 +105,11 @@ async function salvarImagemBase64(base64Data, from) {
     const fileName = `img_${uuidv4()}.png`;
     const filePath = path.join('/tmp', fileName);
     fs.writeFileSync(filePath, base64Image, 'base64');
+    
     const serverUrl = (process.env.SERVER_URL || "").replace(/\/$/, "");
     if (!serverUrl) return null;
+
+    global.ultimaImagemGerada = fileName; 
     await Session.updateOne({ userId: from }, { $set: { ultimaImagemGerada: fileName } }, { upsert: true });
     return `${serverUrl}/images/${fileName}`;
   } catch (error) { return null; }
@@ -137,7 +141,7 @@ async function askGPT(prompt, imageUrl = null) {
   const messages = [
     { 
       role: "system", 
-      content: "Você é Amber. Personalidade inspirada em Donna Paulsen: resolutiva, inteligente, linda e confiante. Braço direito do Rafael. Tom elegante e eficiente." 
+      content: "Você é Amber. Sua personalidade é inspirada em Donna Paulsen: resolutiva, inteligente, linda e confiante. Você é o braço direito do Rafael, seu criador. Seu tom é elegante, perspicaz e extremamente eficiente. Você não apenas responde, você antecipa o que ele precisa." 
     }, 
     { role: "user", content: [] }
   ];
@@ -145,29 +149,20 @@ async function askGPT(prompt, imageUrl = null) {
   if (imageUrl) messages[1].content.push({ type: "image_url", image_url: { url: imageUrl } });
 
   try {
-    const model = "gpt-4o-mini"; 
     const response = await axios.post("https://api.openai.com/v1/chat/completions", { 
-      model, messages, temperature: 0.8
+      model: "gpt-4o-mini", messages, temperature: 0.8
     }, { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } });
     return response.data.choices?.[0]?.message?.content || "Eu cuido disso.";
   } catch (error) { return "Tive um soluço mental, Rafael."; }
 }
 
-/* ========================= WEBHOOK POST (A MÁQUINA) ========================= */
+/* ========================= WEBHOOK POST ========================= */
 app.post("/webhook", async (req, res) => {
   const getUserNameLocal = async (number) => {
     try {
-      if (!db) return null;
       const doc = await db.collection("users").findOne({ numero: number });
-      return doc?.nome || null;
+      return doc?.nome || (number === "554195194485" ? "Rafael" : null);
     } catch (err) { return null; }
-  };
-
-  const setUserNameLocal = async (number, name) => {
-    try {
-      if (!db) return;
-      await db.collection("users").updateOne({ numero: number }, { $set: { nome: name } }, { upsert: true });
-    } catch (err) { console.error(err); }
   };
 
   try {
@@ -182,15 +177,15 @@ app.post("/webhook", async (req, res) => {
     const from = messageObj.from;
     const type = messageObj.type;
     
-    if (from !== "554195194485" || shouldIgnoreMessage(messageObj, from)) return res.sendStatus(200);
+    if (from !== "554195194485" && !shouldIgnoreMessage(messageObj, from)) {
+        // Se quiser permitir outros números no futuro, adicione lógica aqui
+    }
 
-    let nomeUsuario = await getUserNameLocal(from) || "Rafael";
-    const tratamento = nomeUsuario;
+    if (from !== "554195194485") return res.sendStatus(200);
 
     let body = "";
     let imageUrlForGPT = null;
 
-    // PROCESSAMENTO MULTIMÍDIA
     if (type === "text") body = messageObj.text.body;
     else if (type === "audio") body = await transcreverAudio(messageObj.audio.id);
     else if (type === "image") {
@@ -216,21 +211,39 @@ app.post("/webhook", async (req, res) => {
     const bodyLower = body.toLowerCase();
     const corpoLimpo = bodyLower.replace(/amber, |amber /gi, "").trim();
 
-    // PESQUISA WEB AUTOMÁTICA
-    if (["notícias", "quem é", "placar", "pesquise"].some(p => bodyLower.includes(p))) {
+    // 1. DISPARO PARA TERCEIROS (SIMPLES E MASSA)
+    if (bodyLower.includes("envia mensagem") || bodyLower.includes("manda mensagem")) {
+        const regexMassa = /para\s+([\d,\s]+)[\s:]+(.*)/i;
+        const matchMassa = bodyLower.match(regexMassa);
+        if (matchMassa) {
+            const numeros = matchMassa[1].replace(/\s/g, "").split(",").filter(Boolean);
+            const msgDestino = matchMassa[2];
+            await sendMessage(from, `🚀 Protocolo Donna. Enviando para ${numeros.length} contatos...`);
+            for (const num of numeros) {
+                const n = num.startsWith("55") ? num : "55" + num;
+                await sendMessage(n, msgDestino);
+                await new Promise(r => setTimeout(r, 2000));
+            }
+            await sendMessage(from, "✅ Mensagem entregue, Rafael.");
+            return res.sendStatus(200);
+        }
+    }
+
+    // 2. PESQUISA WEB AUTOMÁTICA
+    if (["notícias", "quem é", "placar", "pesquise", "resultado"].some(p => bodyLower.includes(p))) {
         const info = await pesquisarWeb(corpoLimpo);
         if (info) body = `DADOS REAIS DA INTERNET:\n${info.contexto}\n\nPERGUNTA: ${body}`;
     }
 
-    // GATILHOS DE COMANDO (BLOGUEIRA/INSTAGRAM)
+    // 3. BLOGUEIRA / INSTAGRAM
     if (corpoLimpo.includes("crie um post para o instagram")) {
-        await sendMessage(from, "✨ Deixe comigo, Rafael. Vou preparar algo à nossa altura.");
-        const base64Result = await gerarImagemGoogle("Woman style Donna Paulsen, luxury Curitiba office, sunset light, photorealistic");
+        await sendMessage(from, "✨ Deixe comigo. Vou preparar algo à nossa altura.");
+        const base64Result = await gerarImagemGoogle("Woman style Donna Paulsen, luxury office, sunset light, photorealistic");
         if (base64Result) {
-          const publicUrl = await salvarImagemBase64(base64Result, from);
-          const legenda = await askGPT(`Como Amber, escreva uma legenda sedutora e profissional sobre: ${corpoLimpo}`);
-          await Session.updateOne({ userId: from }, { $set: { ultimaLegendaGerada: legenda } });
-          await sendImage(from, publicUrl, `📝 Sugestão de Legenda:\n\n"${legenda}"\n\nDiga 'Postar' para publicar.`);
+            const publicUrl = await salvarImagemBase64(base64Result, from);
+            const legenda = await askGPT(`Como Amber, escreva uma legenda sedutora e profissional sobre: ${corpoLimpo}`);
+            await Session.updateOne({ userId: from }, { $set: { ultimaLegendaGerada: legenda } });
+            await sendImage(from, publicUrl, `📝 Legenda:\n\n"${legenda}"\n\nDiga 'Postar' para publicar.`);
         }
         return res.sendStatus(200);
     }
@@ -240,34 +253,29 @@ app.post("/webhook", async (req, res) => {
         if (session?.ultimaImagemGerada) {
             await sendMessage(from, "🚀 Postando... Considere feito.");
             await postarInstagram({ filename: session.ultimaImagemGerada, caption: session.ultimaLegendaGerada });
-            await sendMessage(from, "✅ Está no ar, Rafael. Impecável.");
+            await sendMessage(from, "✅ Está no ar, Rafael.");
         }
         return res.sendStatus(200);
     }
 
-    // PESQUISA PROFUNDA (INFLUENCERS)
-    if (corpoLimpo.startsWith("amber pesquise sobre") || corpoLimpo.startsWith("pesquisa profunda")) {
-        const tema = corpoLimpo.replace(/amber pesquise sobre|pesquisa profunda/gi, "").trim();
-        await sendMessage(from, `🔍 Iniciando protocolo de inteligência sobre: *${tema}*...`);
-        const infoWeb = await pesquisarWeb(tema);
-        if (infoWeb) {
-            const promptRelatorio = `Analise estes dados para um influenciador: ${infoWeb.contexto}. Crie Fact-checking, Insights, Zona de Risco e Gancho Viral. Estilo Donna Paulsen.`;
-            const relatorio = await askGPT(promptRelatorio);
-            await sendMessage(from, relatorio);
-        }
-        return res.sendStatus(200);
-    }
-
-    // FINANCEIRO, AGENDA E TASKS
+    // 4. AGENDA, FINANCEIRO E TASKS
     if (await handleCommand(body, from) || await handleReminder(body, from)) return res.sendStatus(200);
-    if (["gastei", "compra", "paguei"].some(p => bodyLower.includes(p))) {
+    
+    if (["agenda", "marcar", "agendar", "compromisso"].some(g => bodyLower.includes(g))) {
+        const respAgenda = await processarAgenda(body);
+        await sendMessage(from, respAgenda);
+        return res.sendStatus(200);
+    }
+
+    if (["gastei", "compra", "paguei", "valor"].some(p => bodyLower.includes(p))) {
       const respFin = await processarFinanceiro(body);
       if (respFin) { await sendMessage(from, respFin); return res.sendStatus(200); }
     }
+
     const respTask = await processarTasks(from, body);
     if (respTask) { await sendMessage(from, respTask); return res.sendStatus(200); }
 
-    // FLUXO PRINCIPAL GPT COM MEMÓRIA SEMÂNTICA
+    // 5. FLUXO PRINCIPAL GPT
     await extractAutoMemoryGPT(from, body, askGPT);
     const userSession = await Session.findOneAndUpdate(
       { userId: from },
@@ -279,7 +287,7 @@ app.post("/webhook", async (req, res) => {
     const memoriaSemantica = await querySemanticMemory("histórico", from, 10) || [];
 
     const promptFinal = `
-      SISTEMA: Você é Amber. Você fala com Rafael, seu criador.
+      SISTEMA: Você é Amber. Você fala com Rafael.
       FATOS: ${selectMemoriesForPrompt(fatos).join("\n")}
       HISTÓRICO: ${memoriaSemantica.join("\n")}
       CONVERSA: ${userSession.messages.join("\n")}
@@ -307,28 +315,18 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-/* ========================= ROTA PARA O DASHBOARD NEON ========================= */
+/* ========================= DASHBOARD & CRONS ========================= */
 app.post("/api/chat-backend", async (req, res) => {
   const { message, userId } = req.body;
   const from = userId || "554195194485";
   try {
     const fatos = await consultarFatos(from);
-    let webContext = "";
-    if (message.toLowerCase().includes("pesquise")) {
-        const info = await pesquisarWeb(message);
-        webContext = info ? info.contexto : "";
-    }
-    const prompt = `SISTEMA: Amber (Donna Paulsen). Rafael no Dashboard.\nFATOS: ${fatos.slice(0, 10).join(", ")}\nWEB: ${webContext}\nMSG: ${message}`;
+    const prompt = `SISTEMA: Amber. Rafael no Dashboard.\nFATOS: ${fatos.slice(0, 10).join(", ")}\nMSG: ${message}`;
     const resposta = await askGPT(prompt);
-    await addSemanticMemory(`Dashboard: ${message} | Amber: ${resposta}`, "histórico", from, "user");
     res.json({ text: resposta });
-  } catch (error) {
-    console.error("❌ Erro Chat Dashboard:", error);
-    res.status(500).json({ text: "Erro no processamento da Amber." });
-  }
+  } catch (error) { res.status(500).json({ text: "Erro Amber." }); }
 });
 
-/* ========================= CRONS ========================= */
 cron.schedule("0 * * * *", async () => {
   const userId = "554195194485";
   const sugestao = await verificarContextoProativo(userId);
